@@ -20,7 +20,10 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * ✅ Prepare rules files for copilot
 * ✅ Come up with Kotlin API (I can use it as a client)
 * ✅ Put source code into github
-* Full implementation of API
+* Iterate on the API design
+  * consider status persistence
+  * make sure API covers all needed stuff 
+* Implementation the API
 * Diagram generator and flow validator
 * Implementation of the engine
 

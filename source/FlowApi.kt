@@ -19,7 +19,7 @@ interface Event
  * @param T the type of context object the action operates on
  */
 class ActionWithStatus<T>(
-    val action: context(FlowContext) (item: T) -> Unit,
+    val action: (item: T) -> Unit,
     val resultStatus: (item: T) -> Status,
     val retry: RetryStrategy? = null
 ) {
@@ -27,7 +27,7 @@ class ActionWithStatus<T>(
      * Alternative constructor that uses a fixed result status.
      */
     constructor(
-        action: context(FlowContext) (item: T) -> Unit,
+        action: (item: T) -> Unit,
         resultStatus: Status,
         retry: RetryStrategy? = null
     ) : this(
@@ -67,21 +67,6 @@ data class RetryConfig(
 )
 
 /**
- * Context provided to actions during execution.
- */
-interface FlowContext {
-    /** 
-     * Get a value from the flow context 
-     */
-    fun <T> get(key: String): T?
-    
-    /** 
-     * Set a value in the flow context 
-     */
-    fun set(key: String, value: Any?)
-}
-
-/**
  * Main class for defining workflows.
  * @param T the type of context object the flow operates on
  * @param initialStatus the starting status of the flow
@@ -92,7 +77,7 @@ class FlowBuilder<T>(private val initialStatus: Status) {
      * Using context receivers for better integration with the flow context.
      */
     fun doAction(
-        action: context(FlowContext) (item: T) -> Unit,
+        action: (item: T) -> Unit,
         resultStatus: Status
     ): FlowBuilder<T> = this
     
@@ -164,7 +149,7 @@ class EventBuilder<T>(private val parent: FlowBuilder<T>) {
      * Using context receivers for better integration with the flow context.
      */
     fun doAction(
-        action: context(FlowContext) (item: T) -> Unit,
+        action: (item: T) -> Unit,
         resultStatus: Status
     ): FlowBuilder<T> = parent
     

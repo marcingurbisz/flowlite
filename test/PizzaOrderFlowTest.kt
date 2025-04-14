@@ -2,29 +2,21 @@ package io.flowlite.test
 
 import io.flowlite.api.ActionWithStatus
 import io.flowlite.api.FlowBuilder
-import io.flowlite.api.FlowContext
 import io.flowlite.api.FlowEngine
 import io.flowlite.api.RetryStrategy
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Test
 
 /**
  * Test that demonstrates defining a pizza order workflow using the FlowLite API.
  * This test focuses on the process definition capabilities, not execution.
  */
 class PizzaOrderFlowTest {
-    // Simple mock implementation of FlowContext for the test
-    private val testFlowContext = object : FlowContext {
-        private val map = mutableMapOf<String, Any?>()
-        
-        override fun <T> get(key: String): T? = map[key] as? T
-        override fun set(key: String, value: Any?) { map[key] = value }
-    }
 
     @Test
     fun `test pizza order flow definition`() {
         // Define reusable actions first
-        val orderActions = OrderActions(testFlowContext)
+        val orderActions = OrderActions()
         
         // Define delivery flow
         val deliveryFlow = FlowBuilder<PizzaOrder>(OrderStatus.DELIVERY_INITIALIZED)
@@ -123,7 +115,7 @@ class PizzaOrderFlowTest {
     /**
      * Container for reusable actions in the pizza order workflow.
      */
-    class OrderActions(private val flowContext: FlowContext) {
+    class OrderActions {
         // The cancel order action is used in multiple places
         val cancelOrder = ActionWithStatus<PizzaOrder>(
             action = { order -> order.sendOrderCancellation() },

@@ -20,6 +20,8 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * ✅ Prepare rules files for copilot
 * ✅ Come up with Kotlin API (I can use it as a client)
 * ✅ Put source code into github
+* Data including (process id and status) handling
+* How to do stuff in parallel
 * Implement API to the point that next step is possible 
 * Diagram generator and flow validator
 * Iterate on the API design
@@ -44,16 +46,10 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 ```mermaid
 stateDiagram-v2
-    state if_order_eligibility <<choice>>
     state if_payment_method <<choice>>
     
-    [*] --> ORDER_ELIGIBILITY_EVALUATED
+    [*] --> ORDER_CREATED
     ORDER_CANCELLATION_SENT --> [*]
-    ORDER_ELIGIBILITY_EVALUATED: evaluateOrderEligibility() ORDER_ELIGIBILITY_EVALUATED
-    ORDER_ELIGIBILITY_EVALUATED --> if_order_eligibility
-    if_order_eligibility --> ORDER_CREATED: eligibility = VALID
-    if_order_eligibility --> INVALID_ORDER_ELIGIBILITY: eligibility = INVALID
-    INVALID_ORDER_ELIGIBILITY --> ORDER_CANCELLATION_SENT: onEvent#58; AcknowledgeError
     ORDER_CREATED: createPizzaOrder() ORDER_CREATED
     ORDER_CREATED --> if_payment_method
     if_payment_method --> CASH_PAYMENT_INITIALIZED: paymentMethod = CASH

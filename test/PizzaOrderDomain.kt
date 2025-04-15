@@ -7,14 +7,9 @@ import io.flowlite.api.Status
  * Pizza order domain class representing a pizza order in our sample workflow.
  */
 class PizzaOrder {
-    var eligibility: Eligibility = Eligibility.UNKNOWN
-    var paymentMethod: PaymentMethod = PaymentMethod.UNKNOWN
+    var paymentMethod: PaymentMethod = PaymentMethod.ONLINE
     
     // Mock methods that would perform actual business logic in a real application
-    fun evaluateOrderEligibility() {
-        // Logic to evaluate order eligibility
-    }
-    
     fun createPizzaOrder() {
         // Logic to create an order
     }
@@ -49,19 +44,9 @@ class PizzaOrder {
 }
 
 /**
- * Possible eligibility statuses for a pizza order.
- */
-enum class Eligibility {
-    UNKNOWN,
-    VALID,
-    INVALID
-}
-
-/**
  * Payment methods for a pizza order.
  */
 enum class PaymentMethod {
-    UNKNOWN,
     CASH,
     ONLINE
 }
@@ -71,12 +56,9 @@ enum class PaymentMethod {
  */
 enum class OrderStatus : Status {
     CREATED,
-    ORDER_ELIGIBILITY_EVALUATED,
     ORDER_CREATED,
-    INVALID_ORDER_ELIGIBILITY,
     CASH_PAYMENT_INITIALIZED,
     PAYMENT_WAITING,
-    ONLINE_PAYMENT_INITIALIZED,
     ONLINE_PAYMENT_WAITING,
     ONLINE_PAYMENT_EXPIRED,
     ORDER_PREPARATION_STARTED,
@@ -91,7 +73,6 @@ enum class OrderStatus : Status {
  * Events that can occur in the pizza order workflow.
  */
 enum class OrderEvent : Event {
-    ACKNOWLEDGE_ERROR,
     PAYMENT_CONFIRMED,
     PAYMENT_COMPLETED,
     SWITCH_TO_CASH_PAYMENT,

@@ -3,13 +3,16 @@ package io.flowlite.test
 import io.flowlite.api.ActionWithStatus
 import io.flowlite.api.FlowBuilder
 import io.flowlite.api.FlowEngine
+import io.flowlite.api.ProcessInstance
+import io.flowlite.api.ProcessStorage
 import io.flowlite.api.RetryStrategy
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 
 /**
  * Test that demonstrates defining a pizza order workflow using the FlowLite API.
- * This test focuses on the process definition capabilities, not execution.
+ * This test focuses on the process definition capabilities, execution, and persistence.
  */
 class PizzaOrderFlowTest {
 
@@ -73,9 +76,52 @@ class PizzaOrderFlowTest {
         // Basic assertion to verify the flow was created
         assertNotNull(pizzaOrderFlow, "Pizza order flow should be created")
         
-        // Register flow with engine (this would be required for execution)
+        // Register flow with engine
         val flowEngine = FlowEngine<PizzaOrder>()
         flowEngine.registerFlow("pizza-order", pizzaOrderFlow)
+        
+        // Test starting a process with a custom ID
+        val customProcessId = "pizza-123456"
+        val pizzaOrder = PizzaOrder()
+        pizzaOrder.paymentMethod = PaymentMethod.ONLINE
+        
+        val processInstance = flowEngine.startProcess(
+            flowId = "pizza-order",
+            data = pizzaOrder,
+            processId = customProcessId
+        )
+        
+        // Verify the process was created correctly
+        assertEquals(customProcessId, processInstance.processId)
+        assertEquals(OrderStatus.CREATED, processInstance.currentStatus)
+        
+        // Test starting a process with auto-generated ID
+        val anotherPizzaOrder = PizzaOrder()
+        anotherPizzaOrder.paymentMethod = PaymentMethod.CASH
+        
+        val anotherProcess = flowEngine.startProcess(
+            flowId = "pizza-order",
+            data = anotherPizzaOrder
+        )
+        
+        // Verify auto-generated ID was assigned
+        assertNotNull(anotherProcess.processId)
+        
+        // Retrieve a process by ID
+        val retrievedProcess = flowEngine.getProcess(customProcessId)
+        assertNotNull(retrievedProcess)
+        
+        // Trigger an event
+        val updatedProcess = flowEngine.sendEvent(customProcessId, OrderEvent.PAYMENT_COMPLETED)
+        
+        // In a real implementation, this would change the status based on the flow definition
+        // For now, we use a manual update to simulate this
+        
+        // Simulate process status update (in real implementation, the engine would do this)
+        if (retrievedProcess != null) {
+            retrievedProcess.updateStatus(OrderStatus.ORDER_PREPARATION_STARTED)
+            assertEquals(OrderStatus.ORDER_PREPARATION_STARTED, retrievedProcess.currentStatus)
+        }
     }
     
     /**
@@ -141,5 +187,34 @@ class PizzaOrderFlowTest {
                 retryOn = setOf(PaymentGatewayException::class)
             )
         )
+    }
+    
+    /**
+     * Example of a custom process storage implementation that would persist data to a database.
+     * This is just a stub for demonstration purposes.
+     */
+    class DatabaseProcessStorage<T> : ProcessStorage<T> {
+        override fun saveProcess(process: ProcessInstance<T>) {
+            // In a real implementation, this would save to a database
+            println("Saving process ${process.processId} with status ${process.currentStatus}")
+        }
+        
+        override fun getProcess(processId: String): ProcessInstance<T>? {
+            // In a real implementation, this would retrieve from a database
+            println("Retrieving process $processId")
+            return null
+        }
+        
+        override fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>> {
+            // In a real implementation, this would query the database
+            println("Retrieving processes for flow $flowId")
+            return emptyList()
+        }
+        
+        override fun getProcessesByStatus(status: Status): List<ProcessInstance<T>> {
+            // In a real implementation, this would query the database
+            println("Retrieving processes with status $status")
+            return emptyList()
+        }
     }
 }

@@ -15,6 +15,39 @@ interface Status
 interface Event
 
 /**
+ * Represents a single instance of a process with its current state.
+ * Each process instance has a unique ID and a current status.
+ */
+class ProcessInstance<T>(
+    val processId: String,
+    val data: T,
+    var currentStatus: Status
+) {
+    /**
+     * Timestamp when the process was created.
+     */
+    val createdAt: Long = System.currentTimeMillis()
+    
+    /**
+     * Timestamp when the process was last updated.
+     */
+    var updatedAt: Long = createdAt
+    
+    /**
+     * Optional map for storing additional metadata about the process.
+     */
+    val metadata: MutableMap<String, Any> = mutableMapOf()
+    
+    /**
+     * Updates the current status of the process and the updated timestamp.
+     */
+    fun updateStatus(newStatus: Status) {
+        currentStatus = newStatus
+        updatedAt = System.currentTimeMillis()
+    }
+}
+
+/**
  * Action with status change. Combines a business action with a resulting status transition.
  * @param T the type of context object the action operates on
  */
@@ -35,6 +68,73 @@ class ActionWithStatus<T>(
         resultStatus = { resultStatus },
         retry = retry
     )
+}
+
+/**
+ * Interface for storing and retrieving process instances.
+ * Implementations will provide concrete storage mechanisms (database, in-memory, etc.).
+ */
+interface ProcessStorage<T> {
+    /**
+     * Saves a process instance.
+     */
+    fun saveProcess(process: ProcessInstance<T>)
+    
+    /**
+     * Retrieves a process instance by its ID.
+     */
+    fun getProcess(processId: String): ProcessInstance<T>?
+    
+    /**
+     * Retrieves all process instances of a specific flow type.
+     */
+    fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>>
+    
+    /**
+     * Retrieves all process instances with a specific status.
+     */
+    fun getProcessesByStatus(status: Status): List<ProcessInstance<T>>
+}
+
+/**
+ * Simple in-memory implementation of ProcessStorage.
+ * Useful for testing or simple applications.
+ */
+class InMemoryProcessStorage<T> : ProcessStorage<T> {
+    private val processes = mutableMapOf<String, ProcessInstance<T>>()
+    private val flowIdToProcessIds = mutableMapOf<String, MutableSet<String>>()
+    private val statusToProcessIds = mutableMapOf<Status, MutableSet<String>>()
+    
+    override fun saveProcess(process: ProcessInstance<T>) {
+        val oldProcess = processes[process.processId]
+        if (oldProcess != null) {
+            // If status changed, update the status index
+            if (oldProcess.currentStatus != process.currentStatus) {
+                statusToProcessIds[oldProcess.currentStatus]?.remove(process.processId)
+                statusToProcessIds.getOrPut(process.currentStatus) { mutableSetOf() }.add(process.processId)
+            }
+        }
+        processes[process.processId] = process
+    }
+    
+    override fun getProcess(processId: String): ProcessInstance<T>? {
+        return processes[processId]
+    }
+    
+    override fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>> {
+        return flowIdToProcessIds[flowId]?.mapNotNull { processes[it] } ?: emptyList()
+    }
+    
+    override fun getProcessesByStatus(status: Status): List<ProcessInstance<T>> {
+        return statusToProcessIds[status]?.mapNotNull { processes[it] } ?: emptyList()
+    }
+    
+    /**
+     * Associate a process with a flow ID.
+     */
+    fun associateProcessWithFlow(processId: String, flowId: String) {
+        flowIdToProcessIds.getOrPut(flowId) { mutableSetOf() }.add(processId)
+    }
 }
 
 /**
@@ -138,6 +238,11 @@ class FlowBuilder<T>(private val initialStatus: Status) {
      * Jump to another flow.
      */
     fun goTo(flow: FlowBuilder<T>): FlowBuilder<T> = this
+    
+    /**
+     * Get the initial status of this flow.
+     */
+    fun getInitialStatus(): Status = initialStatus
 }
 
 /**
@@ -169,11 +274,80 @@ class EventBuilder<T>(private val parent: FlowBuilder<T>) {
  * Engine for executing flows.
  * @param T the type of context object the flows operate on
  */
-class FlowEngine<T> {
+class FlowEngine<T>(private val processStorage: ProcessStorage<T> = InMemoryProcessStorage()) {
+    private val flows = mutableMapOf<String, FlowBuilder<T>>()
+    private val idGenerator = IdGenerator()
+    
     /**
      * Register a flow with the engine.
      */
     fun registerFlow(id: String, flow: FlowBuilder<T>) {
-        // Registration implementation
+        flows[id] = flow
+    }
+    
+    /**
+     * Start a new process instance with the specified flow.
+     * 
+     * @param flowId The ID of the flow to start
+     * @param data The data object for the process
+     * @param processId Optional custom process ID (if not provided, one will be generated)
+     * @return The created process instance
+     */
+    fun startProcess(flowId: String, data: T, processId: String? = null): ProcessInstance<T> {
+        val flow = flows[flowId] ?: throw IllegalArgumentException("No flow registered with ID: $flowId")
+        val actualProcessId = processId ?: idGenerator.nextId()
+        
+        val process = ProcessInstance(
+            processId = actualProcessId,
+            data = data,
+            currentStatus = flow.getInitialStatus()
+        )
+        
+        // Store the process
+        processStorage.saveProcess(process)
+        
+        // If using InMemoryProcessStorage, associate the process with the flow
+        if (processStorage is InMemoryProcessStorage) {
+            processStorage.associateProcessWithFlow(actualProcessId, flowId)
+        }
+        
+        return process
+    }
+    
+    /**
+     * Send an event to a specific process instance.
+     * 
+     * @param processId The ID of the process to send the event to
+     * @param event The event to send
+     * @return The updated process instance
+     */
+    fun sendEvent(processId: String, event: Event): ProcessInstance<T> {
+        val process = processStorage.getProcess(processId)
+            ?: throw IllegalArgumentException("No process found with ID: $processId")
+        
+        // In a real implementation, this would handle the event based on the flow definition
+        // For now, we just return the process
+        return process
+    }
+    
+    /**
+     * Get a process instance by its ID.
+     */
+    fun getProcess(processId: String): ProcessInstance<T>? {
+        return processStorage.getProcess(processId)
+    }
+}
+
+/**
+ * Simple ID generator for process instances.
+ */
+class IdGenerator {
+    private var counter = 0L
+    
+    /**
+     * Generate a new unique ID.
+     */
+    fun nextId(): String {
+        return "proc-${System.currentTimeMillis()}-${counter++}"
     }
 }

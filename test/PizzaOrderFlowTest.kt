@@ -204,17 +204,5 @@ class PizzaOrderFlowTest {
             println("Retrieving process $processId")
             return null
         }
-        
-        override fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>> {
-            // In a real implementation, this would query the database
-            println("Retrieving processes for flow $flowId")
-            return emptyList()
-        }
-        
-        override fun getProcessesByStatus(status: Status): List<ProcessInstance<T>> {
-            // In a real implementation, this would query the database
-            println("Retrieving processes with status $status")
-            return emptyList()
-        }
     }
 }

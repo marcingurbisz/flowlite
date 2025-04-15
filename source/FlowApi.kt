@@ -84,16 +84,7 @@ interface ProcessStorage<T> {
      * Retrieves a process instance by its ID.
      */
     fun getProcess(processId: String): ProcessInstance<T>?
-    
-    /**
-     * Retrieves all process instances of a specific flow type.
-     */
-    fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>>
-    
-    /**
-     * Retrieves all process instances with a specific status.
-     */
-    fun getProcessesByStatus(status: Status): List<ProcessInstance<T>>
+
 }
 
 /**
@@ -119,14 +110,6 @@ class InMemoryProcessStorage<T> : ProcessStorage<T> {
     
     override fun getProcess(processId: String): ProcessInstance<T>? {
         return processes[processId]
-    }
-    
-    override fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>> {
-        return flowIdToProcessIds[flowId]?.mapNotNull { processes[it] } ?: emptyList()
-    }
-    
-    override fun getProcessesByStatus(status: Status): List<ProcessInstance<T>> {
-        return statusToProcessIds[status]?.mapNotNull { processes[it] } ?: emptyList()
     }
     
     /**

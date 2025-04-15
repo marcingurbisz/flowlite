@@ -3,9 +3,11 @@ package io.flowlite.test
 import io.flowlite.api.ActionWithStatus
 import io.flowlite.api.FlowBuilder
 import io.flowlite.api.FlowEngine
+import io.flowlite.api.InMemoryProcessStorage
 import io.flowlite.api.ProcessInstance
 import io.flowlite.api.ProcessStorage
 import io.flowlite.api.RetryStrategy
+import io.flowlite.api.Status
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
@@ -73,17 +75,20 @@ class PizzaOrderFlowTest {
                 }
             )
         
-        // Basic assertion to verify the flow was created
-        assertNotNull(pizzaOrderFlow, "Pizza order flow should be created")
-        
-        // Register flow with engine
+        // Create engine and storage instances
         val flowEngine = FlowEngine<PizzaOrder>()
-        flowEngine.registerFlow("pizza-order", pizzaOrderFlow)
+        val pizzaOrderStorage = InMemoryProcessStorage<PizzaOrder>()
+        val deliveryStorage = DatabaseProcessStorage<PizzaOrder>() // Custom storage for delivery processes
+        
+        // Register flows with their specific storage implementations
+        flowEngine.registerFlow("pizza-order", pizzaOrderFlow, pizzaOrderStorage)
+        flowEngine.registerFlow("delivery", createDeliveryFlow(orderActions), deliveryStorage)
         
         // Test starting a process with a custom ID
         val customProcessId = "pizza-123456"
-        val pizzaOrder = PizzaOrder()
-        pizzaOrder.paymentMethod = PaymentMethod.ONLINE
+        val pizzaOrder = PizzaOrder(
+            paymentMethod = PaymentMethod.ONLINE
+        )
         
         val processInstance = flowEngine.startProcess(
             flowId = "pizza-order",
@@ -96,8 +101,9 @@ class PizzaOrderFlowTest {
         assertEquals(OrderStatus.CREATED, processInstance.currentStatus)
         
         // Test starting a process with auto-generated ID
-        val anotherPizzaOrder = PizzaOrder()
-        anotherPizzaOrder.paymentMethod = PaymentMethod.CASH
+        val anotherPizzaOrder = PizzaOrder(
+            paymentMethod = PaymentMethod.CASH
+        )
         
         val anotherProcess = flowEngine.startProcess(
             flowId = "pizza-order",
@@ -107,12 +113,19 @@ class PizzaOrderFlowTest {
         // Verify auto-generated ID was assigned
         assertNotNull(anotherProcess.processId)
         
+        // The ID should also be set in the data object
+        assertEquals(anotherProcess.processId, anotherProcess.data.processId)
+        
         // Retrieve a process by ID
-        val retrievedProcess = flowEngine.getProcess(customProcessId)
+        val retrievedProcess = flowEngine.getProcess("pizza-order", customProcessId)
         assertNotNull(retrievedProcess)
         
         // Trigger an event
-        val updatedProcess = flowEngine.sendEvent(customProcessId, OrderEvent.PAYMENT_COMPLETED)
+        val updatedProcess = flowEngine.sendEvent(
+            flowId = "pizza-order", 
+            processId = customProcessId, 
+            event = OrderEvent.PAYMENT_COMPLETED
+        )
         
         // In a real implementation, this would change the status based on the flow definition
         // For now, we use a manual update to simulate this
@@ -120,8 +133,17 @@ class PizzaOrderFlowTest {
         // Simulate process status update (in real implementation, the engine would do this)
         if (retrievedProcess != null) {
             retrievedProcess.updateStatus(OrderStatus.ORDER_PREPARATION_STARTED)
+            pizzaOrderStorage.saveProcess(retrievedProcess) // Explicitly save to storage
             assertEquals(OrderStatus.ORDER_PREPARATION_STARTED, retrievedProcess.currentStatus)
+            
+            // Update the data object's status field to match
+            retrievedProcess.data.status = retrievedProcess.currentStatus as OrderStatus
         }
+        
+        // Demonstrate fetching processes by status
+        val processesByStatus = flowEngine.getProcessesByStatus("pizza-order", OrderStatus.CREATED)
+        // This would contain anotherProcess but not retrievedProcess (which we updated)
+        assertEquals(1, processesByStatus.size)
     }
     
     /**
@@ -194,15 +216,30 @@ class PizzaOrderFlowTest {
      * This is just a stub for demonstration purposes.
      */
     class DatabaseProcessStorage<T> : ProcessStorage<T> {
+        private val processes = mutableMapOf<String, ProcessInstance<T>>()
+        
         override fun saveProcess(process: ProcessInstance<T>) {
             // In a real implementation, this would save to a database
             println("Saving process ${process.processId} with status ${process.currentStatus}")
+            processes[process.processId] = process
         }
         
         override fun getProcess(processId: String): ProcessInstance<T>? {
             // In a real implementation, this would retrieve from a database
             println("Retrieving process $processId")
-            return null
+            return processes[processId]
+        }
+        
+        override fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>> {
+            // In a real implementation, this would query the database
+            println("Retrieving processes for flow $flowId")
+            return processes.values.toList()
+        }
+        
+        override fun getProcessesByStatus(status: Status): List<ProcessInstance<T>> {
+            // In a real implementation, this would query the database
+            println("Retrieving processes with status $status")
+            return processes.values.filter { it.currentStatus == status }
         }
     }
 }

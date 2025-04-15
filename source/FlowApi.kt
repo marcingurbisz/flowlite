@@ -84,7 +84,16 @@ interface ProcessStorage<T> {
      * Retrieves a process instance by its ID.
      */
     fun getProcess(processId: String): ProcessInstance<T>?
-
+    
+    /**
+     * Retrieves all process instances of a specific flow type.
+     */
+    fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>>
+    
+    /**
+     * Retrieves all process instances with a specific status.
+     */
+    fun getProcessesByStatus(status: Status): List<ProcessInstance<T>>
 }
 
 /**
@@ -110,6 +119,14 @@ class InMemoryProcessStorage<T> : ProcessStorage<T> {
     
     override fun getProcess(processId: String): ProcessInstance<T>? {
         return processes[processId]
+    }
+    
+    override fun getProcessesByFlowId(flowId: String): List<ProcessInstance<T>> {
+        return flowIdToProcessIds[flowId]?.mapNotNull { processes[it] } ?: emptyList()
+    }
+    
+    override fun getProcessesByStatus(status: Status): List<ProcessInstance<T>> {
+        return statusToProcessIds[status]?.mapNotNull { processes[it] } ?: emptyList()
     }
     
     /**
@@ -254,18 +271,31 @@ class EventBuilder<T>(private val parent: FlowBuilder<T>) {
 }
 
 /**
+ * Information about a registered flow
+ * @param T the type of context object the flow operates on
+ */
+data class RegisteredFlow<T>(
+    val flow: FlowBuilder<T>,
+    val storage: ProcessStorage<T>
+)
+
+/**
  * Engine for executing flows.
  * @param T the type of context object the flows operate on
  */
-class FlowEngine<T>(private val processStorage: ProcessStorage<T> = InMemoryProcessStorage()) {
-    private val flows = mutableMapOf<String, FlowBuilder<T>>()
+class FlowEngine<T> {
+    private val flows = mutableMapOf<String, RegisteredFlow<T>>()
     private val idGenerator = IdGenerator()
     
     /**
      * Register a flow with the engine.
+     * 
+     * @param id The unique identifier for this flow
+     * @param flow The flow definition
+     * @param storage The storage implementation for persisting processes of this flow
      */
-    fun registerFlow(id: String, flow: FlowBuilder<T>) {
-        flows[id] = flow
+    fun registerFlow(id: String, flow: FlowBuilder<T>, storage: ProcessStorage<T>) {
+        flows[id] = RegisteredFlow(flow, storage)
     }
     
     /**
@@ -277,21 +307,21 @@ class FlowEngine<T>(private val processStorage: ProcessStorage<T> = InMemoryProc
      * @return The created process instance
      */
     fun startProcess(flowId: String, data: T, processId: String? = null): ProcessInstance<T> {
-        val flow = flows[flowId] ?: throw IllegalArgumentException("No flow registered with ID: $flowId")
+        val registeredFlow = flows[flowId] ?: throw IllegalArgumentException("No flow registered with ID: $flowId")
         val actualProcessId = processId ?: idGenerator.nextId()
         
         val process = ProcessInstance(
             processId = actualProcessId,
             data = data,
-            currentStatus = flow.getInitialStatus()
+            currentStatus = registeredFlow.flow.getInitialStatus()
         )
         
         // Store the process
-        processStorage.saveProcess(process)
+        registeredFlow.storage.saveProcess(process)
         
         // If using InMemoryProcessStorage, associate the process with the flow
-        if (processStorage is InMemoryProcessStorage) {
-            processStorage.associateProcessWithFlow(actualProcessId, flowId)
+        if (registeredFlow.storage is InMemoryProcessStorage) {
+            registeredFlow.storage.associateProcessWithFlow(actualProcessId, flowId)
         }
         
         return process
@@ -300,12 +330,14 @@ class FlowEngine<T>(private val processStorage: ProcessStorage<T> = InMemoryProc
     /**
      * Send an event to a specific process instance.
      * 
+     * @param flowId The ID of the flow this process belongs to
      * @param processId The ID of the process to send the event to
      * @param event The event to send
      * @return The updated process instance
      */
-    fun sendEvent(processId: String, event: Event): ProcessInstance<T> {
-        val process = processStorage.getProcess(processId)
+    fun sendEvent(flowId: String, processId: String, event: Event): ProcessInstance<T> {
+        val registeredFlow = flows[flowId] ?: throw IllegalArgumentException("No flow registered with ID: $flowId")
+        val process = registeredFlow.storage.getProcess(processId)
             ?: throw IllegalArgumentException("No process found with ID: $processId")
         
         // In a real implementation, this would handle the event based on the flow definition
@@ -315,9 +347,24 @@ class FlowEngine<T>(private val processStorage: ProcessStorage<T> = InMemoryProc
     
     /**
      * Get a process instance by its ID.
+     * 
+     * @param flowId The ID of the flow this process belongs to
+     * @param processId The ID of the process to retrieve
      */
-    fun getProcess(processId: String): ProcessInstance<T>? {
-        return processStorage.getProcess(processId)
+    fun getProcess(flowId: String, processId: String): ProcessInstance<T>? {
+        val registeredFlow = flows[flowId] ?: throw IllegalArgumentException("No flow registered with ID: $flowId")
+        return registeredFlow.storage.getProcess(processId)
+    }
+    
+    /**
+     * Get all processes with a specific status for a flow.
+     * 
+     * @param flowId The ID of the flow to query processes for
+     * @param status The status to filter by
+     */
+    fun getProcessesByStatus(flowId: String, status: Status): List<ProcessInstance<T>> {
+        val registeredFlow = flows[flowId] ?: throw IllegalArgumentException("No flow registered with ID: $flowId")
+        return registeredFlow.storage.getProcessesByStatus(status)
     }
 }
 

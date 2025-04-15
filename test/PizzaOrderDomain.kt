@@ -6,23 +6,23 @@ import io.flowlite.api.Status
 /**
  * Pizza order domain class representing a pizza order in our sample workflow.
  */
-class PizzaOrder(
+data class PizzaOrder(
     /**
      * The process ID assigned by the workflow engine or provided by client code.
      * This field will be populated by the engine when the process starts unless
      * a custom ID is provided.
      */
-    var processId: String? = null
-) {
+    var processId: String? = null,
+    
     /**
      * Current status of the pizza order process.
      * This will be managed by the workflow engine and updated as the process progresses.
      */
-    var status: OrderStatus = OrderStatus.CREATED
+    var status: OrderStatus = OrderStatus.CREATED,
     
-    var eligibility: Eligibility = Eligibility.UNKNOWN
+    var eligibility: Eligibility = Eligibility.UNKNOWN,
     var paymentMethod: PaymentMethod = PaymentMethod.ONLINE
-    
+) {
     // Mock methods that would perform actual business logic in a real application
     fun createPizzaOrder() {
         // Logic to create an order

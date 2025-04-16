@@ -20,6 +20,8 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * ✅ Prepare rules files for copilot
 * ✅ Come up with Kotlin API (I can use it as a client)
 * ✅ Put source code into github
+* Review diff with experimental branches
+* onEvent should have action, status or subflow as parameter
 * Data including (process id and status) handling
 * How to do stuff in parallel
 * Implement API to the point that next step is possible 

@@ -7,13 +7,10 @@ import io.flowlite.api.Status
 enum class OrderStatus : Status {
     CREATED,                // Initial state before any processing
     ORDER_CREATED,          // Order details recorded
-    PAYMENT_WAITING,        // Waiting for cash payment confirmation
     CASH_PAYMENT_INITIALIZED, // Intermediate state for cash
     ONLINE_PAYMENT_INITIALIZED, // Intermediate state for online
-    ONLINE_PAYMENT_WAITING, // Waiting for online payment completion
     ONLINE_PAYMENT_EXPIRED, // Online payment session timed out
     ORDER_PREPARATION_STARTED, // Kitchen starts making the pizza
-    ORDER_READY_FOR_DELIVERY, // Pizza is ready to be picked up
     DELIVERY_INITIALIZED,   // Delivery process started
     DELIVERY_IN_PROGRESS,   // Pizza is out for delivery
     ORDER_COMPLETED,        // Pizza delivered successfully
@@ -29,6 +26,7 @@ enum class OrderEvent : Event {
     SWITCH_TO_CASH_PAYMENT, // Customer decided to pay cash instead of online
     PAYMENT_SESSION_EXPIRED,// Online payment link/session expired
     RETRY_PAYMENT,          // Customer wants to try online payment again
+    READY_FOR_DELIVERY,     // Pizza is ready for delivery pickup/dispatch
     DELIVERY_COMPLETED,     // Delivery confirmed
     DELIVERY_FAILED,        // Delivery could not be completed
     CANCEL                  // Customer or system cancels the order
@@ -79,9 +77,6 @@ fun initializeOnlinePayment(order: PizzaOrder): PizzaOrder {
 
 fun startOrderPreparation(order: PizzaOrder): PizzaOrder = 
     order.copy(status = OrderStatus.ORDER_PREPARATION_STARTED)
-
-fun markOrderReadyForDelivery(order: PizzaOrder): PizzaOrder = 
-    order.copy(status = OrderStatus.ORDER_READY_FOR_DELIVERY)
 
 fun initializeDelivery(order: PizzaOrder): PizzaOrder = 
     order.copy(status = OrderStatus.DELIVERY_INITIALIZED)

@@ -123,11 +123,28 @@ class FlowBuilder<T : Any>(
      * Transition to a specific status without performing any action.
      */
     fun transitionTo(status: Status): FlowBuilder<T> = this
+
+    /**
+     * Conditional branching based on the state of the process.
+     * @param predicate Function that evaluates the condition based on the process state
+     * @param onTrue Builder function to define the flow when the condition is true
+     * @param onFalse Optional builder function to define the flow when the condition is false
+     * @return This FlowBuilder instance for method chaining
+     */
+    fun condition(
+        predicate: (item: T) -> Boolean,
+        onTrue: (FlowBuilder<T>) -> FlowBuilder<T>,
+        onFalse: ((FlowBuilder<T>) -> FlowBuilder<T>)? = null
+    ): FlowBuilder<T> {
+        // Implementation: in a real implementation, this would store both branches
+        // For this API definition, we just return this
+        return this
+    }
     
     /**
      * Use another flow as a subflow within this flow.
      */
-    fun subFlow(flow: FlowBuilder<T>): FlowBuilder<T> = this
+    fun subFlow(flow: ProcessDefinition<T>): FlowBuilder<T> = this
     
     /**
      * End the flow.
@@ -137,18 +154,18 @@ class FlowBuilder<T : Any>(
     /**
      * Jump to another flow.
      */
-    fun goTo(flow: FlowBuilder<T>): FlowBuilder<T> = this
+    fun goTo(flow: ProcessDefinition<T>): FlowBuilder<T> = this
     
     /**
      * Builds the final process definition.
      */
     fun build(): ProcessDefinition<T> {
-        // Basic implementation - needs proper handling of transitions map
+        // In a real implementation, this would validate the flow and create a ProcessDefinition
         return ProcessDefinition(
             id = flowId,
             initialStatus = initialStatus,
             stateClass = stateClass,
-            transitions = transitions // This needs to be properly populated by builder methods
+            transitions = transitions
         )
     }
 }

@@ -7,6 +7,7 @@ import PaymentMethod
 import PizzaOrder
 import completeOrder
 import createPizzaOrder
+import initializeCashPayment
 import initializeDelivery
 import initializeOnlinePayment
 import io.flowlite.api.*
@@ -30,11 +31,11 @@ class PizzaOrderFlowTest {
         val flowEngine = FlowEngine(statePersister = persister) // Use named argument
 
         // Define the full pizza order flow using the corrected builder pattern
-        val pizzaOrderDefinition = createPizzaOrderFlow(orderActions)
+        val pizzaOrderDefinition = createPizzaOrderFlow(orderActions, createDeliveryFlow(orderActions))
         flowEngine.registerFlow(pizzaOrderDefinition)
 
         val initialOrder = PizzaOrder(
-            status = OrderStatus.CREATED,
+            status = OrderStatus.NEW,
             customerName = "Test Customer",
             paymentMethod = PaymentMethod.CASH // Start with CASH for simpler event trigger
         )
@@ -65,25 +66,29 @@ class PizzaOrderFlowTest {
     /**
      * Creates the delivery flow which handles delivery initialization, completion, and failures.
      */
-    private fun createDeliveryFlow(orderActions: OrderActions): FlowBuilder<PizzaOrder> {
-        return FlowBuilder<PizzaOrder>(
+    private fun createDeliveryFlow(orderActions: OrderActions): ProcessDefinition<PizzaOrder> {
+        val builder = FlowBuilder<PizzaOrder>(
             flowId = "delivery-subflow",
             stateClass = PizzaOrder::class,
             initialStatus = OrderStatus.DELIVERY_INITIALIZED
         )
+        
+        builder
             .doAction(
-                action = { order: PizzaOrder -> initializeDelivery(order) }, // Call top-level function
+                action = { order: PizzaOrder -> initializeDelivery(order) },
                 resultStatus = OrderStatus.DELIVERY_IN_PROGRESS
             )
             .onEvent(OrderEvent.DELIVERY_COMPLETED)
                 .doAction(
-                    action = { order: PizzaOrder -> completeOrder(order) }, // Call top-level function
+                    action = { order: PizzaOrder -> completeOrder(order) },
                     resultStatus = OrderStatus.ORDER_COMPLETED
                 )
                 .end()
             .onEvent(OrderEvent.DELIVERY_FAILED)
                 .doAction(orderActions.cancelOrder)
                 .end()
+                
+        return builder.build()
     }
 
     /**
@@ -92,18 +97,18 @@ class PizzaOrderFlowTest {
     class OrderActions {
         // Define ALL actions needed by createPizzaOrderFlow and createDeliveryFlow
         val cancelOrder = ActionWithStatus(
-            action = { order: PizzaOrder -> sendOrderCancellation(order) }, // Call top-level function
+            action = { order: PizzaOrder -> sendOrderCancellation(order) },
             resultStatus = OrderStatus.ORDER_CANCELLATION_SENT
         )
 
         // Action for initializing online payment, including retry logic
         val initializeOnlinePaymentWithRetry = ActionWithStatus(
-            action = { order: PizzaOrder -> initializeOnlinePayment(order) }, // Call top-level function
-            resultStatus = OrderStatus.ONLINE_PAYMENT_INITIALIZED, // Status after successful init
+            action = { order: PizzaOrder -> initializeOnlinePayment(order) },
+            resultStatus = OrderStatus.ONLINE_PAYMENT_INITIALIZED,
             retry = RetryStrategy(
                 maxAttempts = 3,
                 exponentialBackoff = true,
-                retryOn = setOf(PaymentGatewayException::class) // Ensure PaymentGatewayException is imported/defined
+                retryOn = setOf(PaymentGatewayException::class)
             )
         )
 
@@ -112,76 +117,80 @@ class PizzaOrderFlowTest {
             action = { order: PizzaOrder -> completeOrder(order) },
             resultStatus = OrderStatus.ORDER_COMPLETED
         )
+        
+        // Action for starting order preparation
+        val startPreparation = ActionWithStatus(
+            action = { order: PizzaOrder -> startOrderPreparation(order) },
+            resultStatus = OrderStatus.ORDER_PREPARATION_STARTED
+        )
+        
+        // Action for initializing cash payment
+        val initializeCash = ActionWithStatus(
+            action = { order: PizzaOrder -> initializeCashPayment(order) },
+            resultStatus = OrderStatus.CASH_PAYMENT_INITIALIZED
+        )
     }
 
-    private fun createPizzaOrderFlow(orderActions: OrderActions): ProcessDefinition<PizzaOrder> {
-        // Correctly use the FlowBuilder constructor and chain methods
+    private fun createPizzaOrderFlow(orderActions: OrderActions, deliveryFlow: ProcessDefinition<PizzaOrder>): ProcessDefinition<PizzaOrder> {
         val builder = FlowBuilder<PizzaOrder>(
             flowId = "pizza-order-flow",
             stateClass = PizzaOrder::class,
-            initialStatus = OrderStatus.CREATED
+            initialStatus = OrderStatus.NEW
         )
-
+        
         builder
+            // Initial action when process starts
             .doAction(
                 action = { order: PizzaOrder -> createPizzaOrder(order) },
                 resultStatus = OrderStatus.ORDER_CREATED
             )
-            .whenStateIs(OrderStatus.ORDER_CREATED).and { it.paymentMethod == PaymentMethod.CASH }
-                .goTo(OrderStatus.CASH_PAYMENT_INITIALIZED)
-
-            // Events from CASH_PAYMENT_INITIALIZED
-            .whenStateIs(OrderStatus.CASH_PAYMENT_INITIALIZED)
-                .onEvent(OrderEvent.PAYMENT_CONFIRMED)
-                    .doAction(
-                        action = { order: PizzaOrder -> startOrderPreparation(order) },
-                        resultStatus = OrderStatus.ORDER_PREPARATION_STARTED
-                    )
-                    .end()
-
-            // --- ONLINE Payment Path ---
-            .whenStateIs(OrderStatus.ORDER_CREATED).and { it.paymentMethod == PaymentMethod.ONLINE }
-                .goTo(OrderStatus.ONLINE_PAYMENT_INITIALIZED)
-
-            // Action in ONLINE_PAYMENT_INITIALIZED
-            .whenStateIs(OrderStatus.ONLINE_PAYMENT_INITIALIZED)
-                .doAction(orderActions.initializeOnlinePaymentWithRetry) // Uses action with retry
-                // Status change to ONLINE_PAYMENT_INITIALIZED happens via action's resultStatus
-
-            // Events from ONLINE_PAYMENT_INITIALIZED
-            .whenStateIs(OrderStatus.ONLINE_PAYMENT_INITIALIZED)
-                .onEvent(OrderEvent.PAYMENT_COMPLETED)
-                    .doAction(
-                        action = { order: PizzaOrder -> startOrderPreparation(order) },
-                        resultStatus = OrderStatus.ORDER_PREPARATION_STARTED
-                    )
-                    .end()
-                .onEvent(OrderEvent.SWITCH_TO_CASH_PAYMENT)
-                    .goTo(OrderStatus.CASH_PAYMENT_INITIALIZED) // Transition to cash path
-                .onEvent(OrderEvent.PAYMENT_SESSION_EXPIRED)
-                    .goTo(OrderStatus.ONLINE_PAYMENT_EXPIRED)
+            
+            // From ORDER_CREATED, branch based on payment method using the new condition method
+            .condition(
+                predicate = { order -> order.paymentMethod == PaymentMethod.CASH },
+                onTrue = { flow -> 
+                    flow.doAction(orderActions.initializeCash)
+                },
+                onFalse = { flow ->
+                    flow.doAction(orderActions.initializeOnlinePaymentWithRetry)
+                }
+            )
+            
+            // CASH_PAYMENT_INITIALIZED state and its transitions
+            .onEvent(OrderEvent.PAYMENT_CONFIRMED)
+                .doAction(orderActions.startPreparation)
+            
+            .onEvent(OrderEvent.CANCEL)
+                .doAction(orderActions.cancelOrder)
+                .end()
+                
+            // ONLINE_PAYMENT_INITIALIZED state and its transitions
+            .onEvent(OrderEvent.PAYMENT_COMPLETED)
+                .doAction(orderActions.startPreparation)
+            .onEvent(OrderEvent.SWITCH_TO_CASH_PAYMENT)
+                .doAction(orderActions.initializeCash)
+            .onEvent(OrderEvent.PAYMENT_SESSION_EXPIRED)
+                .transitionTo(OrderStatus.ONLINE_PAYMENT_EXPIRED)
                 .onEvent(OrderEvent.CANCEL)
-                    .doAction(orderActions.cancelOrder) // Use shared cancel action
-                    .end()
-
-            // --- Order Preparation and Delivery Subflow ---
-            .whenStateIs(OrderStatus.ORDER_PREPARATION_STARTED)
-                // Action is implicitly defined by transitions from payment states
-                .onEvent(OrderEvent.READY_FOR_DELIVERY)
-                    .goTo(OrderStatus.DELIVERY_INITIALIZED) // Trigger delivery subflow
-
-            // --- Delivery Subflow Trigger --- // Implicitly handled by goTo(DELIVERY_INITIALIZED)
-            .whenStateIs(OrderStatus.DELIVERY_INITIALIZED) // Entry point for the subflow
-                .subFlow(createDeliveryFlow(orderActions))
-
-        return builder.build() // Call build() at the end
+                .doAction(orderActions.cancelOrder)
+                .end()
+            .onEvent(OrderEvent.RETRY_PAYMENT)
+                .doAction(orderActions.initializeOnlinePaymentWithRetry)
+            .onEvent(OrderEvent.CANCEL)
+                .doAction(orderActions.cancelOrder)
+                .end()
+            .onEvent(OrderEvent.READY_FOR_DELIVERY)
+                .transitionTo(OrderStatus.DELIVERY_INITIALIZED)
+                .subFlow(deliveryFlow)
+            
+        return builder.build()
     }
 }
 
 /**
  * Simple in-memory state persister for testing.
  */
-class InMemoryStatePersister<T : Any> : StatePersister<T> { // Add T: Any constraint
+class InMemoryStatePersister<T : Any> : StatePersister<T> {
     private val storage = ConcurrentHashMap<String, T>()
 
     override fun save(processId: String, state: T) {

@@ -5,7 +5,7 @@ import io.flowlite.api.Status
  * Represents the status of a pizza order.
  */
 enum class OrderStatus : Status {
-    CREATED,                // Initial state before any processing
+    NEW,                // Initial state before any processing
     ORDER_CREATED,          // Order details recorded
     CASH_PAYMENT_INITIALIZED, // Intermediate state for cash
     ONLINE_PAYMENT_INITIALIZED, // Intermediate state for online

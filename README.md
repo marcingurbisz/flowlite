@@ -20,8 +20,10 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * ✅ Prepare rules files for copilot
 * ✅ Come up with Kotlin API (I can use it as a client)
 * ✅ Put source code into github
-* Review diff with experimental branches
-* onEvent should have action, status or subflow as parameter
+* Consider persistance aspects
+  * FlowEngine should not be PizzaOrder specific  
+  * statePersister should be per flow
+* onEvent should have action, status or subflow as parameter?
 * Data including (process id and status) handling
 * How to do stuff in parallel
 * Implement API to the point that next step is possible 
@@ -57,22 +59,18 @@ stateDiagram-v2
     if_payment_method --> CASH_PAYMENT_INITIALIZED: paymentMethod = CASH
     if_payment_method --> ONLINE_PAYMENT_INITIALIZED: paymentMethod = ONLINE
     CASH_PAYMENT_INITIALIZED: initializeCashPayment() CASH_PAYMENT_INITIALIZED
-    CASH_PAYMENT_INITIALIZED --> PAYMENT_WAITING
-    PAYMENT_WAITING --> ORDER_PREPARATION_STARTED: onEvent#58; PaymentConfirmed
-    PAYMENT_WAITING --> ORDER_CANCELLATION_SENT: onEvent#58; Cancel
+    CASH_PAYMENT_INITIALIZED --> ORDER_PREPARATION_STARTED: onEvent#58; PaymentConfirmed
+    CASH_PAYMENT_INITIALIZED --> ORDER_CANCELLATION_SENT: onEvent#58; Cancel
     ONLINE_PAYMENT_INITIALIZED: initializeOnlinePayment() ONLINE_PAYMENT_INITIALIZED
-    ONLINE_PAYMENT_INITIALIZED --> ONLINE_PAYMENT_WAITING
-    ONLINE_PAYMENT_WAITING --> CASH_PAYMENT_INITIALIZED: onEvent#58; SwitchToCashPayment
-    ONLINE_PAYMENT_WAITING --> ORDER_PREPARATION_STARTED: onEvent#58; PaymentCompleted
-    ONLINE_PAYMENT_WAITING --> ORDER_CANCELLATION_SENT: onEvent#58; Cancel 
-    ONLINE_PAYMENT_WAITING --> ONLINE_PAYMENT_EXPIRED: onEvent#58; PaymentSessionExpired
+    ONLINE_PAYMENT_INITIALIZED --> CASH_PAYMENT_INITIALIZED: onEvent#58; SwitchToCashPayment
+    ONLINE_PAYMENT_INITIALIZED --> ORDER_PREPARATION_STARTED: onEvent#58; PaymentCompleted
+    ONLINE_PAYMENT_INITIALIZED --> ORDER_CANCELLATION_SENT: onEvent#58; Cancel 
+    ONLINE_PAYMENT_INITIALIZED --> ONLINE_PAYMENT_EXPIRED: onEvent#58; PaymentSessionExpired
     ONLINE_PAYMENT_EXPIRED --> ONLINE_PAYMENT_INITIALIZED: onEvent#58; RetryPayment
     ONLINE_PAYMENT_EXPIRED --> ORDER_CANCELLATION_SENT: onEvent#58; Cancel
     ORDER_PREPARATION_STARTED: startOrderPreparation() ORDER_PREPARATION_STARTED
-    ORDER_PREPARATION_STARTED --> ORDER_READY_FOR_DELIVERY
-    ORDER_READY_FOR_DELIVERY: markOrderReadyForDelivery() ORDER_READY_FOR_DELIVERY
-    ORDER_READY_FOR_DELIVERY --> DELIVERY_INITIALIZED
-    
+    ORDER_PREPARATION_STARTED --> DELIVERY_INITIALIZED: onEvent#58; ReadyForDelivery
+     
     DELIVERY_INITIALIZED: initializeDelivery() DELIVERY_INITIALIZED
     DELIVERY_INITIALIZED --> DELIVERY_IN_PROGRESS
     DELIVERY_IN_PROGRESS --> ORDER_COMPLETED: onEvent#58; DeliveryCompleted

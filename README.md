@@ -20,9 +20,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * ✅ Prepare rules files for copilot
 * ✅ Come up with Kotlin API (I can use it as a client)
 * ✅ Put source code into github
-* Consider persistance aspects
-  * FlowEngine should not be PizzaOrder specific  
-  * statePersister should be per flow
+* ✅ FlowEngine should not be PizzaOrder specific
 * onEvent should have action, status or subflow as parameter?
 * Data including (process id and status) handling
 * How to do stuff in parallel

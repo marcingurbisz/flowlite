@@ -67,25 +67,27 @@ class PizzaOrderFlowTest {
         
         // Basic assertion to verify the flow was created
         assertNotNull(pizzaOrderFlow, "Pizza order flow should be created")
-        
+
         // Register flow with engine (this would be required for execution)
-        val flowEngine = FlowEngine<PizzaOrder>(
-            processDefinitions = mutableMapOf(),
-            statePersister = InMemoryStatePersister()
-        )
+        val flowEngine = FlowEngine()
         
         // Register the flow with the engine using the new API
         flowEngine.registerFlow(
             flowId = "pizza-order",
             stateClass = PizzaOrder::class,
-            flowBuilder = pizzaOrderFlow
+            flowBuilder = pizzaOrderFlow,
+            statePersister = InMemoryStatePersister()
         )
 
-        flowEngine.startProcess("pizza-order", PizzaOrder(
+        // Start a process instance
+        val processId = flowEngine.startProcess("pizza-order", PizzaOrder(
             customerName = "customer-name",
             status = OrderStatus.NEW,
             paymentMethod = PaymentMethod.CASH,
         ))
+        
+        // Example of how to trigger an event for this process
+        // flowEngine.triggerEvent<PizzaOrder>(processId, "pizza-order", OrderEvent.PAYMENT_CONFIRMED)
     }
     
     /**
@@ -158,14 +160,14 @@ class PizzaOrderFlowTest {
     /**
      * Simple in-memory state persister for testing purposes
      */
-    class InMemoryStatePersister : StatePersister<PizzaOrder> {
-        private val states = mutableMapOf<String, PizzaOrder>()
+    class InMemoryStatePersister<T : Any> : StatePersister<T> {
+        private val states = mutableMapOf<String, T>()
         
-        override fun save(processId: String, state: PizzaOrder) {
+        override fun save(processId: String, state: T) {
             states[processId] = state
         }
         
-        override fun load(processId: String): PizzaOrder? {
+        override fun load(processId: String): T? {
             return states[processId]
         }
     }

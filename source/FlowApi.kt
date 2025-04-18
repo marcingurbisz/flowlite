@@ -22,7 +22,6 @@ interface Event
 interface StatePersister<T : Any> {
     fun save(processId: String, state: T)
     fun load(processId: String): T?
-    // Optional: fun delete(processId: String)
 }
 
 /**
@@ -147,11 +146,6 @@ class FlowBuilder<T : Any> {
     fun end(): FlowBuilder<T> = this
 
     /**
-     * Jump to another flow.
-     */
-    fun goTo(flow: ProcessDefinition<T>): FlowBuilder<T> = this
-
-    /**
      * Builds the transitions for the process definition.
      * This is intended to be used internally by the FlowEngine.
      */
@@ -183,16 +177,31 @@ class EventBuilder<T : Any>(private val parent: FlowBuilder<T>) {
      * Use another flow as a subflow when the event occurs.
      */
     fun subFlow(flow: FlowBuilder<T>): FlowBuilder<T> = parent
+
     fun transitionTo(status: Status): FlowBuilder<T> = parent
 }
 
 /**
- * Engine for executing flows.
- * @param T the type of context object the flows operate on
+ * Type-erased process definition wrapper to allow storing different process types
+ * in the same engine.
  */
-class FlowEngine<T : Any>(
-    private val processDefinitions: MutableMap<String, ProcessDefinition<T>> = mutableMapOf(),
-    private val statePersister: StatePersister<T> // Engine needs a persister
+class ProcessDefinitionWrapper(
+    val id: String,
+    val stateClass: KClass<*>,
+    val statePersister: StatePersister<*>,
+    private val processDefinition: Any // The actual ProcessDefinition<T>
+) {
+    @Suppress("UNCHECKED_CAST")
+    fun <T : Any> getTypedDefinition(): ProcessDefinition<T> = 
+        processDefinition as ProcessDefinition<T>
+}
+
+/**
+ * Engine for executing flows.
+ * This engine can manage processes of different types.
+ */
+class FlowEngine(
+    private val processDefinitions: MutableMap<String, ProcessDefinitionWrapper> = mutableMapOf()
 ) {
     /**
      * Register a flow with the engine.
@@ -200,11 +209,13 @@ class FlowEngine<T : Any>(
      * @param flowId The unique identifier for this flow
      * @param stateClass The class of the state object
      * @param flowBuilder The flow builder containing the flow definition
+     * @param statePersister The persister for this specific flow type
      */
-    fun registerFlow(
+    fun <T : Any> registerFlow(
         flowId: String,
         stateClass: KClass<T>,
-        flowBuilder: FlowBuilder<T>
+        flowBuilder: FlowBuilder<T>,
+        statePersister: StatePersister<T>
     ) {
         val processDefinition = ProcessDefinition(
             id = flowId,
@@ -212,22 +223,27 @@ class FlowEngine<T : Any>(
             transitions = flowBuilder.buildTransitions()
         )
         
-        if (processDefinitions.containsKey(processDefinition.id)) {
-            throw IllegalArgumentException("Process definition with ID '${processDefinition.id}' already registered.")
-        }
-        // TODO: Validate that the state type T matches the persister's T if possible?
-        processDefinitions[processDefinition.id] = processDefinition
+        registerProcessDefinition(flowId, stateClass, processDefinition, statePersister)
     }
 
-    /**
-     * Register a pre-built process definition with the engine.
-     */
-    fun registerFlow(processDefinition: ProcessDefinition<T>) {
-        if (processDefinitions.containsKey(processDefinition.id)) {
-            throw IllegalArgumentException("Process definition with ID '${processDefinition.id}' already registered.")
+    private fun <T : Any> registerProcessDefinition(
+        flowId: String,
+        stateClass: KClass<T>,
+        processDefinition: ProcessDefinition<T>,
+        statePersister: StatePersister<T>
+    ) {
+        if (processDefinitions.containsKey(flowId)) {
+            throw IllegalArgumentException("Process definition with ID '$flowId' already registered.")
         }
-        // TODO: Validate that the state type T matches the persister's T if possible?
-        processDefinitions[processDefinition.id] = processDefinition
+        
+        val wrapper = ProcessDefinitionWrapper(
+            id = flowId,
+            stateClass = stateClass,
+            statePersister = statePersister,
+            processDefinition = processDefinition
+        )
+        
+        processDefinitions[flowId] = wrapper
     }
 
     /**
@@ -236,13 +252,20 @@ class FlowEngine<T : Any>(
      * @param initialState The initial state object (must include initial status).
      * @return The generated unique process instance ID.
      */
-    fun startProcess(flowId: String, initialState: T): String {
-        val definition = processDefinitions[flowId]
+    @Suppress("UNCHECKED_CAST")
+    fun <T : Any> startProcess(flowId: String, initialState: T): String {
+        val wrapper = processDefinitions[flowId]
             ?: throw IllegalArgumentException("No process definition found for ID '$flowId'")
-
-        // TODO: Validate initialState type against definition.stateClass?
-        // TODO: Validate initialState's status matches definition.initialStatus?
-
+        
+        // Validate that the initialState is of the correct type
+        if (initialState::class != wrapper.stateClass) {
+            throw IllegalArgumentException(
+                "Initial state type ${initialState::class} does not match the expected type ${wrapper.stateClass}"
+            )
+        }
+        
+        val statePersister = wrapper.statePersister as StatePersister<T>
+        
         val processId = UUID.randomUUID().toString()
         statePersister.save(processId, initialState) // Persist initial state
         println("Started process '$processId' for flow '$flowId' with initial state: $initialState") // Add logging
@@ -252,22 +275,27 @@ class FlowEngine<T : Any>(
     /**
      * Triggers an event for a specific process instance.
      * @param processId The ID of the process instance.
+     * @param flowId The ID of the flow this process belongs to.
      * @param event The event to trigger.
      */
-    fun triggerEvent(processId: String, event: Event) {
+    @Suppress("UNCHECKED_CAST")
+    fun <T : Any> triggerEvent(processId: String, flowId: String, event: Event) {
+        val wrapper = processDefinitions[flowId]
+            ?: throw IllegalArgumentException("No process definition found for ID '$flowId'")
+        
+        val statePersister = wrapper.statePersister as StatePersister<T>
+        val definition = wrapper.getTypedDefinition<T>()
+        
         val currentState = statePersister.load(processId)
             ?: throw IllegalArgumentException("No process instance found for ID '$processId' or failed to load state.")
-
+        
         // TODO: Determine current status from the currentState object (needs reflection or an interface)
         val currentStatus: Status = TODO("Implement logic to get status from currentState")
-
-        val definition = findDefinitionForState(currentState)
-             ?: throw IllegalStateException("Cannot find process definition for the loaded state of process '$processId'")
-
+        
         // Find the action associated with the current status and event
         val actionWithStatus = definition.transitions[currentStatus]?.get(event)
             ?: throw IllegalStateException("No transition defined for status '$currentStatus' and event '$event' in flow '${definition.id}'")
-
+        
         // Execute the action
         println("Executing action for process '$processId' due to event '$event'...")
         val newState = try {
@@ -278,17 +306,12 @@ class FlowEngine<T : Any>(
             println("Error executing action for process '$processId': ${e.message}")
             throw e // Re-throw or handle differently
         }
-
+        
         // TODO: Update the status in the newState object based on actionWithStatus.resultStatus
         val finalStateWithNewStatus = TODO("Implement logic to update status in newState")
-
+        
         // Persist the new state
         statePersister.save(processId, finalStateWithNewStatus)
         println("Process '$processId' transitioned to new state: $finalStateWithNewStatus")
-    }
-
-    // Helper to find the definition based on the state type (if needed)
-    private fun findDefinitionForState(state: T): ProcessDefinition<T>? {
-        return processDefinitions.values.find { it.stateClass == state::class }
     }
 }

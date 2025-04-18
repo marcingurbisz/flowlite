@@ -21,9 +21,8 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * ✅ Come up with Kotlin API (I can use it as a client)
 * ✅ Put source code into github
 * ✅ FlowEngine should not be PizzaOrder specific
-* onEvent should have action, status or subflow as parameter?
-* Data including (process id and status) handling
-* How to do stuff in parallel
+* Review API (add end() for after action())
+* Update pizza order flow
 * Implement API to the point that next step is possible 
 * Diagram generator and flow validator
 * Iterate on the API design

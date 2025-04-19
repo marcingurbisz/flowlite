@@ -16,8 +16,6 @@ enum class OrderStatus : Status {
     DELIVERY_IN_PROGRESS,   // Pizza is out for delivery
     ORDER_COMPLETED,        // Pizza delivered successfully
     ORDER_CANCELLATION_SENT, // Order was cancelled
-    ONLINE_PAYMENT_WAITING,
-    PAYMENT_WAITING,
 }
 
 /**
@@ -52,10 +50,10 @@ data class PizzaOrder(
 
 // --- Top-Level Action Functions (returning new instances) ---
 
-fun createPizzaOrder(order: PizzaOrder): PizzaOrder = 
+fun createPizzaOrder(order: PizzaOrder): PizzaOrder =
     order.copy(status = OrderStatus.ORDER_CREATED)
 
-fun initializeCashPayment(order: PizzaOrder): PizzaOrder = 
+fun initializeCashPayment(order: PizzaOrder): PizzaOrder =
     order.copy(status = OrderStatus.CASH_PAYMENT_INITIALIZED)
 
 fun initializeOnlinePayment(order: PizzaOrder): PizzaOrder {
@@ -66,16 +64,16 @@ fun initializeOnlinePayment(order: PizzaOrder): PizzaOrder {
     return order.copy(status = OrderStatus.ONLINE_PAYMENT_INITIALIZED, paymentTransactionId = transactionId)
 }
 
-fun startOrderPreparation(order: PizzaOrder): PizzaOrder = 
+fun startOrderPreparation(order: PizzaOrder): PizzaOrder =
     order.copy(status = OrderStatus.ORDER_PREPARATION_STARTED)
 
-fun initializeDelivery(order: PizzaOrder): PizzaOrder = 
+fun initializeDelivery(order: PizzaOrder): PizzaOrder =
     order.copy(status = OrderStatus.DELIVERY_INITIALIZED)
 
-fun completeOrder(order: PizzaOrder): PizzaOrder = 
+fun completeOrder(order: PizzaOrder): PizzaOrder =
     order.copy(status = OrderStatus.ORDER_COMPLETED)
 
-fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = 
+fun sendOrderCancellation(order: PizzaOrder): PizzaOrder =
     order.copy(status = OrderStatus.ORDER_CANCELLATION_SENT)
 
 /**
@@ -98,62 +96,56 @@ fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
         )
         .condition(
             predicate = { order -> order.paymentMethod == PaymentMethod.CASH },
-            onTrue = { it
-                .doAction(
-                    action = { order -> initializeCashPayment(order) },
-                    status = OrderStatus.CASH_PAYMENT_INITIALIZED
-                )
-                .transitionTo(OrderStatus.PAYMENT_WAITING)
-                .onEvent(OrderEvent.PAYMENT_CONFIRMED)
-                    .doAction(
-                        action = { order -> startOrderPreparation(order) },
-                        status = OrderStatus.ORDER_PREPARATION_STARTED
-                    )
-                    .onEvent(OrderEvent.READY_FOR_DELIVERY)
-                        .doAction(
-                            action = { order -> initializeDelivery(order) },
-                            status = OrderStatus.DELIVERY_INITIALIZED
-                        )
-                        .transitionTo(OrderStatus.DELIVERY_IN_PROGRESS)
-                        .onEvent(OrderEvent.DELIVERY_COMPLETED)
-                            .doAction(
-                                action = { order -> completeOrder(order) },
-                                status = OrderStatus.ORDER_COMPLETED
-                            )
-                            .end()
-                        .onEvent(OrderEvent.DELIVERY_FAILED)
-                            .doAction(
-                                action = { order -> sendOrderCancellation(order) },
-                                status = OrderStatus.ORDER_CANCELLATION_SENT
-                            )
-                            .end()
-                .onEvent(OrderEvent.CANCEL)
-                    .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
+            onTrue = {
+                it
+                    .doAction({ order -> initializeCashPayment(order) }, OrderStatus.CASH_PAYMENT_INITIALIZED).apply {
+                        onEvent(OrderEvent.PAYMENT_CONFIRMED)
+                            .doAction({ order -> startOrderPreparation(order) }, OrderStatus.ORDER_PREPARATION_STARTED)
+                            .apply {
+                                onEvent(OrderEvent.READY_FOR_DELIVERY)
+                                    .doAction({ order -> initializeDelivery(order) }, OrderStatus.DELIVERY_INITIALIZED)
+                                    .transitionTo(OrderStatus.DELIVERY_IN_PROGRESS)
+                                onEvent(OrderEvent.DELIVERY_COMPLETED)
+                                    .doAction(
+                                        action = { order -> completeOrder(order) },
+                                        status = OrderStatus.ORDER_COMPLETED
+                                    )
+                                    .end()
+                                onEvent(OrderEvent.DELIVERY_FAILED)
+                                    .doAction(
+                                        action = { order -> sendOrderCancellation(order) },
+                                        status = OrderStatus.ORDER_CANCELLATION_SENT
+                                    )
+                                    .end()
+                            }
+                        onEvent(OrderEvent.CANCEL)
+                            .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
+                    }
             },
-            onFalse = { it
-                .doAction(
-                    action = { order -> initializeOnlinePayment(order) },
-                    status = OrderStatus.ONLINE_PAYMENT_INITIALIZED,
-                    retry = RetryStrategy(
-                        maxAttempts = 3,
-                        delayMs = 1000,
-                        exponentialBackoff = true,
-                        retryOn = setOf(PaymentGatewayException::class)
-                    )
-                )
-                .transitionTo(OrderStatus.ONLINE_PAYMENT_WAITING)
-                .onEvent(OrderEvent.PAYMENT_COMPLETED)
-                    .joinActionWithStatus(OrderStatus.ORDER_PREPARATION_STARTED)
-                .onEvent(OrderEvent.SWITCH_TO_CASH_PAYMENT)
-                    .joinActionWithStatus(OrderStatus.CASH_PAYMENT_INITIALIZED)
-                .onEvent(OrderEvent.CANCEL)
-                    .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
-                .onEvent(OrderEvent.PAYMENT_SESSION_EXPIRED)
-                    .transitionTo(OrderStatus.ONLINE_PAYMENT_EXPIRED)
-                    .onEvent(OrderEvent.RETRY_PAYMENT)
-                        .joinActionWithStatus(OrderStatus.ONLINE_PAYMENT_INITIALIZED)
-                    .onEvent(OrderEvent.CANCEL)
-                        .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
+            onFalse = {
+                it
+                    .doAction(
+                        action = { order -> initializeOnlinePayment(order) },
+                        status = OrderStatus.ONLINE_PAYMENT_INITIALIZED,
+                        retry = RetryStrategy(
+                            maxAttempts = 3,
+                            delayMs = 1000,
+                            exponentialBackoff = true,
+                            retryOn = setOf(PaymentGatewayException::class)
+                        )
+                    ).apply {
+                        onEvent(OrderEvent.PAYMENT_COMPLETED)
+                            .joinActionWithStatus(OrderStatus.ORDER_PREPARATION_STARTED)
+                        onEvent(OrderEvent.SWITCH_TO_CASH_PAYMENT)
+                            .joinActionWithStatus(OrderStatus.CASH_PAYMENT_INITIALIZED)
+                        onEvent(OrderEvent.CANCEL)
+                            .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
+                        onEvent(OrderEvent.PAYMENT_SESSION_EXPIRED)
+                            .transitionTo(OrderStatus.ONLINE_PAYMENT_EXPIRED).apply {
+                                onEvent(OrderEvent.RETRY_PAYMENT)
+                                    .joinActionWithStatus(OrderStatus.ONLINE_PAYMENT_INITIALIZED)
+                            }
+                    }
             }
         )
 }
@@ -163,11 +155,11 @@ fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
  */
 class InMemoryStatePersister<T : Any> : StatePersister<T> {
     private val states = mutableMapOf<String, T>()
-    
+
     override fun save(processId: String, state: T) {
         states[processId] = state
     }
-    
+
     override fun load(processId: String): T? {
         return states[processId]
     }

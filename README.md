@@ -21,6 +21,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * ✅ Come up with Kotlin API (I can use it as a client)
 * ✅ Put source code into github
 * ✅ FlowEngine should not be PizzaOrder specific
+* Apply rectangle formatting
 * Review API
   * end should return parent flowbuilder?
   * should onEvent return EventBuilder or new flow builder?
@@ -31,6 +32,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
   * engine provides process data to actions or actions do it on their own?
   * consider data persistence including status
 * Implementation of the engine
+* History of changes
 
 ## Process Example
 

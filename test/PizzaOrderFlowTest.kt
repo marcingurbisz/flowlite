@@ -16,7 +16,7 @@ class PizzaOrderFlowTest {
         val orderActions = OrderActions()
 
         // Get the reusable flows
-        val orderPreparationFlow = createOrderPreparationFlow(orderActions)
+        val preparationSubFlow = preparationSubFlow(orderActions)
 
         // Define main pizza order flow
         val pizzaOrderFlow = FlowBuilder<PizzaOrder>()
@@ -33,7 +33,7 @@ class PizzaOrderFlowTest {
                     )
                     .transitionTo(OrderStatus.PAYMENT_WAITING)
                     .onEvent(OrderEvent.PAYMENT_CONFIRMED)
-                        .subFlow(orderPreparationFlow)
+                        .subFlow(preparationSubFlow)
                     .onEvent(OrderEvent.CANCEL)
                         .doAction(orderActions.cancelOrder)
                         .end()
@@ -45,25 +45,17 @@ class PizzaOrderFlowTest {
                     )
                     .transitionTo(OrderStatus.ONLINE_PAYMENT_WAITING)
                     .onEvent(OrderEvent.PAYMENT_COMPLETED)
-                        .subFlow(orderPreparationFlow)
+                        .subFlow(preparationSubFlow)
                     .onEvent(OrderEvent.SWITCH_TO_CASH_PAYMENT)
-                        .doAction(
-                            action = { order -> initializeCashPayment(order) },
-                            resultStatus = OrderStatus.CASH_PAYMENT_INITIALIZED
-                        )
+                        .joinActionWithStatus(OrderStatus.CASH_PAYMENT_INITIALIZED)
                     .onEvent(OrderEvent.CANCEL)
-                        .doAction(orderActions.cancelOrder)
-                        .end()
+                        .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
                     .onEvent(OrderEvent.PAYMENT_SESSION_EXPIRED)
                         .transitionTo(OrderStatus.ONLINE_PAYMENT_EXPIRED)
                         .onEvent(OrderEvent.RETRY_PAYMENT)
-                            .doAction(
-                                action = { order -> initializeOnlinePayment(order) },
-                                resultStatus = OrderStatus.ONLINE_PAYMENT_INITIALIZED
-                            )
+                            .joinActionWithStatus(OrderStatus.ONLINE_PAYMENT_INITIALIZED)
                         .onEvent(OrderEvent.CANCEL)
-                            .doAction(orderActions.cancelOrder)
-                            .end()
+                            .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
                 }
             )
         
@@ -116,17 +108,14 @@ class PizzaOrderFlowTest {
     /**
      * Creates the order preparation flow which handles the preparation and readying of an order for delivery.
      */
-    private fun createOrderPreparationFlow(orderActions: OrderActions): FlowBuilder<PizzaOrder> {
+    private fun preparationSubFlow(orderActions: OrderActions): FlowBuilder<PizzaOrder> {
         return FlowBuilder<PizzaOrder>()
             .doAction(
                 action = { order -> startOrderPreparation(order) },
                 status = OrderStatus.ORDER_PREPARATION_STARTED
             )
             .onEvent(OrderEvent.READY_FOR_DELIVERY)
-                .doAction(
-                    action = { order -> initializeDelivery(order) },
-                    resultStatus = OrderStatus.DELIVERY_INITIALIZED
-                )
+                .joinActionWithStatus(OrderStatus.DELIVERY_INITIALIZED)
                 .subFlow(createDeliveryFlow(orderActions))
     }
     

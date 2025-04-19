@@ -119,6 +119,53 @@ class FlowBuilder<T : Any> {
     fun transitionTo(status: Status): FlowBuilder<T> = this
 
     /**
+     * Join a flow segment that transitions to the specified status.
+     * This allows reusing a flow segment by its target status without repeating the code.
+     * 
+     * @param targetStatus The status to join from
+     * @return This FlowBuilder instance for method chaining
+     * @throws IllegalArgumentException if no action transitioning to the specified status is found
+     */
+    fun joinActionWithStatus(targetStatus: Status): FlowBuilder<T> {
+        // Find an existing transition to the specified status
+        val statusEntry = findActionForTargetStatus(targetStatus)
+        
+        if (statusEntry == null) {
+            throw IllegalArgumentException("No action found that transitions to status '$targetStatus'")
+        }
+        
+        // Apply the found action with status to the current flow
+        val (sourceStatus, eventMap) = statusEntry
+        val eventEntry = eventMap.entries.first()
+        
+        // Add the transition to the current flow
+        // In a real implementation, we'd need to handle the entire subsequent flow
+        // For now, we just add the direct transition
+        transitions.getOrPut(sourceStatus) { mutableMapOf() }[eventEntry.key] = eventEntry.value
+        
+        return this
+    }
+    
+    /**
+     * Find an action that transitions to the specified status.
+     * @param targetStatus The status to find an action for
+     * @return The source status and its event map if found, null otherwise
+     */
+    private fun findActionForTargetStatus(targetStatus: Status): Pair<Status, Map<Event?, ActionWithStatus<T>>>? {
+        for ((sourceStatus, eventMap) in transitions) {
+            for (actionWithStatus in eventMap.values) {
+                // Check if this action transitions to the target status
+                // For simplicity, we're only checking fixed result statuses
+                if (actionWithStatus.resultStatus is Function0<*> && 
+                    (actionWithStatus.resultStatus as Function0<Status>).invoke() == targetStatus) {
+                    return Pair(sourceStatus, eventMap)
+                }
+            }
+        }
+        return null
+    }
+
+    /**
      * Conditional branching based on the state of the process.
      * @param predicate Function that evaluates the condition based on the process state
      * @param onTrue Builder function to define the flow when the condition is true
@@ -129,11 +176,7 @@ class FlowBuilder<T : Any> {
         predicate: (item: T) -> Boolean,
         onTrue: (FlowBuilder<T>) -> FlowBuilder<T>,
         onFalse: ((FlowBuilder<T>) -> FlowBuilder<T>)? = null
-    ): FlowBuilder<T> {
-        // Implementation: in a real implementation, this would store both branches
-        // For this API definition, we just return this
-        return this
-    }
+    ): FlowBuilder<T> = this
 
     /**
      * Use another flow as a subflow within this flow.
@@ -149,36 +192,51 @@ class FlowBuilder<T : Any> {
      * Builds the transitions for the process definition.
      * This is intended to be used internally by the FlowEngine.
      */
-    internal fun buildTransitions(): Map<Status, Map<Event?, ActionWithStatus<T>>> {
-        // In a real implementation, this would validate the flow
-        return transitions
+    fun buildTransitions(): Map<Status, Map<Event?, ActionWithStatus<T>>> {
+        // Return an immutable copy of the transitions
+        return transitions.mapValues { it.value.toMap() }
     }
 }
 
 /**
- * Builder for handling events in a flow.
+ * Builder for event-based transitions in a flow.
+ * This acts as a specialized builder for when an event is being handled.
+ * @param T the type of context object the flow operates on
  */
-class EventBuilder<T : Any>(private val parent: FlowBuilder<T>) {
+class EventBuilder<T : Any>(private val flowBuilder: FlowBuilder<T>) {
     /**
-     * Define an action to perform when the event occurs.
-     * Using context receivers for better integration with the flow context.
+     * Define an action with a status change for this event.
      */
     fun doAction(
         action: (item: T) -> T,
         resultStatus: Status
-    ): FlowBuilder<T> = parent
+    ): FlowBuilder<T> = flowBuilder
 
     /**
      * Overload to use a pre-defined ActionWithStatus.
      */
-    fun doAction(actionWithStatus: ActionWithStatus<T>): FlowBuilder<T> = parent
+    fun doAction(actionWithStatus: ActionWithStatus<T>): FlowBuilder<T> = flowBuilder
+    
+    /**
+     * Join a flow segment that transitions to the specified status.
+     * This allows reusing flow segments by status within event handlers.
+     * 
+     * @param targetStatus The status to join from
+     * @return The parent FlowBuilder instance for method chaining
+     */
+    fun joinActionWithStatus(targetStatus: Status): FlowBuilder<T> {
+        return flowBuilder.joinActionWithStatus(targetStatus)
+    }
 
     /**
-     * Use another flow as a subflow when the event occurs.
+     * Use another flow as a subflow within this event handler.
      */
-    fun subFlow(flow: FlowBuilder<T>): FlowBuilder<T> = parent
+    fun subFlow(flow: FlowBuilder<T>): FlowBuilder<T> = flowBuilder
 
-    fun transitionTo(status: Status): FlowBuilder<T> = parent
+    /**
+     * Transition to a specific status without performing any action.
+     */
+    fun transitionTo(status: Status): FlowBuilder<T> = flowBuilder
 }
 
 /**

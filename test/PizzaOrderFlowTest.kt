@@ -22,15 +22,16 @@ class PizzaOrderFlowTest {
         val pizzaOrderFlow = FlowBuilder<PizzaOrder>()
             .doAction(
                 action = { order -> createPizzaOrder(order) },
-                resultStatus = OrderStatus.ORDER_CREATED
+                status = OrderStatus.ORDER_CREATED
             )
             .condition(
                 predicate = { order -> order.paymentMethod == PaymentMethod.CASH },
                 onTrue = { it
                     .doAction(
                         action = { order -> initializeCashPayment(order) },
-                        resultStatus = OrderStatus.CASH_PAYMENT_INITIALIZED
+                        status = OrderStatus.CASH_PAYMENT_INITIALIZED
                     )
+                    .transitionTo(OrderStatus.PAYMENT_WAITING)
                     .onEvent(OrderEvent.PAYMENT_CONFIRMED)
                         .subFlow(orderPreparationFlow)
                     .onEvent(OrderEvent.CANCEL)
@@ -40,8 +41,9 @@ class PizzaOrderFlowTest {
                 onFalse = { it
                     .doAction(
                         action = { order -> initializeOnlinePayment(order) },
-                        resultStatus = OrderStatus.ONLINE_PAYMENT_INITIALIZED
+                        status = OrderStatus.ONLINE_PAYMENT_INITIALIZED
                     )
+                    .transitionTo(OrderStatus.ONLINE_PAYMENT_WAITING)
                     .onEvent(OrderEvent.PAYMENT_COMPLETED)
                         .subFlow(orderPreparationFlow)
                     .onEvent(OrderEvent.SWITCH_TO_CASH_PAYMENT)
@@ -97,7 +99,7 @@ class PizzaOrderFlowTest {
         return FlowBuilder<PizzaOrder>()
             .doAction(
                 action = { order -> initializeDelivery(order) },
-                resultStatus = OrderStatus.DELIVERY_INITIALIZED
+                status = OrderStatus.DELIVERY_INITIALIZED
             )
             .transitionTo(OrderStatus.DELIVERY_IN_PROGRESS)
             .onEvent(OrderEvent.DELIVERY_COMPLETED)
@@ -118,7 +120,7 @@ class PizzaOrderFlowTest {
         return FlowBuilder<PizzaOrder>()
             .doAction(
                 action = { order -> startOrderPreparation(order) },
-                resultStatus = OrderStatus.ORDER_PREPARATION_STARTED
+                status = OrderStatus.ORDER_PREPARATION_STARTED
             )
             .onEvent(OrderEvent.READY_FOR_DELIVERY)
                 .doAction(

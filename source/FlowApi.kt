@@ -100,7 +100,7 @@ class FlowBuilder<T : Any> {
      */
     fun doAction(
         action: (item: T) -> T,
-        resultStatus: Status
+        status: Status
     ): FlowBuilder<T> = this
 
     /**

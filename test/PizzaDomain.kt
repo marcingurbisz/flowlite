@@ -16,7 +16,9 @@ enum class OrderStatus : Status {
     DELIVERY_INITIALIZED,   // Delivery process started
     DELIVERY_IN_PROGRESS,   // Pizza is out for delivery
     ORDER_COMPLETED,        // Pizza delivered successfully
-    ORDER_CANCELLATION_SENT // Order was cancelled
+    ORDER_CANCELLATION_SENT, // Order was cancelled
+    ONLINE_PAYMENT_WAITING,
+    PAYMENT_WAITING,
 }
 
 /**

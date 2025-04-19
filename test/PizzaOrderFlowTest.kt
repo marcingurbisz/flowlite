@@ -26,11 +26,11 @@ class PizzaOrderFlowTest {
         // Start a process instance
         val processId = flowEngine.startProcess("pizza-order", PizzaOrder(
             customerName = "customer-name",
-            status = OrderStatus.NEW,
+            status = OrderStatus.New,
             paymentMethod = PaymentMethod.ONLINE,
         ))
         
         // Example of how to trigger an event for this process
-        // flowEngine.triggerEvent<PizzaOrder>(processId, "pizza-order", OrderEvent.PAYMENT_CONFIRMED)
+        // flowEngine.triggerEvent<PizzaOrder>(processId, "pizza-order", OrderEvent.PaymentConfirmed)
     }
 }

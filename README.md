@@ -53,35 +53,35 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 stateDiagram-v2
     state if_payment_method <<choice>>
     
-    [*] --> ORDER_CREATED
-    ORDER_CANCELLATION_SENT --> [*]
-    ORDER_CREATED: createPizzaOrder() ORDER_CREATED
-    ORDER_CREATED --> if_payment_method
-    if_payment_method --> CASH_PAYMENT_INITIALIZED: paymentMethod = CASH
-    if_payment_method --> ONLINE_PAYMENT_INITIALIZED: paymentMethod = ONLINE
-    CASH_PAYMENT_INITIALIZED: initializeCashPayment() CASH_PAYMENT_INITIALIZED
-    CASH_PAYMENT_INITIALIZED --> ORDER_PREPARATION_STARTED: onEvent#58; PaymentConfirmed
-    CASH_PAYMENT_INITIALIZED --> ORDER_CANCELLATION_SENT: onEvent#58; Cancel
-    ONLINE_PAYMENT_INITIALIZED: initializeOnlinePayment() ONLINE_PAYMENT_INITIALIZED
-    ONLINE_PAYMENT_INITIALIZED --> CASH_PAYMENT_INITIALIZED: onEvent#58; SwitchToCashPayment
-    ONLINE_PAYMENT_INITIALIZED --> ORDER_PREPARATION_STARTED: onEvent#58; PaymentCompleted
-    ONLINE_PAYMENT_INITIALIZED --> ORDER_CANCELLATION_SENT: onEvent#58; Cancel 
-    ONLINE_PAYMENT_INITIALIZED --> ONLINE_PAYMENT_EXPIRED: onEvent#58; PaymentSessionExpired
-    ONLINE_PAYMENT_EXPIRED --> ONLINE_PAYMENT_INITIALIZED: onEvent#58; RetryPayment
-    ONLINE_PAYMENT_EXPIRED --> ORDER_CANCELLATION_SENT: onEvent#58; Cancel
-    ORDER_PREPARATION_STARTED: startOrderPreparation() ORDER_PREPARATION_STARTED
-    ORDER_PREPARATION_STARTED --> DELIVERY_INITIALIZED: onEvent#58; ReadyForDelivery
+    [*] --> OrderCreated
+    OrderCancellationSent --> [*]
+    OrderCreated: createPizzaOrder() OrderCreated
+    OrderCreated --> if_payment_method
+    if_payment_method --> CashPaymentInitialized: paymentMethod = CASH
+    if_payment_method --> OnlinePaymentInitialized: paymentMethod = ONLINE
+    CashPaymentInitialized: initializeCashPayment() CashPaymentInitialized
+    CashPaymentInitialized --> OrderPreparationStarted: onEvent#58; PaymentConfirmed
+    CashPaymentInitialized --> OrderCancellationSent: onEvent#58; Cancel
+    OnlinePaymentInitialized: initializeOnlinePayment() OnlinePaymentInitialized
+    OnlinePaymentInitialized --> CashPaymentInitialized: onEvent#58; SwitchToCashPayment
+    OnlinePaymentInitialized --> OrderPreparationStarted: onEvent#58; PaymentCompleted
+    OnlinePaymentInitialized --> OrderCancellationSent: onEvent#58; Cancel 
+    OnlinePaymentInitialized --> OnlinePaymentExpired: onEvent#58; PaymentSessionExpired
+    OnlinePaymentExpired --> OnlinePaymentInitialized: onEvent#58; RetryPayment
+    OnlinePaymentExpired --> OrderCancellationSent: onEvent#58; Cancel
+    OrderPreparationStarted: startOrderPreparation() OrderPreparationStarted
+    OrderPreparationStarted --> DeliveryInitialized: onEvent#58; ReadyForDelivery
      
-    DELIVERY_INITIALIZED: initializeDelivery() DELIVERY_INITIALIZED
-    DELIVERY_INITIALIZED --> DELIVERY_IN_PROGRESS
-    DELIVERY_IN_PROGRESS --> ORDER_COMPLETED: onEvent#58; DeliveryCompleted
-    DELIVERY_IN_PROGRESS --> ORDER_CANCELLATION_SENT: onEvent#58; DeliveryFailed
+    DeliveryInitialized: initializeDelivery() DeliveryInitialized
+    DeliveryInitialized --> DeliveryInProgress
+    DeliveryInProgress --> OrderCompleted: onEvent#58; DeliveryCompleted
+    DeliveryInProgress --> OrderCancellationSent: onEvent#58; DeliveryFailed
     
-    ORDER_COMPLETED: completeOrder() ORDER_COMPLETED
-    ORDER_CANCELLATION_SENT: sendOrderCancellation() ORDER_CANCELLATION_SENT
-    ORDER_COMPLETED --> [*]
+    OrderCompleted: completeOrder() OrderCompleted
+    OrderCancellationSent: sendOrderCancellation() OrderCancellationSent
+    OrderCompleted --> [*]
 ```
 
 ## Code example
 
-[PizzaOrderFlowTest.kt](test/PizzaOrderFlowTest.kt)
+See [PizzaDomain.kt](test/PizzaDomain.kt) and [PizzaOrderFlowTest.kt](test/PizzaOrderFlowTest.kt)

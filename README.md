@@ -16,16 +16,14 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 ## TODO
 
-* ✅ Prepare a gradle project for Kotlin for this library
-* ✅ Prepare rules files for copilot
-* ✅ Come up with Kotlin API (I can use it as a client)
-* ✅ Put source code into github
-* ✅ FlowEngine should not be PizzaOrder specific
 * Apply rectangle formatting
-* Review API
-  * end should return parent flowbuilder?
+* Review API once again and again :)
+  * end should return parent flowbuilder ?
   * should onEvent return EventBuilder or new flow builder?
-* Update pizza order flow
+  * Trailing Lambda Syntax for condition() ?
+  * Type-Safe Builders onEvent(OrderEvent.PAYMENT_CONFIRMED) {doAction(::startOrderPreparation, OrderStatus.ORDER_PREPARATION_STARTED)} ?
+  * Named Arguments better ?
+* Define second flow?
 * Implement API to the point that next step is possible 
 * Diagram generator and flow validator
 * Iterate on the API design

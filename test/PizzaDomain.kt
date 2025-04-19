@@ -1,7 +1,6 @@
 package io.flowlite.test
 
-import io.flowlite.api.Event
-import io.flowlite.api.Status
+import io.flowlite.api.*
 
 /**
  * Represents the status of a pizza order.
@@ -83,3 +82,93 @@ fun sendOrderCancellation(order: PizzaOrder): PizzaOrder =
  * Custom exception for payment gateway issues.
  */
 class PaymentGatewayException(message: String) : Exception(message)
+
+// --- Flow Definition ---
+
+/**
+ * Creates the main pizza order flow definition.
+ */
+fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
+
+    // Define main pizza order flow
+    return FlowBuilder<PizzaOrder>()
+        .doAction(
+            action = { order -> createPizzaOrder(order) },
+            status = OrderStatus.ORDER_CREATED
+        )
+        .condition(
+            predicate = { order -> order.paymentMethod == PaymentMethod.CASH },
+            onTrue = { it
+                .doAction(
+                    action = { order -> initializeCashPayment(order) },
+                    status = OrderStatus.CASH_PAYMENT_INITIALIZED
+                )
+                .transitionTo(OrderStatus.PAYMENT_WAITING)
+                .onEvent(OrderEvent.PAYMENT_CONFIRMED)
+                    .doAction(
+                        action = { order -> startOrderPreparation(order) },
+                        status = OrderStatus.ORDER_PREPARATION_STARTED
+                    )
+                    .onEvent(OrderEvent.READY_FOR_DELIVERY)
+                        .doAction(
+                            action = { order -> initializeDelivery(order) },
+                            status = OrderStatus.DELIVERY_INITIALIZED
+                        )
+                        .transitionTo(OrderStatus.DELIVERY_IN_PROGRESS)
+                        .onEvent(OrderEvent.DELIVERY_COMPLETED)
+                            .doAction(
+                                action = { order -> completeOrder(order) },
+                                status = OrderStatus.ORDER_COMPLETED
+                            )
+                            .end()
+                        .onEvent(OrderEvent.DELIVERY_FAILED)
+                            .doAction(
+                                action = { order -> sendOrderCancellation(order) },
+                                status = OrderStatus.ORDER_CANCELLATION_SENT
+                            )
+                            .end()
+                .onEvent(OrderEvent.CANCEL)
+                    .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
+            },
+            onFalse = { it
+                .doAction(
+                    action = { order -> initializeOnlinePayment(order) },
+                    status = OrderStatus.ONLINE_PAYMENT_INITIALIZED,
+                    retry = RetryStrategy(
+                        maxAttempts = 3,
+                        delayMs = 1000,
+                        exponentialBackoff = true,
+                        retryOn = setOf(PaymentGatewayException::class)
+                    )
+                )
+                .transitionTo(OrderStatus.ONLINE_PAYMENT_WAITING)
+                .onEvent(OrderEvent.PAYMENT_COMPLETED)
+                    .joinActionWithStatus(OrderStatus.ORDER_PREPARATION_STARTED)
+                .onEvent(OrderEvent.SWITCH_TO_CASH_PAYMENT)
+                    .joinActionWithStatus(OrderStatus.CASH_PAYMENT_INITIALIZED)
+                .onEvent(OrderEvent.CANCEL)
+                    .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
+                .onEvent(OrderEvent.PAYMENT_SESSION_EXPIRED)
+                    .transitionTo(OrderStatus.ONLINE_PAYMENT_EXPIRED)
+                    .onEvent(OrderEvent.RETRY_PAYMENT)
+                        .joinActionWithStatus(OrderStatus.ONLINE_PAYMENT_INITIALIZED)
+                    .onEvent(OrderEvent.CANCEL)
+                        .joinActionWithStatus(OrderStatus.ORDER_CANCELLATION_SENT)
+            }
+        )
+}
+
+/**
+ * Simple in-memory state persister for testing purposes
+ */
+class InMemoryStatePersister<T : Any> : StatePersister<T> {
+    private val states = mutableMapOf<String, T>()
+    
+    override fun save(processId: String, state: T) {
+        states[processId] = state
+    }
+    
+    override fun load(processId: String): T? {
+        return states[processId]
+    }
+}

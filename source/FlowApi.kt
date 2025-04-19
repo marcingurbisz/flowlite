@@ -100,13 +100,9 @@ class FlowBuilder<T : Any> {
      */
     fun doAction(
         action: (item: T) -> T,
-        status: Status
+        status: Status,
+        retry: RetryStrategy? = null
     ): FlowBuilder<T> = this
-
-    /**
-     * Overload to use a pre-defined ActionWithStatus.
-     */
-    fun doAction(actionWithStatus: ActionWithStatus<T>): FlowBuilder<T> = this
 
     /**
      * Handle an event that can trigger this flow.
@@ -209,13 +205,8 @@ class EventBuilder<T : Any>(private val flowBuilder: FlowBuilder<T>) {
      */
     fun doAction(
         action: (item: T) -> T,
-        resultStatus: Status
+        status: Status
     ): FlowBuilder<T> = flowBuilder
-
-    /**
-     * Overload to use a pre-defined ActionWithStatus.
-     */
-    fun doAction(actionWithStatus: ActionWithStatus<T>): FlowBuilder<T> = flowBuilder
     
     /**
      * Join a flow segment that transitions to the specified status.

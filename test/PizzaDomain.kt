@@ -104,22 +104,23 @@ fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
                             .apply {
                                 onEvent(OrderEvent.ReadyForDelivery)
                                     .doAction({ order -> initializeDelivery(order) }, OrderStatus.DeliveryInitialized)
-                                    .transitionTo(OrderStatus.DeliveryInProgress)
-                                onEvent(OrderEvent.DeliveryCompleted)
-                                    .doAction(
-                                        action = { order -> completeOrder(order) },
-                                        status = OrderStatus.OrderCompleted
-                                    )
-                                    .end()
-                                onEvent(OrderEvent.DeliveryFailed)
-                                    .doAction(
-                                        action = { order -> sendOrderCancellation(order) },
-                                        status = OrderStatus.OrderCancellationSent
-                                    )
-                                    .end()
+                                    .apply {
+                                        onEvent(OrderEvent.DeliveryCompleted)
+                                            .doAction(
+                                                action = { order -> completeOrder(order) },
+                                                status = OrderStatus.OrderCompleted
+                                            )
+                                            .end()
+                                        onEvent(OrderEvent.DeliveryFailed)
+                                            .doAction(
+                                                action = { order -> sendOrderCancellation(order) },
+                                                status = OrderStatus.OrderCancellationSent
+                                            )
+                                            .end()
+                                    }
                             }
                         onEvent(OrderEvent.Cancel)
-                            .joinActionWithStatus(OrderStatus.OrderCancellationSent)
+                            .join(OrderStatus.OrderCancellationSent)
                     }
             },
             onFalse = {
@@ -135,15 +136,17 @@ fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
                         )
                     ).apply {
                         onEvent(OrderEvent.PaymentCompleted)
-                            .joinActionWithStatus(OrderStatus.OrderPreparationStarted)
+                            .join(OrderStatus.OrderPreparationStarted)
                         onEvent(OrderEvent.SwitchToCashPayment)
-                            .joinActionWithStatus(OrderStatus.CashPaymentInitialized)
+                            .join(OrderStatus.CashPaymentInitialized)
                         onEvent(OrderEvent.Cancel)
-                            .joinActionWithStatus(OrderStatus.OrderCancellationSent)
+                            .join(OrderStatus.OrderCancellationSent)
                         onEvent(OrderEvent.PaymentSessionExpired)
                             .transitionTo(OrderStatus.OnlinePaymentExpired).apply {
                                 onEvent(OrderEvent.RetryPayment)
-                                    .joinActionWithStatus(OrderStatus.OnlinePaymentInitialized)
+                                    .join(OrderStatus.OnlinePaymentInitialized)
+                                onEvent(OrderEvent.Cancel)
+                                    .join(OrderStatus.OrderCancellationSent)
                             }
                     }
             }

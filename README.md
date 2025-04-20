@@ -18,6 +18,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 * Apply rectangle formatting
 * Review API once again and again :)
+  * Should I start the flow with status NEW?
   * end should return parent flowbuilder ?
   * should onEvent return EventBuilder or new flow builder?
   * Trailing Lambda Syntax for condition() ?
@@ -71,9 +72,8 @@ stateDiagram-v2
     OrderPreparationStarted --> DeliveryInitialized: onEvent#58; ReadyForDelivery
      
     DeliveryInitialized: initializeDelivery() DeliveryInitialized
-    DeliveryInitialized --> DeliveryInProgress
-    DeliveryInProgress --> OrderCompleted: onEvent#58; DeliveryCompleted
-    DeliveryInProgress --> OrderCancellationSent: onEvent#58; DeliveryFailed
+    DeliveryInitialized --> OrderCompleted: onEvent#58; DeliveryCompleted
+    DeliveryInitialized --> OrderCancellationSent: onEvent#58; DeliveryFailed
     
     OrderCompleted: completeOrder() OrderCompleted
     OrderCancellationSent: sendOrderCancellation() OrderCancellationSent

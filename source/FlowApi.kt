@@ -215,7 +215,7 @@ class EventBuilder<T : Any>(private val flowBuilder: FlowBuilder<T>) {
      * @param targetStatus The status to join from
      * @return The parent FlowBuilder instance for method chaining
      */
-    fun joinActionWithStatus(targetStatus: Status): FlowBuilder<T> {
+    fun join(targetStatus: Status): FlowBuilder<T> {
         return flowBuilder.joinActionWithStatus(targetStatus)
     }
 

@@ -163,22 +163,19 @@ class FlowBuilder<T : Any>(startStatus: Status?) {
     }
 
     /**
-     * Conditional branching based on the state of the process.
-     * @param predicate Function that evaluates the condition based on the process state
-     * @param onTrue Builder function to define the flow when the condition is true
-     * @param onFalse Optional builder function to define the flow when the condition is false
-     * @return This FlowBuilder instance for method chaining
-     */
-    fun condition(
-        predicate: (item: T) -> Boolean,
-        onTrue: (FlowBuilder<T>) -> FlowBuilder<T>,
-        onFalse: ((FlowBuilder<T>) -> FlowBuilder<T>)? = null
-    ): FlowBuilder<T> = this
-
-    /**
      * Use another flow as a subflow within this flow.
      */
     fun subFlow(flow: FlowBuilder<T>): FlowBuilder<T> = this
+
+    /**
+     * Conditional branching with trailing lambda syntax for the true branch.
+     * Enables a DSL-style syntax with the onFalse infix function.
+     * 
+     * @param predicate Function that evaluates the condition based on the process state
+     * @param trueBranch Builder function with receiver to define the flow when the condition is true
+     * @return A ConditionBuilder to be used with the onFalse infix function
+     */
+    fun condition(predicate: (item: T) -> Boolean, trueBranch: FlowBuilder<T>.() -> Unit): ConditionBuilder<T> = ConditionBuilder(this, predicate, trueBranch)
 
     /**
      * End the flow.
@@ -192,6 +189,28 @@ class FlowBuilder<T : Any>(startStatus: Status?) {
     fun buildTransitions(): Map<Status, Map<Event?, ActionWithStatus<T>>> {
         // Return an immutable copy of the transitions
         return transitions.mapValues { it.value.toMap() }
+    }
+}
+
+/**
+ * Builder for the false branch of a condition.
+ * This class enables the DSL-style syntax with trailing lambdas and the onFalse infix function.
+ */
+class ConditionBuilder<T : Any>(
+    private val flowBuilder: FlowBuilder<T>,
+    private val predicate: (item: T) -> Boolean,
+    private val trueBranch: FlowBuilder<T>.() -> Unit
+) {
+    /**
+     * Define the actions to take when the condition is false.
+     * 
+     * @param falseBranch A function with receiver to define the flow when the condition is false
+     * @return The parent FlowBuilder for method chaining
+     */
+    infix fun onFalse(falseBranch: FlowBuilder<T>.() -> Unit): FlowBuilder<T> {
+        // In a real implementation, we would apply the branches based on the predicate
+        // For this stub, we just apply both to the flowBuilder
+        return flowBuilder
     }
 }
 

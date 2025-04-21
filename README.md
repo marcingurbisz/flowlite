@@ -16,10 +16,10 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 ## TODO
 
+* check Gemini 2.5 and Copilot with trailing lambda syntax and infix notation for condition
 * Review API once again and again :)
   * end should return parent flowbuilder ?
   * should onEvent return EventBuilder or new flow builder?
-  * Trailing Lambda Syntax for condition() ?
   * Type-Safe Builders onEvent(OrderEvent.PAYMENT_CONFIRMED) {doAction(::startOrderPreparation, OrderStatus.ORDER_PREPARATION_STARTED)} ?
   * Named Arguments better ?
 * Define second flow?

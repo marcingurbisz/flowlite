@@ -70,54 +70,46 @@ class PaymentGatewayException(message: String) : Exception(message)
 fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
 
     // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>(OrderStatus.OrderCreated)
-        .condition(
-            predicate = { order -> order.paymentMethod == PaymentMethod.CASH },
-            onTrue = {
-                it.doAction({ order -> initializeCashPayment(order) }, OrderStatus.CashPaymentInitialized).apply {
-                    onEvent(OrderEvent.PaymentConfirmed)
-                        .doAction({ order -> startOrderPreparation(order) }, OrderStatus.OrderPreparationStarted)
-                        .apply {
-                            onEvent(OrderEvent.ReadyForDelivery)
-                                .doAction({ order -> initializeDelivery(order) }, OrderStatus.DeliveryInitialized)
-                                .apply {
-                                    onEvent(OrderEvent.DeliveryCompleted)
-                                        .doAction({ order -> completeOrder(order) }, OrderStatus.OrderCompleted)
-                                        .end()
-                                    onEvent(OrderEvent.DeliveryFailed)
-                                        .doAction(
-                                            { order -> sendOrderCancellation(order) },
-                                            OrderStatus.OrderCancellationSent,
-                                        )
-                                        .end()
-                                }
-                        }
-                    onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
-                }
-            },
-            onFalse = {
-                it.doAction(
-                        action = { order -> initializeOnlinePayment(order) },
-                        status = OrderStatus.OnlinePaymentInitialized,
-                        retry =
-                            RetryStrategy(
-                                maxAttempts = 3,
-                                delayMs = 1000,
-                                exponentialBackoff = true,
-                                retryOn = setOf(PaymentGatewayException::class),
-                            ),
-                    )
+    return FlowBuilder<PizzaOrder>(OrderStatus.OrderCreated).condition({ order ->
+        order.paymentMethod == PaymentMethod.CASH
+    }) {
+        doAction({ order -> initializeCashPayment(order) }, OrderStatus.CashPaymentInitialized)
+        onEvent(OrderEvent.PaymentConfirmed)
+            .doAction({ order -> startOrderPreparation(order) }, OrderStatus.OrderPreparationStarted)
+            .apply {
+                onEvent(OrderEvent.ReadyForDelivery)
+                    .doAction({ order -> initializeDelivery(order) }, OrderStatus.DeliveryInitialized)
                     .apply {
-                        onEvent(OrderEvent.PaymentCompleted).join(OrderStatus.OrderPreparationStarted)
-                        onEvent(OrderEvent.SwitchToCashPayment).join(OrderStatus.CashPaymentInitialized)
-                        onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
-                        onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStatus.OnlinePaymentExpired).apply {
-                            onEvent(OrderEvent.RetryPayment).join(OrderStatus.OnlinePaymentInitialized)
-                            onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
-                        }
+                        onEvent(OrderEvent.DeliveryCompleted)
+                            .doAction({ order -> completeOrder(order) }, OrderStatus.OrderCompleted)
+                            .end()
+                        onEvent(OrderEvent.DeliveryFailed)
+                            .doAction({ order -> sendOrderCancellation(order) }, OrderStatus.OrderCancellationSent)
+                            .end()
                     }
-            },
-        )
+            }
+        onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+    } onFalse
+        {
+            doAction(
+                action = { order -> initializeOnlinePayment(order) },
+                status = OrderStatus.OnlinePaymentInitialized,
+                retry =
+                    RetryStrategy(
+                        maxAttempts = 3,
+                        delayMs = 1000,
+                        exponentialBackoff = true,
+                        retryOn = setOf(PaymentGatewayException::class),
+                    ),
+            )
+            onEvent(OrderEvent.PaymentCompleted).join(OrderStatus.OrderPreparationStarted)
+            onEvent(OrderEvent.SwitchToCashPayment).join(OrderStatus.CashPaymentInitialized)
+            onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+            onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStatus.OnlinePaymentExpired).apply {
+                onEvent(OrderEvent.RetryPayment).join(OrderStatus.OnlinePaymentInitialized)
+                onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+            }
+        }
 }
 
 /** Simple in-memory state persister for testing purposes */

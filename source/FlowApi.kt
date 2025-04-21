@@ -101,9 +101,6 @@ class FlowBuilder<T : Any>(startStatus: Status?) {
     /** Handle an event that can trigger this flow. */
     fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this)
 
-    /** Transition to a specific status without performing any action. */
-    fun transitionTo(status: Status): FlowBuilder<T> = this
-
     /**
      * Join a flow segment that transitions to the specified status. This allows reusing a flow segment by its target
      * status without repeating the code.
@@ -153,9 +150,6 @@ class FlowBuilder<T : Any>(startStatus: Status?) {
         }
         return null
     }
-
-    /** Use another flow as a subflow within this flow. */
-    fun subFlow(flow: FlowBuilder<T>): FlowBuilder<T> = this
 
     /**
      * Conditional branching with trailing lambda syntax for the true branch. Enables a DSL-style syntax with the
@@ -219,9 +213,6 @@ class EventBuilder<T : Any>(private val flowBuilder: FlowBuilder<T>) {
     fun join(targetStatus: Status): FlowBuilder<T> {
         return flowBuilder.joinActionWithStatus(targetStatus)
     }
-
-    /** Use another flow as a subflow within this event handler. */
-    fun subFlow(flow: FlowBuilder<T>): FlowBuilder<T> = flowBuilder
 
     /** Transition to a specific status without performing any action. */
     fun transitionTo(status: Status): FlowBuilder<T> = flowBuilder

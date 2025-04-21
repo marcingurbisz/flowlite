@@ -25,10 +25,8 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * Define second flow?
 * Implement API to the point that next step is possible 
 * Diagram generator and flow validator
-* Iterate on the API design
-  * engine provides process data to actions or actions do it on their own?
-  * consider data persistence including status
-* Implementation of the engine
+* Full implementation of engine with working example
+* Waiting on multiple events (event with conditional?)
 * History of changes
 
 ## Process Example

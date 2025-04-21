@@ -70,45 +70,42 @@ class PaymentGatewayException(message: String) : Exception(message)
 fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
 
     // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>(OrderStatus.OrderCreated).condition({ order ->
-        order.paymentMethod == PaymentMethod.CASH
-    }) {
-        doAction({ order -> initializeCashPayment(order) }, OrderStatus.CashPaymentInitialized)
-        onEvent(OrderEvent.PaymentConfirmed)
-            .doAction({ order -> startOrderPreparation(order) }, OrderStatus.OrderPreparationStarted)
-            .apply {
-                onEvent(OrderEvent.ReadyForDelivery)
-                    .doAction({ order -> initializeDelivery(order) }, OrderStatus.DeliveryInitialized)
-                    .apply {
-                        onEvent(OrderEvent.DeliveryCompleted)
-                            .doAction({ order -> completeOrder(order) }, OrderStatus.OrderCompleted)
-                            .end()
-                        onEvent(OrderEvent.DeliveryFailed)
-                            .doAction({ order -> sendOrderCancellation(order) }, OrderStatus.OrderCancellationSent)
-                            .end()
-                    }
-            }
-        onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+    return FlowBuilder<PizzaOrder>(OrderStatus.OrderCreated).condition({ it.paymentMethod == PaymentMethod.CASH }) {
+        doAction(::initializeCashPayment, OrderStatus.CashPaymentInitialized).apply {
+            onEvent(OrderEvent.PaymentConfirmed)
+                .doAction(::startOrderPreparation, OrderStatus.OrderPreparationStarted)
+                .onEvent(OrderEvent.ReadyForDelivery)
+                .doAction(::initializeDelivery, OrderStatus.DeliveryInitialized)
+                .apply {
+                    onEvent(OrderEvent.DeliveryCompleted).doAction(::completeOrder, OrderStatus.OrderCompleted).end()
+                    onEvent(OrderEvent.DeliveryFailed)
+                        .doAction(::sendOrderCancellation, OrderStatus.OrderCancellationSent)
+                        .end()
+                }
+            onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+        }
     } onFalse
         {
             doAction(
-                action = { order -> initializeOnlinePayment(order) },
-                status = OrderStatus.OnlinePaymentInitialized,
-                retry =
-                    RetryStrategy(
-                        maxAttempts = 3,
-                        delayMs = 1000,
-                        exponentialBackoff = true,
-                        retryOn = setOf(PaymentGatewayException::class),
-                    ),
-            )
-            onEvent(OrderEvent.PaymentCompleted).join(OrderStatus.OrderPreparationStarted)
-            onEvent(OrderEvent.SwitchToCashPayment).join(OrderStatus.CashPaymentInitialized)
-            onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
-            onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStatus.OnlinePaymentExpired).apply {
-                onEvent(OrderEvent.RetryPayment).join(OrderStatus.OnlinePaymentInitialized)
-                onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
-            }
+                    action = ::initializeOnlinePayment,
+                    status = OrderStatus.OnlinePaymentInitialized,
+                    retry =
+                        RetryStrategy(
+                            maxAttempts = 3,
+                            delayMs = 1000,
+                            exponentialBackoff = true,
+                            retryOn = setOf(PaymentGatewayException::class),
+                        ),
+                )
+                .apply {
+                    onEvent(OrderEvent.PaymentCompleted).join(OrderStatus.OrderPreparationStarted)
+                    onEvent(OrderEvent.SwitchToCashPayment).join(OrderStatus.CashPaymentInitialized)
+                    onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+                    onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStatus.OnlinePaymentExpired).apply {
+                        onEvent(OrderEvent.RetryPayment).join(OrderStatus.OnlinePaymentInitialized)
+                        onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+                    }
+                }
         }
 }
 

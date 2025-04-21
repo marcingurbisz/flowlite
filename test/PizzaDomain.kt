@@ -4,7 +4,6 @@ import io.flowlite.api.*
 
 /** Represents the status of a pizza order. */
 enum class OrderStatus : Status {
-    New, // Initial state before any processing
     OrderCreated, // Order details recorded
     CashPaymentInitialized, // Intermediate state for cash
     OnlinePaymentInitialized, // Intermediate state for online
@@ -44,8 +43,6 @@ data class PizzaOrder(
 
 // --- Top-Level Action Functions (returning new instances) ---
 
-fun createPizzaOrder(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.OrderCreated)
-
 fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.CashPaymentInitialized)
 
 fun initializeOnlinePayment(order: PizzaOrder): PizzaOrder {
@@ -73,8 +70,7 @@ class PaymentGatewayException(message: String) : Exception(message)
 fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
 
     // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>()
-        .doAction(action = { order -> createPizzaOrder(order) }, status = OrderStatus.OrderCreated)
+    return FlowBuilder<PizzaOrder>(OrderStatus.OrderCreated)
         .condition(
             predicate = { order -> order.paymentMethod == PaymentMethod.CASH },
             onTrue = {

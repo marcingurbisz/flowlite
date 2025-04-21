@@ -16,9 +16,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 ## TODO
 
-* Apply rectangle formatting
 * Review API once again and again :)
-  * Should I start the flow with status NEW?
   * end should return parent flowbuilder ?
   * should onEvent return EventBuilder or new flow builder?
   * Trailing Lambda Syntax for condition() ?
@@ -54,7 +52,7 @@ stateDiagram-v2
     
     [*] --> OrderCreated
     OrderCancellationSent --> [*]
-    OrderCreated: createPizzaOrder() OrderCreated
+    OrderCreated: OrderCreated
     OrderCreated --> if_payment_method
     if_payment_method --> CashPaymentInitialized: paymentMethod = CASH
     if_payment_method --> OnlinePaymentInitialized: paymentMethod = ONLINE

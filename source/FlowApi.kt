@@ -90,8 +90,9 @@ data class ProcessDefinition<T : Any>(
 /**
  * Builder for defining a workflow.
  * @param T the type of context object the flow operates on
+ * @param startStatus status from which flow starts when new flow instance is created. May be null for subflows.
  */
-class FlowBuilder<T : Any> {
+class FlowBuilder<T : Any>(startStatus: Status?) {
     private val transitions = mutableMapOf<Status, MutableMap<Event?, ActionWithStatus<T>>>()
 
     /**

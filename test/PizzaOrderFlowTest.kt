@@ -26,7 +26,7 @@ class PizzaOrderFlowTest {
         // Start a process instance
         val processId = flowEngine.startProcess("pizza-order", PizzaOrder(
             customerName = "customer-name",
-            status = OrderStatus.New,
+            status = OrderStatus.OrderCreated,
             paymentMethod = PaymentMethod.ONLINE,
         ))
         

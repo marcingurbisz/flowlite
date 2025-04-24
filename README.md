@@ -16,7 +16,6 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 ## TODO
 
-* check Gemini 2.5 and Copilot with trailing lambda syntax and infix notation for condition
 * Review API once again and again :)
   * end should return parent flowbuilder ?
   * should onEvent return EventBuilder or new flow builder?
@@ -33,14 +32,20 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 ### Assumptions
 
-* Rectangle represent action (methods on diagram) with a state change or state change alone: Format: `actionName() STATE_NAME`
-* Status change is executed within the same transaction with action
-* When action fails state will be marked as error (not shown diagram).
-    * It's possible to add retry strategy for each action.
-* Arrows represent transitions between states, triggered by action completion (and status change) or events
-* Choice nodes represent routing decisions
-* Events can trigger action execution and status change. They represent external triggers that change the process state (e.g., `onEvent: SwitchToCashPayment`)
-* Terminal states are represented by transitions to *`[]`
+* FlowLite uses an Action-Oriented approach for stages, where stage names indicate ongoing activities (e.g., "InitializingPayment" rather than "PaymentInitialized")
+* Each stage has an associated StageStatus (PENDING, IN_PROGRESS, COMPLETED, FAILED)
+* The combination of stage and status (plus eventually retry_count and retry configuration) fully defines what the engine should do next
+* Execution of the next step of the flow is triggered by a "execute next step in flow instance x" message
+  * This messaging system can be replaced by a database scheduler
+* Diagram below
+  * Rectangle represent stages with their associated actions. Format: StageName `actionName()`
+  * When an action fails, the stage will be marked with a status of failed (not shown in diagram)
+  * It will be possible to add retry strategy for each stage.
+  * Arrows represent transitions between stages, triggered by action completion (and status change) or events
+  * Choice nodes represent routing decisions
+  * Events can trigger stage transitions. They represent external triggers that change the process stage (e.g., `onEvent SwitchToCashPayment`)
+  * Terminal stages are represented by transitions to `[*]`
+* Parallel execution is possible by starting new flows with their own separate stages
 
 ### Diagram
 
@@ -48,32 +53,31 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 stateDiagram-v2
     state if_payment_method <<choice>>
     
-    [*] --> OrderCreated
-    OrderCancellationSent --> [*]
-    OrderCreated: OrderCreated
-    OrderCreated --> if_payment_method
-    if_payment_method --> CashPaymentInitialized: paymentMethod = CASH
-    if_payment_method --> OnlinePaymentInitialized: paymentMethod = ONLINE
-    CashPaymentInitialized: initializeCashPayment() CashPaymentInitialized
-    CashPaymentInitialized --> OrderPreparationStarted: onEvent#58; PaymentConfirmed
-    CashPaymentInitialized --> OrderCancellationSent: onEvent#58; Cancel
-    OnlinePaymentInitialized: initializeOnlinePayment() OnlinePaymentInitialized
-    OnlinePaymentInitialized --> CashPaymentInitialized: onEvent#58; SwitchToCashPayment
-    OnlinePaymentInitialized --> OrderPreparationStarted: onEvent#58; PaymentCompleted
-    OnlinePaymentInitialized --> OrderCancellationSent: onEvent#58; Cancel 
-    OnlinePaymentInitialized --> OnlinePaymentExpired: onEvent#58; PaymentSessionExpired
-    OnlinePaymentExpired --> OnlinePaymentInitialized: onEvent#58; RetryPayment
-    OnlinePaymentExpired --> OrderCancellationSent: onEvent#58; Cancel
-    OrderPreparationStarted: startOrderPreparation() OrderPreparationStarted
-    OrderPreparationStarted --> DeliveryInitialized: onEvent#58; ReadyForDelivery
+    [*] --> if_payment_method
+    CancellingOrder --> [*]
+    if_payment_method --> InitializingCashPayment: paymentMethod = CASH
+    if_payment_method --> InitializingOnlinePayment: paymentMethod = ONLINE
+    InitializingCashPayment: InitializingCashPayment initializeCashPayment()
+    InitializingCashPayment --> StartingOrderPreparation: onEvent PaymentConfirmed
+    InitializingCashPayment --> CancellingOrder: onEvent Cancel
+    InitializingOnlinePayment: InitializingOnlinePayment initializeOnlinePayment()
+    InitializingOnlinePayment --> InitializingCashPayment: onEvent SwitchToCashPayment
+    InitializingOnlinePayment --> StartingOrderPreparation: onEvent PaymentCompleted
+    InitializingOnlinePayment --> CancellingOrder: onEvent Cancel 
+    InitializingOnlinePayment --> ExpiringOnlinePayment: onEvent PaymentSessionExpired
+    ExpiringOnlinePayment: ExpiringOnlinePayment handlePaymentExpiration()
+    ExpiringOnlinePayment --> InitializingOnlinePayment: onEvent RetryPayment
+    ExpiringOnlinePayment --> CancellingOrder: onEvent Cancel
+    StartingOrderPreparation: StartingOrderPreparation startOrderPreparation()
+    StartingOrderPreparation --> InitializingDelivery: onEvent ReadyForDelivery
      
-    DeliveryInitialized: initializeDelivery() DeliveryInitialized
-    DeliveryInitialized --> OrderCompleted: onEvent#58; DeliveryCompleted
-    DeliveryInitialized --> OrderCancellationSent: onEvent#58; DeliveryFailed
+    InitializingDelivery: InitializingDelivery initializeDelivery()
+    InitializingDelivery --> CompletingOrder: onEvent DeliveryCompleted
+    InitializingDelivery --> CancellingOrder: onEvent DeliveryFailed
     
-    OrderCompleted: completeOrder() OrderCompleted
-    OrderCancellationSent: sendOrderCancellation() OrderCancellationSent
-    OrderCompleted --> [*]
+    CompletingOrder: CompletingOrder completeOrder()
+    CancellingOrder: CancellingOrder sendOrderCancellation()
+    CompletingOrder --> [*]
 ```
 
 ## Code example

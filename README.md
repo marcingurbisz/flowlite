@@ -14,24 +14,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 - **Composable**: Build complex flows from smaller, reusable pieces
 - **Lightweight**
 
-## TODO
-
-* Review API once again and again :)
-  * end should return parent flowbuilder ?
-  * should onEvent return EventBuilder or new flow builder?
-  * Type-Safe Builders onEvent(OrderEvent.PAYMENT_CONFIRMED) {doAction(::startOrderPreparation, OrderStatus.ORDER_PREPARATION_STARTED)} ?
-  * Named Arguments better ?
-* Define second flow?
-* Implement API to the point that next step is possible 
-* Diagram generator and flow validator
-* Full implementation of engine with working example
-* Waiting on multiple events (event with conditional?)
-* History of changes
-
-## Process Example
-
-### Assumptions
-
+## Assumptions
 * FlowLite uses an Action-Oriented approach for stages, where stage names indicate ongoing activities (e.g., "InitializingPayment" rather than "PaymentInitialized")
 * Each stage has an associated StageStatus (PENDING, IN_PROGRESS, COMPLETED, FAILED)
 * The combination of stage and status (plus eventually retry_count and retry configuration) fully defines what the engine should do next
@@ -46,6 +29,22 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
   * Events can trigger stage transitions. They represent external triggers that change the process stage (e.g., `onEvent SwitchToCashPayment`)
   * Terminal stages are represented by transitions to `[*]`
 * Parallel execution is possible by starting new flows with their own separate stages
+
+## TODO
+
+* Review API once again and again :)
+  * end should return parent flowbuilder ?
+  * should onEvent return EventBuilder or new flow builder?
+  * Type-Safe Builders onEvent(OrderEvent.PAYMENT_CONFIRMED) {doAction(::startOrderPreparation, OrderStatus.ORDER_PREPARATION_STARTED)} ?
+  * Named Arguments better ?
+* Define second flow?
+* Implement API to the point that next step is possible
+* Diagram generator and flow validator
+* Full implementation of engine with working example
+* Waiting on multiple events (event with conditional?)
+* History of changes
+
+## Process Example
 
 ### Diagram
 
@@ -80,6 +79,6 @@ stateDiagram-v2
     CompletingOrder --> [*]
 ```
 
-## Code example
+## Code
 
 See [PizzaDomain.kt](test/PizzaDomain.kt) and [PizzaOrderFlowTest.kt](test/PizzaOrderFlowTest.kt)

@@ -1,6 +1,7 @@
 package io.flowlite.test
 
 import io.flowlite.api.Event
+import io.flowlite.api.Flow
 import io.flowlite.api.FlowBuilder
 import io.flowlite.api.Stage
 import io.flowlite.api.StatePersister
@@ -72,23 +73,25 @@ class PaymentGatewayException(message: String) : Exception(message)
 // --- Flow Definition ---
 
 /** Creates the main pizza order flow definition. */
-fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
+fun createPizzaOrderFlow(): Flow<PizzaOrder> {
 
     // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>().stage(Started).condition({ it.paymentMethod == PaymentMethod.CASH }) {
-        stage(InitializingCashPayment, ::initializeCashPayment).apply {
-            onEvent(PaymentConfirmed)
-                .stage(StartingOrderPreparation, ::startOrderPreparation)
-                .onEvent(ReadyForDelivery)
-                .stage(InitializingDelivery, ::initializeDelivery)
-                .apply {
-                    onEvent(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
-                    onEvent(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
-                }
-            onEvent(Cancel).join(CancellingOrder)
+    return FlowBuilder<PizzaOrder>()
+        .stage(Started)
+        .condition({ it.paymentMethod == PaymentMethod.CASH }) {
+            stage(InitializingCashPayment, ::initializeCashPayment).apply {
+                onEvent(PaymentConfirmed)
+                    .stage(StartingOrderPreparation, ::startOrderPreparation)
+                    .onEvent(ReadyForDelivery)
+                    .stage(InitializingDelivery, ::initializeDelivery)
+                    .apply {
+                        onEvent(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
+                        onEvent(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
+                    }
+                onEvent(Cancel).join(CancellingOrder)
+            }
         }
-    } onFalse
-        {
+        .onFalse({
             stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
                 onEvent(PaymentCompleted).join(StartingOrderPreparation)
                 onEvent(SwitchToCashPayment).join(InitializingCashPayment)
@@ -98,7 +101,9 @@ fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
                     onEvent(Cancel).join(CancellingOrder)
                 }
             }
-        }
+        })
+        .end()
+        .build()
 }
 
 /** Simple in-memory state persister for testing purposes */

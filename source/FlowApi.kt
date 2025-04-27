@@ -26,18 +26,118 @@ interface StatePersister<T : Any> {
 }
 
 /**
+ * Represents an immutable flow definition.
+ *
+ * @param T the type of context object the flow operates on
+ */
+class Flow<T : Any>(
+    val initialStage: Stage,
+    val stages: Map<Stage, StageDefinition<T>>,
+) {
+    // Immutable container for flow definition
+    // Additional metadata could be added here
+}
+
+/**
  * Builder for defining a workflow.
  *
  * @param T the type of context object the flow operates on
  */
 class FlowBuilder<T : Any>() {
 
-    fun stage(stage: Stage, action: (item: T) -> T): FlowBuilder<T> = this
+    private val stages = mutableMapOf<Stage, StageDefinition<T>>()
+    private var initialStage: Stage? = null
 
-    fun stage(stage: Stage): FlowBuilder<T> = this
+    /**
+     * Defines a stage with an associated action.
+     *
+     * @param stage The stage to define
+     * @param action The action to execute when entering this stage
+     * @return A StageBuilder for continuing the flow definition from this stage
+     */
+    fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
+        if (initialStage == null) {
+            initialStage = stage
+        }
+        val stageDefinition = StageDefinition(stage, action)
+        stages[stage] = stageDefinition
+        return StageBuilder(this, stageDefinition)
+    }
 
+    /**
+     * Defines a stage without an associated action.
+     *
+     * @param stage The stage to define
+     * @return A StageBuilder for continuing the flow definition from this stage
+     */
+    fun stage(stage: Stage): StageBuilder<T> {
+        if (initialStage == null) {
+            initialStage = stage
+        }
+        val stageDefinition = StageDefinition<T>(stage)
+        stages[stage] = stageDefinition
+        return StageBuilder(this, stageDefinition)
+    }
 
-    /** Handle an event that can trigger this flow. */
+    /**
+     * Builds and returns an immutable flow.
+     */
+    fun build(): Flow<T> = Flow(initialStage!!, stages.toMap())
+}
+
+/**
+ * Represents a stage definition within a flow.
+ */
+class StageDefinition<T : Any>(
+    val stage: Stage,
+    val action: ((item: T) -> T)? = null,
+) {
+    val eventHandlers = mutableMapOf<Event, EventHandler<T>>()
+    var conditionHandler: ConditionHandler<T>? = null
+}
+
+/**
+ * Handler for conditional branching.
+ */
+class ConditionHandler<T : Any>(
+    val predicate: (item: T) -> Boolean,
+    val trueStage: Stage,
+    val falseStage: Stage,
+)
+
+/**
+ * Handler for events.
+ */
+class EventHandler<T : Any>(
+    val event: Event,
+    val targetStage: Stage,
+    val action: ((item: T) -> T)? = null,
+)
+
+/**
+ * Builder for defining stages within a flow.
+ */
+class StageBuilder<T : Any>(
+    private val flowBuilder: FlowBuilder<T>,
+    private val stageDefinition: StageDefinition<T>,
+) {
+    /**
+     * Define a new stage with an action.
+     */
+    fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
+        return flowBuilder.stage(stage, action)
+    }
+
+    /**
+     * Define a new stage without an action.
+     */
+    fun stage(stage: Stage): StageBuilder<T> {
+        return flowBuilder.stage(stage)
+    }
+
+    /**
+     * Handle an event that can trigger this flow.
+     */
     fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this)
 
     /**
@@ -49,11 +149,36 @@ class FlowBuilder<T : Any>() {
      * @return A ConditionBuilder to be used with the onFalse infix function
      */
     fun condition(predicate: (item: T) -> Boolean, trueBranch: FlowBuilder<T>.() -> Unit): ConditionBuilder<T> =
-        ConditionBuilder(this, predicate, trueBranch)
+        ConditionBuilder(flowBuilder, this, predicate, trueBranch)
 
-    /** End the flow. */
-    fun end() {}
+    /**
+     * End the current stage definition and return to the flow builder.
+     */
+    fun end(): FlowBuilder<T> = flowBuilder
 
+    /**
+     * Join another stage in the flow.
+     *
+     * @param targetStage The stage to join
+     * @return The parent FlowBuilder instance for method chaining
+     */
+    fun join(targetStage: Stage): FlowBuilder<T> = flowBuilder
+}
+
+/**
+ * Builder for event-based transitions in a flow. This acts as a specialized builder for when an event is being handled.
+ *
+ * @param T the type of context object the flow operates on
+ */
+class EventBuilder<T : Any>(private val stageBuilder: StageBuilder<T>) {
+    /** Define an action with a stage change for this event. */
+    fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> = stageBuilder
+
+    /** Transition to a specific stage without performing any action. */
+    fun stage(stage: Stage): StageBuilder<T> = stageBuilder
+
+    /** Join another stage in the flow. */
+    fun join(targetStage: Stage): StageBuilder<T> = stageBuilder
 }
 
 /**
@@ -62,6 +187,7 @@ class FlowBuilder<T : Any>() {
  */
 class ConditionBuilder<T : Any>(
     private val flowBuilder: FlowBuilder<T>,
+    private val stageBuilder: StageBuilder<T>,
     private val predicate: (item: T) -> Boolean,
     private val trueBranch: FlowBuilder<T>.() -> Unit,
 ) {
@@ -71,33 +197,11 @@ class ConditionBuilder<T : Any>(
      * @param falseBranch A function with receiver to define the flow when the condition is false
      * @return The parent FlowBuilder for method chaining
      */
-    infix fun onFalse(falseBranch: FlowBuilder<T>.() -> Unit): FlowBuilder<T> {
+    infix fun onFalse(falseBranch: FlowBuilder<T>.() -> Unit): StageBuilder<T> {
         // In a real implementation, we would apply the branches based on the predicate
         // For this stub, we just apply both to the flowBuilder
-        return flowBuilder
+        return stageBuilder
     }
-}
-
-/**
- * Builder for event-based transitions in a flow. This acts as a specialized builder for when an event is being handled.
- *
- * @param T the type of context object the flow operates on
- */
-class EventBuilder<T : Any>(private val flowBuilder: FlowBuilder<T>) {
-    /** Define an action with a stage change for this event. */
-    fun stage(stage: Stage, action: (item: T) -> T): FlowBuilder<T> = flowBuilder
-
-    /**
-     * Join a flow segment that transitions to the specified stage. This allows reusing flow segments by stage within
-     * event handlers.
-     *
-     * @param targetStage The stage to join from
-     * @return The parent FlowBuilder instance for method chaining
-     */
-    fun join(targetStage: Stage) {}
-
-    /** Transition to a specific stage without performing any action. */
-    fun stage(stage: Stage): FlowBuilder<T> = flowBuilder
 }
 
 /** Engine for executing flows */
@@ -105,9 +209,6 @@ class FlowEngine() {
     /**
      * Register a flow with the engine.
      *
-     * @param flowId The unique identifier for this flow
-     * @param stateClass The class of the state object
-     * @param flowBuilder The flow builder containing the flow definition
      * @param statePersister The persister for this specific flow type
      */
     fun <T : Any> registerFlow(

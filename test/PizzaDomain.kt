@@ -1,6 +1,11 @@
 package io.flowlite.test
 
-import io.flowlite.api.*
+import io.flowlite.api.Event
+import io.flowlite.api.FlowBuilder
+import io.flowlite.api.Stage
+import io.flowlite.api.StatePersister
+import io.flowlite.test.OrderEvent.*
+import io.flowlite.test.OrderStage.*
 
 /** Represents the stage of a pizza order. */
 enum class OrderStage : Stage {
@@ -43,23 +48,23 @@ data class PizzaOrder(
 
 // --- Top-Level Action Functions (returning new instances) ---
 
-fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.InitializingCashPayment)
+fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order.copy(stage = InitializingCashPayment)
 
 fun initializeOnlinePayment(order: PizzaOrder): PizzaOrder {
     // Simulate generating a transaction ID
     val transactionId = "TXN-" + System.currentTimeMillis()
     println("[Action] Initializing online payment for order ${order.processId}, transaction ID: $transactionId")
     // In a real app, might throw PaymentGatewayException if initialization fails
-    return order.copy(stage = OrderStage.InitializingOnlinePayment, paymentTransactionId = transactionId)
+    return order.copy(stage = InitializingOnlinePayment, paymentTransactionId = transactionId)
 }
 
-fun startOrderPreparation(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.StartingOrderPreparation)
+fun startOrderPreparation(order: PizzaOrder): PizzaOrder = order.copy(stage = StartingOrderPreparation)
 
-fun initializeDelivery(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.InitializingDelivery)
+fun initializeDelivery(order: PizzaOrder): PizzaOrder = order.copy(stage = InitializingDelivery)
 
-fun completeOrder(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.CompletingOrder)
+fun completeOrder(order: PizzaOrder): PizzaOrder = order.copy(stage = CompletingOrder)
 
-fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.CancellingOrder)
+fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order.copy(stage = CancellingOrder)
 
 /** Custom exception for payment gateway issues. */
 class PaymentGatewayException(message: String) : Exception(message)
@@ -70,42 +75,29 @@ class PaymentGatewayException(message: String) : Exception(message)
 fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
 
     // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>(OrderStage.Started).condition({ it.paymentMethod == PaymentMethod.CASH }) {
-        doAction(::initializeCashPayment, OrderStage.InitializingCashPayment).apply {
-            onEvent(OrderEvent.PaymentConfirmed)
-                .doAction(::startOrderPreparation, OrderStage.StartingOrderPreparation)
-                .onEvent(OrderEvent.ReadyForDelivery)
-                .doAction(::initializeDelivery, OrderStage.InitializingDelivery)
+    return FlowBuilder<PizzaOrder>().stage(Started).condition({ it.paymentMethod == PaymentMethod.CASH }) {
+        stage(InitializingCashPayment, ::initializeCashPayment).apply {
+            onEvent(PaymentConfirmed)
+                .stage(StartingOrderPreparation, ::startOrderPreparation)
+                .onEvent(ReadyForDelivery)
+                .stage(InitializingDelivery, ::initializeDelivery)
                 .apply {
-                    onEvent(OrderEvent.DeliveryCompleted).doAction(::completeOrder, OrderStage.CompletingOrder).end()
-                    onEvent(OrderEvent.DeliveryFailed)
-                        .doAction(::sendOrderCancellation, OrderStage.CancellingOrder)
-                        .end()
+                    onEvent(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
+                    onEvent(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
                 }
-            onEvent(OrderEvent.Cancel).join(OrderStage.CancellingOrder)
+            onEvent(Cancel).join(CancellingOrder)
         }
     } onFalse
         {
-            doAction(
-                    action = ::initializeOnlinePayment,
-                    stage = OrderStage.InitializingOnlinePayment,
-                    retry =
-                        RetryStrategy(
-                            maxAttempts = 3,
-                            delayMs = 1000,
-                            exponentialBackoff = true,
-                            retryOn = setOf(PaymentGatewayException::class),
-                        ),
-                )
-                .apply {
-                    onEvent(OrderEvent.PaymentCompleted).join(OrderStage.StartingOrderPreparation)
-                    onEvent(OrderEvent.SwitchToCashPayment).join(OrderStage.InitializingCashPayment)
-                    onEvent(OrderEvent.Cancel).join(OrderStage.CancellingOrder)
-                    onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStage.ExpiringOnlinePayment).apply {
-                        onEvent(OrderEvent.RetryPayment).join(OrderStage.InitializingOnlinePayment)
-                        onEvent(OrderEvent.Cancel).join(OrderStage.CancellingOrder)
-                    }
+            stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
+                onEvent(PaymentCompleted).join(StartingOrderPreparation)
+                onEvent(SwitchToCashPayment).join(InitializingCashPayment)
+                onEvent(Cancel).join(CancellingOrder)
+                onEvent(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
+                    onEvent(RetryPayment).join(InitializingOnlinePayment)
+                    onEvent(Cancel).join(CancellingOrder)
                 }
+            }
         }
 }
 

@@ -17,14 +17,14 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 ## Assumptions
 * FlowLite uses an Action-Oriented approach for stages, where stage names indicate ongoing activities (e.g., "InitializingPayment" rather than "PaymentInitialized")
 * Each stage has an associated StageStatus (PENDING, IN_PROGRESS, COMPLETED, FAILED)
-* The combination of stage and status (plus eventually retry_count and retry configuration) fully defines what the engine should do next
+* The combination of stage and StageStatus (plus eventually retry_count and retry configuration) fully defines what the engine should do next
 * Execution of the next step of the flow is triggered by a "execute next step in flow instance x" message
   * This messaging system can be replaced by a database scheduler
 * Diagram below
   * Rectangle represent stages with their associated actions. Format: StageName `actionName()`
-  * When an action fails, the stage will be marked with a status of failed (not shown in diagram)
+  * When an action fails, the stage will be marked with a StageStatus of failed (not shown in diagram)
   * It will be possible to add retry strategy for each stage.
-  * Arrows represent transitions between stages, triggered by action completion (and status change) or events
+  * Arrows represent transitions between stages, triggered by action completion (and StageStatus change) or events
   * Choice nodes represent routing decisions
   * Events can trigger stage transitions. They represent external triggers that change the process stage (e.g., `onEvent SwitchToCashPayment`)
   * Terminal stages are represented by transitions to `[*]`

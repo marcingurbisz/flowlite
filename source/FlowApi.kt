@@ -4,9 +4,9 @@ import java.util.UUID
 import kotlin.reflect.KClass
 
 /**
- * Represents a status within a workflow. Implementations should be enums to provide a finite set of possible statuses.
+ * Represents a stage within a workflow. Implementations should be enums to provide a finite set of possible stages.
  */
-interface Status
+interface Stage
 
 /**
  * Represents an event that can trigger state transitions in a workflow. Implementations should be enums to provide a
@@ -26,21 +26,21 @@ interface StatePersister<T : Any> {
 }
 
 /**
- * Action with status change. Combines a business action with a resulting status transition.
+ * Action with stage change. Combines a business action with a resulting stage transition.
  *
  * @param T the type of context object the action operates on (must be immutable)
  */
 class ActionWithStatus<T>(
     val action: (item: T) -> T, // Action now returns the modified state
-    val resultStatus: (item: T) -> Status,
+    val resultStage: (item: T) -> Stage,
     val retry: RetryStrategy? = null,
 ) {
-    /** Alternative constructor that uses a fixed result status. */
+    /** Alternative constructor that uses a fixed result stage. */
     constructor(
         action: (item: T) -> T, // Action now returns the modified state
-        resultStatus: Status,
+        resultStage: Stage,
         retry: RetryStrategy? = null,
-    ) : this(action = action, resultStatus = { resultStatus }, retry = retry)
+    ) : this(action = action, resultStage = { resultStage }, retry = retry)
 }
 
 /** Retry configuration for actions. Using a value class for better performance as this is mainly a data carrier. */
@@ -82,7 +82,7 @@ data class RetryConfig(
 data class ProcessDefinition<T : Any>(
     val id: String,
     val stateClass: KClass<*>, // Keep track of the class for potential serialization/reflection
-    val transitions: Map<Status, Map<Event?, ActionWithStatus<T>>>, // Simplified representation of transitions
+    val transitions: Map<Stage, Map<Event?, ActionWithStatus<T>>>, // Simplified representation of transitions
     // Add other necessary properties like statePersister associated with this definition?
 )
 
@@ -90,61 +90,61 @@ data class ProcessDefinition<T : Any>(
  * Builder for defining a workflow.
  *
  * @param T the type of context object the flow operates on
- * @param startStatus status from which flow starts when new flow instance is created. May be null for subflows.
+ * @param startStage stage from which flow starts when new flow instance is created. May be null for subflows.
  */
-class FlowBuilder<T : Any>(startStatus: Status?) {
-    private val transitions = mutableMapOf<Status, MutableMap<Event?, ActionWithStatus<T>>>()
+class FlowBuilder<T : Any>(startStage: Stage?) {
+    private val transitions = mutableMapOf<Stage, MutableMap<Event?, ActionWithStatus<T>>>()
 
-    /** Define an action with a status change. Using context receivers for better integration with the flow context. */
-    fun doAction(action: (item: T) -> T, status: Status, retry: RetryStrategy? = null): FlowBuilder<T> = this
+    /** Define an action with a stage change. Using context receivers for better integration with the flow context. */
+    fun doAction(action: (item: T) -> T, stage: Stage, retry: RetryStrategy? = null): FlowBuilder<T> = this
 
     /** Handle an event that can trigger this flow. */
     fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this)
 
     /**
-     * Join a flow segment that transitions to the specified status. This allows reusing a flow segment by its target
-     * status without repeating the code.
+     * Join a flow segment that transitions to the specified stage. This allows reusing a flow segment by its target
+     * stage without repeating the code.
      *
-     * @param targetStatus The status to join from
+     * @param targetStage The stage to join from
      * @return This FlowBuilder instance for method chaining
-     * @throws IllegalArgumentException if no action transitioning to the specified status is found
+     * @throws IllegalArgumentException if no action transitioning to the specified stage is found
      */
-    fun joinActionWithStatus(targetStatus: Status): FlowBuilder<T> {
-        // Find an existing transition to the specified status
-        val statusEntry = findActionForTargetStatus(targetStatus)
+    fun joinActionWithStatus(targetStage: Stage): FlowBuilder<T> {
+        // Find an existing transition to the specified stage
+        val stageEntry = findActionForTargetStage(targetStage)
 
-        if (statusEntry == null) {
-            throw IllegalArgumentException("No action found that transitions to status '$targetStatus'")
+        if (stageEntry == null) {
+            throw IllegalArgumentException("No action found that transitions to stage '$targetStage'")
         }
 
-        // Apply the found action with status to the current flow
-        val (sourceStatus, eventMap) = statusEntry
+        // Apply the found action with stage to the current flow
+        val (sourceStage, eventMap) = stageEntry
         val eventEntry = eventMap.entries.first()
 
         // Add the transition to the current flow
         // In a real implementation, we'd need to handle the entire subsequent flow
         // For now, we just add the direct transition
-        transitions.getOrPut(sourceStatus) { mutableMapOf() }[eventEntry.key] = eventEntry.value
+        transitions.getOrPut(sourceStage) { mutableMapOf() }[eventEntry.key] = eventEntry.value
 
         return this
     }
 
     /**
-     * Find an action that transitions to the specified status.
+     * Find an action that transitions to the specified stage.
      *
-     * @param targetStatus The status to find an action for
-     * @return The source status and its event map if found, null otherwise
+     * @param targetStage The stage to find an action for
+     * @return The source stage and its event map if found, null otherwise
      */
-    private fun findActionForTargetStatus(targetStatus: Status): Pair<Status, Map<Event?, ActionWithStatus<T>>>? {
-        for ((sourceStatus, eventMap) in transitions) {
+    private fun findActionForTargetStage(targetStage: Stage): Pair<Stage, Map<Event?, ActionWithStatus<T>>>? {
+        for ((sourceStage, eventMap) in transitions) {
             for (actionWithStatus in eventMap.values) {
-                // Check if this action transitions to the target status
-                // For simplicity, we're only checking fixed result statuses
+                // Check if this action transitions to the target stage
+                // For simplicity, we're only checking fixed result stages
                 if (
-                    actionWithStatus.resultStatus is Function0<*> &&
-                        (actionWithStatus.resultStatus as Function0<Status>).invoke() == targetStatus
+                    actionWithStatus.resultStage is Function0<*> &&
+                        (actionWithStatus.resultStage as Function0<Stage>).invoke() == targetStage
                 ) {
-                    return Pair(sourceStatus, eventMap)
+                    return Pair(sourceStage, eventMap)
                 }
             }
         }
@@ -166,7 +166,7 @@ class FlowBuilder<T : Any>(startStatus: Status?) {
     fun end(): FlowBuilder<T> = this
 
     /** Builds the transitions for the process definition. This is intended to be used internally by the FlowEngine. */
-    fun buildTransitions(): Map<Status, Map<Event?, ActionWithStatus<T>>> {
+    fun buildTransitions(): Map<Stage, Map<Event?, ActionWithStatus<T>>> {
         // Return an immutable copy of the transitions
         return transitions.mapValues { it.value.toMap() }
     }
@@ -200,22 +200,22 @@ class ConditionBuilder<T : Any>(
  * @param T the type of context object the flow operates on
  */
 class EventBuilder<T : Any>(private val flowBuilder: FlowBuilder<T>) {
-    /** Define an action with a status change for this event. */
-    fun doAction(action: (item: T) -> T, status: Status): FlowBuilder<T> = flowBuilder
+    /** Define an action with a stage change for this event. */
+    fun doAction(action: (item: T) -> T, stage: Stage): FlowBuilder<T> = flowBuilder
 
     /**
-     * Join a flow segment that transitions to the specified status. This allows reusing flow segments by status within
+     * Join a flow segment that transitions to the specified stage. This allows reusing flow segments by stage within
      * event handlers.
      *
-     * @param targetStatus The status to join from
+     * @param targetStage The stage to join from
      * @return The parent FlowBuilder instance for method chaining
      */
-    fun join(targetStatus: Status): FlowBuilder<T> {
-        return flowBuilder.joinActionWithStatus(targetStatus)
+    fun join(targetStage: Stage): FlowBuilder<T> {
+        return flowBuilder.joinActionWithStatus(targetStage)
     }
 
-    /** Transition to a specific status without performing any action. */
-    fun transitionTo(status: Status): FlowBuilder<T> = flowBuilder
+    /** Transition to a specific stage without performing any action. */
+    fun transitionTo(stage: Stage): FlowBuilder<T> = flowBuilder
 }
 
 /** Type-erased process definition wrapper to allow storing different process types in the same engine. */
@@ -276,7 +276,7 @@ class FlowEngine(private val processDefinitions: MutableMap<String, ProcessDefin
      * Starts a new process instance.
      *
      * @param flowId The ID of the registered ProcessDefinition.
-     * @param initialState The initial state object (must include initial status).
+     * @param initialState The initial state object (must include initial stage).
      * @return The generated unique process instance ID.
      */
     @Suppress("UNCHECKED_CAST")
@@ -320,14 +320,14 @@ class FlowEngine(private val processDefinitions: MutableMap<String, ProcessDefin
                     "No process instance found for ID '$processId' or failed to load state."
                 )
 
-        // TODO: Determine current status from the currentState object (needs reflection or an interface)
-        val currentStatus: Status = TODO("Implement logic to get status from currentState")
+        // TODO: Determine current stage from the currentState object (needs reflection or an interface)
+        val currentStage: Stage = TODO("Implement logic to get stage from currentState")
 
-        // Find the action associated with the current status and event
+        // Find the action associated with the current stage and event
         val actionWithStatus =
-            definition.transitions[currentStatus]?.get(event)
+            definition.transitions[currentStage]?.get(event)
                 ?: throw IllegalStateException(
-                    "No transition defined for status '$currentStatus' and event '$event' in flow '${definition.id}'"
+                    "No transition defined for stage '$currentStage' and event '$event' in flow '${definition.id}'"
                 )
 
         // Execute the action
@@ -342,11 +342,11 @@ class FlowEngine(private val processDefinitions: MutableMap<String, ProcessDefin
                 throw e // Re-throw or handle differently
             }
 
-        // TODO: Update the status in the newState object based on actionWithStatus.resultStatus
-        val finalStateWithNewStatus = TODO("Implement logic to update status in newState")
+        // TODO: Update the stage in the newState object based on actionWithStatus.resultStage
+        val finalStateWithNewStage = TODO("Implement logic to update stage in newState")
 
         // Persist the new state
-        statePersister.save(processId, finalStateWithNewStatus)
-        println("Process '$processId' transitioned to new state: $finalStateWithNewStatus")
+        statePersister.save(processId, finalStateWithNewStage)
+        println("Process '$processId' transitioned to new state: $finalStateWithNewStage")
     }
 }

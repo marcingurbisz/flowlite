@@ -2,8 +2,8 @@ package io.flowlite.test
 
 import io.flowlite.api.*
 
-/** Represents the status of a pizza order. */
-enum class OrderStatus : Status {
+/** Represents the stage of a pizza order. */
+enum class OrderStage : Stage {
     Started, // Order details recorded
     InitializingCashPayment, // Processing cash payment
     InitializingOnlinePayment, // Processing online payment
@@ -35,7 +35,7 @@ enum class PaymentMethod {
 
 data class PizzaOrder(
     val processId: String = "", // Will be set by the engine when starting
-    val status: OrderStatus, // Ensure OrderStatus is imported/defined correctly
+    val stage: OrderStage, // Ensure OrderStage is imported/defined correctly
     val customerName: String,
     val paymentMethod: PaymentMethod,
     val paymentTransactionId: String? = null,
@@ -43,23 +43,23 @@ data class PizzaOrder(
 
 // --- Top-Level Action Functions (returning new instances) ---
 
-fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.InitializingCashPayment)
+fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.InitializingCashPayment)
 
 fun initializeOnlinePayment(order: PizzaOrder): PizzaOrder {
     // Simulate generating a transaction ID
     val transactionId = "TXN-" + System.currentTimeMillis()
     println("[Action] Initializing online payment for order ${order.processId}, transaction ID: $transactionId")
     // In a real app, might throw PaymentGatewayException if initialization fails
-    return order.copy(status = OrderStatus.InitializingOnlinePayment, paymentTransactionId = transactionId)
+    return order.copy(stage = OrderStage.InitializingOnlinePayment, paymentTransactionId = transactionId)
 }
 
-fun startOrderPreparation(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.StartingOrderPreparation)
+fun startOrderPreparation(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.StartingOrderPreparation)
 
-fun initializeDelivery(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.InitializingDelivery)
+fun initializeDelivery(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.InitializingDelivery)
 
-fun completeOrder(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.CompletingOrder)
+fun completeOrder(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.CompletingOrder)
 
-fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.CancellingOrder)
+fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order.copy(stage = OrderStage.CancellingOrder)
 
 /** Custom exception for payment gateway issues. */
 class PaymentGatewayException(message: String) : Exception(message)
@@ -70,25 +70,25 @@ class PaymentGatewayException(message: String) : Exception(message)
 fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
 
     // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>(OrderStatus.Started).condition({ it.paymentMethod == PaymentMethod.CASH }) {
-        doAction(::initializeCashPayment, OrderStatus.InitializingCashPayment).apply {
+    return FlowBuilder<PizzaOrder>(OrderStage.Started).condition({ it.paymentMethod == PaymentMethod.CASH }) {
+        doAction(::initializeCashPayment, OrderStage.InitializingCashPayment).apply {
             onEvent(OrderEvent.PaymentConfirmed)
-                .doAction(::startOrderPreparation, OrderStatus.StartingOrderPreparation)
+                .doAction(::startOrderPreparation, OrderStage.StartingOrderPreparation)
                 .onEvent(OrderEvent.ReadyForDelivery)
-                .doAction(::initializeDelivery, OrderStatus.InitializingDelivery)
+                .doAction(::initializeDelivery, OrderStage.InitializingDelivery)
                 .apply {
-                    onEvent(OrderEvent.DeliveryCompleted).doAction(::completeOrder, OrderStatus.CompletingOrder).end()
+                    onEvent(OrderEvent.DeliveryCompleted).doAction(::completeOrder, OrderStage.CompletingOrder).end()
                     onEvent(OrderEvent.DeliveryFailed)
-                        .doAction(::sendOrderCancellation, OrderStatus.CancellingOrder)
+                        .doAction(::sendOrderCancellation, OrderStage.CancellingOrder)
                         .end()
                 }
-            onEvent(OrderEvent.Cancel).join(OrderStatus.CancellingOrder)
+            onEvent(OrderEvent.Cancel).join(OrderStage.CancellingOrder)
         }
     } onFalse
         {
             doAction(
                     action = ::initializeOnlinePayment,
-                    status = OrderStatus.InitializingOnlinePayment,
+                    stage = OrderStage.InitializingOnlinePayment,
                     retry =
                         RetryStrategy(
                             maxAttempts = 3,
@@ -98,12 +98,12 @@ fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
                         ),
                 )
                 .apply {
-                    onEvent(OrderEvent.PaymentCompleted).join(OrderStatus.StartingOrderPreparation)
-                    onEvent(OrderEvent.SwitchToCashPayment).join(OrderStatus.InitializingCashPayment)
-                    onEvent(OrderEvent.Cancel).join(OrderStatus.CancellingOrder)
-                    onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStatus.ExpiringOnlinePayment).apply {
-                        onEvent(OrderEvent.RetryPayment).join(OrderStatus.InitializingOnlinePayment)
-                        onEvent(OrderEvent.Cancel).join(OderStatus.CancellingOrder)
+                    onEvent(OrderEvent.PaymentCompleted).join(OrderStage.StartingOrderPreparation)
+                    onEvent(OrderEvent.SwitchToCashPayment).join(OrderStage.InitializingCashPayment)
+                    onEvent(OrderEvent.Cancel).join(OrderStage.CancellingOrder)
+                    onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStage.ExpiringOnlinePayment).apply {
+                        onEvent(OrderEvent.RetryPayment).join(OrderStage.InitializingOnlinePayment)
+                        onEvent(OrderEvent.Cancel).join(OrderStage.CancellingOrder)
                     }
                 }
         }

@@ -4,14 +4,14 @@ import io.flowlite.api.*
 
 /** Represents the status of a pizza order. */
 enum class OrderStatus : Status {
-    OrderCreated, // Order details recorded
-    CashPaymentInitialized, // Intermediate state for cash
-    OnlinePaymentInitialized, // Intermediate state for online
-    OnlinePaymentExpired, // Online payment session timed out
-    OrderPreparationStarted, // Kitchen starts making the pizza
-    DeliveryInitialized, // Delivery process started
-    OrderCompleted, // Pizza delivered successfully
-    OrderCancellationSent, // Order was cancelled
+    Started, // Order details recorded
+    InitializingCashPayment, // Processing cash payment
+    InitializingOnlinePayment, // Processing online payment
+    ExpiringOnlinePayment, // Online payment session timed out
+    StartingOrderPreparation, // Kitchen starts making the pizza
+    InitializingDelivery, // Delivery process started
+    CompletingOrder, // Pizza delivered successfully
+    CancellingOrder, // Order was cancelled
 }
 
 /** Represents events that can occur during the pizza order lifecycle. */
@@ -43,23 +43,23 @@ data class PizzaOrder(
 
 // --- Top-Level Action Functions (returning new instances) ---
 
-fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.CashPaymentInitialized)
+fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.InitializingCashPayment)
 
 fun initializeOnlinePayment(order: PizzaOrder): PizzaOrder {
     // Simulate generating a transaction ID
     val transactionId = "TXN-" + System.currentTimeMillis()
     println("[Action] Initializing online payment for order ${order.processId}, transaction ID: $transactionId")
     // In a real app, might throw PaymentGatewayException if initialization fails
-    return order.copy(status = OrderStatus.OnlinePaymentInitialized, paymentTransactionId = transactionId)
+    return order.copy(status = OrderStatus.InitializingOnlinePayment, paymentTransactionId = transactionId)
 }
 
-fun startOrderPreparation(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.OrderPreparationStarted)
+fun startOrderPreparation(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.StartingOrderPreparation)
 
-fun initializeDelivery(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.DeliveryInitialized)
+fun initializeDelivery(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.InitializingDelivery)
 
-fun completeOrder(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.OrderCompleted)
+fun completeOrder(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.CompletingOrder)
 
-fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.OrderCancellationSent)
+fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order.copy(status = OrderStatus.CancellingOrder)
 
 /** Custom exception for payment gateway issues. */
 class PaymentGatewayException(message: String) : Exception(message)
@@ -70,25 +70,25 @@ class PaymentGatewayException(message: String) : Exception(message)
 fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
 
     // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>(OrderStatus.OrderCreated).condition({ it.paymentMethod == PaymentMethod.CASH }) {
-        doAction(::initializeCashPayment, OrderStatus.CashPaymentInitialized).apply {
+    return FlowBuilder<PizzaOrder>(OrderStatus.Started).condition({ it.paymentMethod == PaymentMethod.CASH }) {
+        doAction(::initializeCashPayment, OrderStatus.InitializingCashPayment).apply {
             onEvent(OrderEvent.PaymentConfirmed)
-                .doAction(::startOrderPreparation, OrderStatus.OrderPreparationStarted)
+                .doAction(::startOrderPreparation, OrderStatus.StartingOrderPreparation)
                 .onEvent(OrderEvent.ReadyForDelivery)
-                .doAction(::initializeDelivery, OrderStatus.DeliveryInitialized)
+                .doAction(::initializeDelivery, OrderStatus.InitializingDelivery)
                 .apply {
-                    onEvent(OrderEvent.DeliveryCompleted).doAction(::completeOrder, OrderStatus.OrderCompleted).end()
+                    onEvent(OrderEvent.DeliveryCompleted).doAction(::completeOrder, OrderStatus.CompletingOrder).end()
                     onEvent(OrderEvent.DeliveryFailed)
-                        .doAction(::sendOrderCancellation, OrderStatus.OrderCancellationSent)
+                        .doAction(::sendOrderCancellation, OrderStatus.CancellingOrder)
                         .end()
                 }
-            onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+            onEvent(OrderEvent.Cancel).join(OrderStatus.CancellingOrder)
         }
     } onFalse
         {
             doAction(
                     action = ::initializeOnlinePayment,
-                    status = OrderStatus.OnlinePaymentInitialized,
+                    status = OrderStatus.InitializingOnlinePayment,
                     retry =
                         RetryStrategy(
                             maxAttempts = 3,
@@ -98,12 +98,12 @@ fun createPizzaOrderFlow(): FlowBuilder<PizzaOrder> {
                         ),
                 )
                 .apply {
-                    onEvent(OrderEvent.PaymentCompleted).join(OrderStatus.OrderPreparationStarted)
-                    onEvent(OrderEvent.SwitchToCashPayment).join(OrderStatus.CashPaymentInitialized)
-                    onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
-                    onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStatus.OnlinePaymentExpired).apply {
-                        onEvent(OrderEvent.RetryPayment).join(OrderStatus.OnlinePaymentInitialized)
-                        onEvent(OrderEvent.Cancel).join(OrderStatus.OrderCancellationSent)
+                    onEvent(OrderEvent.PaymentCompleted).join(OrderStatus.StartingOrderPreparation)
+                    onEvent(OrderEvent.SwitchToCashPayment).join(OrderStatus.InitializingCashPayment)
+                    onEvent(OrderEvent.Cancel).join(OrderStatus.CancellingOrder)
+                    onEvent(OrderEvent.PaymentSessionExpired).transitionTo(OrderStatus.ExpiringOnlinePayment).apply {
+                        onEvent(OrderEvent.RetryPayment).join(OrderStatus.InitializingOnlinePayment)
+                        onEvent(OrderEvent.Cancel).join(OderStatus.CancellingOrder)
                     }
                 }
         }

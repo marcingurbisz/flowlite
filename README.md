@@ -121,7 +121,8 @@ fun <T : Any, R : Any> FlowBuilder<T>.waitForChildFlow(
 stateDiagram-v2
     state if_payment_method <<choice>>
     
-    [*] --> if_payment_method
+    [*] --> Started
+    Started --> if_payment_method
     CancellingOrder --> [*]
     if_payment_method --> InitializingCashPayment: paymentMethod = CASH
     if_payment_method --> InitializingOnlinePayment: paymentMethod = ONLINE

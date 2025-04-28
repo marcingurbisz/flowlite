@@ -119,7 +119,7 @@ class EventHandler<T : Any>(
  */
 class StageBuilder<T : Any>(
     private val flowBuilder: FlowBuilder<T>,
-    private val stageDefinition: StageDefinition<T>,
+    private val prevStageDefinition: StageDefinition<T>,
 ) {
     /**
      * Define a new stage with an action.
@@ -141,15 +141,22 @@ class StageBuilder<T : Any>(
     fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this)
 
     /**
-     * Conditional branching with trailing lambda syntax for the true branch. Enables a DSL-style syntax with the
-     * onFalse infix function.
+     * Conditional branching with both true and false branches defined directly.
      *
      * @param predicate Function that evaluates the condition based on the process state
-     * @param trueBranch Builder function with receiver to define the flow when the condition is true
-     * @return A ConditionBuilder to be used with the onFalse infix function
+     * @param onTrue Builder function to define the flow when the condition is true
+     * @param onFalse Builder function to define the flow when the condition is false
+     * @return The parent StageBuilder for method chaining
      */
-    fun condition(predicate: (item: T) -> Boolean, trueBranch: FlowBuilder<T>.() -> Unit): ConditionBuilder<T> =
-        ConditionBuilder(flowBuilder, this, predicate, trueBranch)
+    fun condition(
+        predicate: (item: T) -> Boolean,
+        onTrue: FlowBuilder<T>.() -> Unit,
+        onFalse: FlowBuilder<T>.() -> Unit
+    ): FlowBuilder<T> {
+        // In a real implementation, we would store the condition and branches
+        // For now we just return the stage builder to continue the chain
+        return flowBuilder
+    }
 
     /**
      * End the current stage definition and return to the flow builder.
@@ -181,29 +188,6 @@ class EventBuilder<T : Any>(private val stageBuilder: StageBuilder<T>) {
     fun join(targetStage: Stage): StageBuilder<T> = stageBuilder
 }
 
-/**
- * Builder for the false branch of a condition. This class enables the DSL-style syntax with trailing lambdas and the
- * onFalse infix function.
- */
-class ConditionBuilder<T : Any>(
-    private val flowBuilder: FlowBuilder<T>,
-    private val stageBuilder: StageBuilder<T>,
-    private val predicate: (item: T) -> Boolean,
-    private val trueBranch: FlowBuilder<T>.() -> Unit,
-) {
-    /**
-     * Define the actions to take when the condition is false.
-     *
-     * @param falseBranch A function with receiver to define the flow when the condition is false
-     * @return The parent FlowBuilder for method chaining
-     */
-    infix fun onFalse(falseBranch: FlowBuilder<T>.() -> Unit): StageBuilder<T> {
-        // In a real implementation, we would apply the branches based on the predicate
-        // For this stub, we just apply both to the flowBuilder
-        return stageBuilder
-    }
-}
-
 /** Engine for executing flows */
 class FlowEngine() {
     /**
@@ -214,7 +198,7 @@ class FlowEngine() {
     fun <T : Any> registerFlow(
         flowId: String,
         stateClass: KClass<T>,
-        flowBuilder: FlowBuilder<T>,
+        flow: Flow<T>,
         statePersister: StatePersister<T>,
     ) {}
 

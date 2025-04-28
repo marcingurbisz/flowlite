@@ -20,7 +20,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * The combination of stage and StageStatus (plus eventually retry_count and retry configuration) fully defines what the engine should do next
 * Execution of the next step of the flow is triggered by a "execute next step in flow instance x" message
   * This messaging system can be replaced by a database scheduler
-* Diagram below
+* Assumptions for mermaid diagrams
   * Rectangle represent stages with their associated actions. Format: StageName `actionName()`
   * When an action fails, the stage will be marked with a StageStatus of failed (not shown in diagram)
   * It will be possible to add retry strategy for each stage.
@@ -99,17 +99,15 @@ fun <T : Any, R : Any> FlowBuilder<T>.waitForChildFlow(
 ): FlowBuilder<T>
 ```
 
-## TODO
+## TOD0
 
-* Review API once again and again :)
-  * end should return parent flowbuilder ?
-  * should onEvent return EventBuilder or new flow builder?
-  * Type-Safe Builders onEvent(OrderEvent.PAYMENT_CONFIRMED) {doAction(::startOrderPreparation, OrderStatus.ORDER_PREPARATION_STARTED)} ?
-  * Named Arguments better ?
-* Define second flow?
 * Implement API to the point that next step is possible
 * Diagram generator and flow validator
+* Define second flow?
 * Full implementation of engine with working example
+* onTrue/onFalse as methods?
+* add startChildFlow
+* add subFlow
 * Waiting on multiple events (event with conditional?)
 * History of changes
 

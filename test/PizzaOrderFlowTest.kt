@@ -19,7 +19,7 @@ class PizzaOrderFlowTest {
         flowEngine.registerFlow(
             flowId = "pizza-order",
             stateClass = PizzaOrder::class,
-            flowBuilder = createPizzaOrderFlow(),
+            flow = createPizzaOrderFlow(),
             statePersister = InMemoryStatePersister()
         )
 

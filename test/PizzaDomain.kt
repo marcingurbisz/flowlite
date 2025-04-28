@@ -78,31 +78,33 @@ fun createPizzaOrderFlow(): Flow<PizzaOrder> {
     // Define main pizza order flow
     return FlowBuilder<PizzaOrder>()
         .stage(Started)
-        .condition({ it.paymentMethod == PaymentMethod.CASH }) {
-            stage(InitializingCashPayment, ::initializeCashPayment).apply {
-                onEvent(PaymentConfirmed)
-                    .stage(StartingOrderPreparation, ::startOrderPreparation)
-                    .onEvent(ReadyForDelivery)
-                    .stage(InitializingDelivery, ::initializeDelivery)
-                    .apply {
-                        onEvent(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
-                        onEvent(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
-                    }
-                onEvent(Cancel).join(CancellingOrder)
-            }
-        }
-        .onFalse({
-            stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
-                onEvent(PaymentCompleted).join(StartingOrderPreparation)
-                onEvent(SwitchToCashPayment).join(InitializingCashPayment)
-                onEvent(Cancel).join(CancellingOrder)
-                onEvent(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
-                    onEvent(RetryPayment).join(InitializingOnlinePayment)
+        .condition(
+            { it.paymentMethod == PaymentMethod.CASH },
+            onTrue = {
+                stage(InitializingCashPayment, ::initializeCashPayment).apply {
+                    onEvent(PaymentConfirmed)
+                        .stage(StartingOrderPreparation, ::startOrderPreparation)
+                        .onEvent(ReadyForDelivery)
+                        .stage(InitializingDelivery, ::initializeDelivery)
+                        .apply {
+                            onEvent(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
+                            onEvent(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
+                        }
                     onEvent(Cancel).join(CancellingOrder)
                 }
-            }
-        })
-        .end()
+            },
+            onFalse = {
+                stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
+                    onEvent(PaymentCompleted).join(StartingOrderPreparation)
+                    onEvent(SwitchToCashPayment).join(InitializingCashPayment)
+                    onEvent(Cancel).join(CancellingOrder)
+                    onEvent(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
+                        onEvent(RetryPayment).join(InitializingOnlinePayment)
+                        onEvent(Cancel).join(CancellingOrder)
+                    }
+                }
+            },
+        )
         .build()
 }
 

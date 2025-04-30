@@ -5,6 +5,7 @@ import io.flowlite.test.OrderEvent.*
 import io.flowlite.test.OrderStage.*
 import org.junit.jupiter.api.Test
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 
 /**
  * Tests the MermaidGenerator to ensure it properly converts Flow objects into Mermaid diagram syntax.
@@ -70,6 +71,30 @@ class MermaidGeneratorTest {
         assertTrue(diagram.contains("$CompletingOrder --> [*]") || 
                    diagram.contains("$CancellingOrder --> [*]"),
                    "Diagram should have at least one terminal state")
+                   
+        // Verify specific event-stage connections
+        assertTrue(diagram.contains("$StartingOrderPreparation --> $InitializingDelivery: onEvent $ReadyForDelivery"), 
+                 "ReadyForDelivery event should transition from StartingOrderPreparation to InitializingDelivery")
+        
+        // Verify that events are not incorrectly attached to stages
+        assertFalse(diagram.contains("$InitializingCashPayment --> $InitializingDelivery: onEvent $ReadyForDelivery"),
+                  "ReadyForDelivery event should not be attached to InitializingCashPayment stage")
+        
+        // Verify more event-stage connections
+        assertTrue(diagram.contains("$InitializingCashPayment --> $StartingOrderPreparation: onEvent $PaymentConfirmed"),
+                 "PaymentConfirmed event should transition from InitializingCashPayment to StartingOrderPreparation")
+        
+        assertTrue(diagram.contains("$InitializingOnlinePayment --> $StartingOrderPreparation: onEvent $PaymentCompleted"),
+                 "PaymentCompleted event should transition from InitializingOnlinePayment to StartingOrderPreparation")
+        
+        assertTrue(diagram.contains("$InitializingDelivery --> $CompletingOrder: onEvent $DeliveryCompleted"),
+                 "DeliveryCompleted event should transition from InitializingDelivery to CompletingOrder")
+        
+        assertTrue(diagram.contains("$InitializingDelivery --> $CancellingOrder: onEvent $DeliveryFailed"),
+                 "DeliveryFailed event should transition from InitializingDelivery to CancellingOrder")
+        
+        assertTrue(diagram.contains("$ExpiringOnlinePayment --> $InitializingOnlinePayment: onEvent $RetryPayment"),
+                 "RetryPayment event should transition from ExpiringOnlinePayment to InitializingOnlinePayment")
     }
     
 }

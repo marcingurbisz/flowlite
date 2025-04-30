@@ -82,7 +82,11 @@ class MermaidGenerator {
                 "true"
             }
             sb.append("    $choiceNodeName --> ${conditionHandler.trueStage}: $trueLabel\n")
-            processStage(flow, conditionHandler.trueStage, sb, visitedStages)
+            
+            // Process the true stage
+            if (!visitedStages.contains(conditionHandler.trueStage)) {
+                processStage(flow, conditionHandler.trueStage, sb, visitedStages)
+            }
             
             // Add false branch
             val falseLabel = if (conditionHandler.predicate.toString().contains("it.paymentMethod")) {
@@ -91,13 +95,21 @@ class MermaidGenerator {
                 "false"
             }
             sb.append("    $choiceNodeName --> ${conditionHandler.falseStage}: $falseLabel\n")
-            processStage(flow, conditionHandler.falseStage, sb, visitedStages)
+            
+            // Process the false stage
+            if (!visitedStages.contains(conditionHandler.falseStage)) {
+                processStage(flow, conditionHandler.falseStage, sb, visitedStages)
+            }
         }
         
         // Process event handlers
         stageDefinition.eventHandlers.forEach { (event, handler) ->
             sb.append("    $currentStage --> ${handler.targetStage}: onEvent $event\n")
-            processStage(flow, handler.targetStage, sb, visitedStages)
+            
+            // Process the target stage if not already processed
+            if (!visitedStages.contains(handler.targetStage)) {
+                processStage(flow, handler.targetStage, sb, visitedStages)
+            }
         }
     }
     
@@ -118,5 +130,4 @@ class MermaidGenerator {
             .substringBefore("(")
             .substringBefore("$")
     }
-
 }

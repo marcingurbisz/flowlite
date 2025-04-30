@@ -43,7 +43,7 @@ class Flow<T : Any>(
  *
  * @param T the type of context object the flow operates on
  */
-class FlowBuilder<T : Any>() {
+class FlowBuilder<T : Any> {
 
     private val stages = mutableMapOf<Stage, StageDefinition<T>>()
     private var initialStage: Stage? = null
@@ -59,8 +59,11 @@ class FlowBuilder<T : Any>() {
         if (initialStage == null) {
             initialStage = stage
         }
-        val stageDefinition = StageDefinition(stage, action)
-        stages[stage] = stageDefinition
+        var stageDefinition = stages[stage]
+        if (stageDefinition == null) {
+            stageDefinition = StageDefinition(stage, action)
+            stages[stage] = stageDefinition
+        }
         return StageBuilder(this, stageDefinition)
     }
 
@@ -74,9 +77,64 @@ class FlowBuilder<T : Any>() {
         if (initialStage == null) {
             initialStage = stage
         }
-        val stageDefinition = StageDefinition<T>(stage)
-        stages[stage] = stageDefinition
+        var stageDefinition = stages[stage]
+        if (stageDefinition == null) {
+            stageDefinition = StageDefinition<T>(stage)
+            stages[stage] = stageDefinition
+        }
         return StageBuilder(this, stageDefinition)
+    }
+    
+    /**
+     * Add a stage and its definition to the flow.
+     * If the stage already exists, merge the definitions.
+     */
+    internal fun addStage(stage: Stage, definition: StageDefinition<T>) {
+        val existingDef = stages[stage]
+        if (existingDef == null) {
+            // If this stage doesn't exist yet, add it
+            stages[stage] = definition
+            
+            // Also add any event target stages that might be referenced
+            definition.eventHandlers.forEach { (_, handler) ->
+                if (!stages.containsKey(handler.targetStage)) {
+                    // Create a placeholder definition for the target stage
+                    val targetDef = StageDefinition<T>(handler.targetStage)
+                    stages[handler.targetStage] = targetDef
+                }
+            }
+        } else {
+            // If the stage already exists, merge the definitions
+            // Copy the action if not already set
+            if (existingDef.action == null) {
+                existingDef.action = definition.action
+            }
+            
+            // Copy the condition handler if not already set
+            if (existingDef.conditionHandler == null) {
+                existingDef.conditionHandler = definition.conditionHandler
+                
+                // Make sure both branch target stages exist
+                definition.conditionHandler?.let { handler ->
+                    if (!stages.containsKey(handler.trueStage)) {
+                        stages[handler.trueStage] = StageDefinition<T>(handler.trueStage)
+                    }
+                    if (!stages.containsKey(handler.falseStage)) {
+                        stages[handler.falseStage] = StageDefinition<T>(handler.falseStage)
+                    }
+                }
+            }
+            
+            // Copy event handlers
+            definition.eventHandlers.forEach { (event, handler) ->
+                existingDef.eventHandlers.putIfAbsent(event, handler)
+                
+                // Make sure the target stage exists
+                if (!stages.containsKey(handler.targetStage)) {
+                    stages[handler.targetStage] = StageDefinition<T>(handler.targetStage)
+                }
+            }
+        }
     }
 
     /**
@@ -90,7 +148,7 @@ class FlowBuilder<T : Any>() {
  */
 class StageDefinition<T : Any>(
     val stage: Stage,
-    val action: ((item: T) -> T)? = null,
+    var action: ((item: T) -> T)? = null,
 ) {
     val eventHandlers = mutableMapOf<Event, EventHandler<T>>()
     var conditionHandler: ConditionHandler<T>? = null
@@ -118,8 +176,8 @@ class EventHandler<T : Any>(
  * Builder for defining stages within a flow.
  */
 class StageBuilder<T : Any>(
-    private val flowBuilder: FlowBuilder<T>,
-    private val prevStageDefinition: StageDefinition<T>,
+    val flowBuilder: FlowBuilder<T>,
+    val prevStageDefinition: StageDefinition<T>,
 ) {
     /**
      * Define a new stage with an action.
@@ -138,7 +196,7 @@ class StageBuilder<T : Any>(
     /**
      * Handle an event that can trigger this flow.
      */
-    fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this)
+    fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this, event)
 
     /**
      * Conditional branching with both true and false branches defined directly.
@@ -153,8 +211,39 @@ class StageBuilder<T : Any>(
         onTrue: FlowBuilder<T>.() -> Unit,
         onFalse: FlowBuilder<T>.() -> Unit
     ): FlowBuilder<T> {
-        // In a real implementation, we would store the condition and branches
-        // For now we just return the stage builder to continue the chain
+        // Create a flow builder for the true branch
+        val trueBuilder = FlowBuilder<T>()
+        // Apply the true branch definition
+        trueBuilder.onTrue()
+        
+        // Create a flow builder for the false branch
+        val falseBuilder = FlowBuilder<T>()
+        // Apply the false branch definition
+        falseBuilder.onFalse()
+        
+        // Build both flows to get their structures
+        val trueFlow = trueBuilder.build()
+        val falseFlow = falseBuilder.build()
+        
+        // Get the initial stages of both branches
+        val trueStage = trueFlow.initialStage
+        val falseStage = falseFlow.initialStage
+        
+        // Create a condition handler
+        val conditionHandler = ConditionHandler(predicate, trueStage, falseStage)
+        // Add the condition handler to the current stage
+        prevStageDefinition.conditionHandler = conditionHandler
+        
+        // Add all stages from the true branch to the main flow
+        trueFlow.stages.forEach { (stage, definition) ->
+            flowBuilder.addStage(stage, definition)
+        }
+        
+        // Add all stages from the false branch to the main flow
+        falseFlow.stages.forEach { (stage, definition) ->
+            flowBuilder.addStage(stage, definition)
+        }
+        
         return flowBuilder
     }
 
@@ -169,27 +258,69 @@ class StageBuilder<T : Any>(
      * @param targetStage The stage to join
      * @return The parent FlowBuilder instance for method chaining
      */
-    fun join(targetStage: Stage): FlowBuilder<T> = flowBuilder
+    fun join(targetStage: Stage): FlowBuilder<T> {
+        // Implicitly create an event handler that transitions to the target stage
+        return flowBuilder
+    }
 }
 
 /**
- * Builder for event-based transitions in a flow. This acts as a specialized builder for when an event is being handled.
+ * Builder for event-based transitions in a flow.
  *
  * @param T the type of context object the flow operates on
  */
-class EventBuilder<T : Any>(private val stageBuilder: StageBuilder<T>) {
-    /** Define an action with a stage change for this event. */
-    fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> = stageBuilder
+class EventBuilder<T : Any>(
+    private val stageBuilder: StageBuilder<T>,
+    private val event: Event
+) {
+    /**
+     * Define an action with a stage change for this event.
+     */
+    fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
+        // Create an event handler for this event
+        val eventHandler = EventHandler(event, stage, action)
+        
+        // Register the event handler with the stage
+        stageBuilder.prevStageDefinition.eventHandlers[event] = eventHandler
+        
+        return stageBuilder
+    }
 
-    /** Transition to a specific stage without performing any action. */
-    fun stage(stage: Stage): StageBuilder<T> = stageBuilder
+    /**
+     * Transition to a specific stage without performing any action.
+     */
+    fun stage(stage: Stage): StageBuilder<T> {
+        // Create an event handler for this event without an action
+        val eventHandler = EventHandler<T>(event, stage, null)
+        
+        // Register the event handler with the stage
+        stageBuilder.prevStageDefinition.eventHandlers[event] = eventHandler
+        
+        return stageBuilder
+    }
 
-    /** Join another stage in the flow. */
-    fun join(targetStage: Stage): StageBuilder<T> = stageBuilder
+    /**
+     * Join another stage in the flow.
+     */
+    fun join(targetStage: Stage): StageBuilder<T> {
+        // Create an event handler that transitions to the target stage
+        val eventHandler = EventHandler<T>(event, targetStage, null)
+        
+        // Register the event handler with the stage
+        stageBuilder.prevStageDefinition.eventHandlers[event] = eventHandler
+        
+        return stageBuilder
+    }
 }
 
-/** Engine for executing flows */
-class FlowEngine() {
+/**
+ * Engine for executing flows
+ */
+class FlowEngine {
+    private val flows = mutableMapOf<String, Any>()
+    private val persisters = mutableMapOf<String, Any>()
+    private val stateClasses = mutableMapOf<String, KClass<*>>()
+
     /**
      * Register a flow with the engine.
      *
@@ -200,7 +331,11 @@ class FlowEngine() {
         stateClass: KClass<T>,
         flow: Flow<T>,
         statePersister: StatePersister<T>,
-    ) {}
+    ) {
+        flows[flowId] = flow
+        persisters[flowId] = statePersister
+        stateClasses[flowId] = stateClass
+    }
 
     /**
      * Starts a new process instance.
@@ -213,5 +348,4 @@ class FlowEngine() {
         val processId = UUID.randomUUID().toString()
         return processId
     }
-
 }

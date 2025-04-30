@@ -15,94 +15,32 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 - **Lightweight**
 
 ## Assumptions
-* FlowLite uses an Action-Oriented approach for stages, where stage names indicate ongoing activities (e.g., "InitializingPayment" rather than "PaymentInitialized")
+* FlowLite uses an Action-Oriented approach for stages, where stage names indicate ongoing activities (e.g., "InitializingPayment")
 * Each stage has an associated StageStatus (PENDING, IN_PROGRESS, COMPLETED, FAILED)
 * The combination of stage and StageStatus (plus eventually retry_count and retry configuration) fully defines what the engine should do next
-* Execution of the next step of the flow is triggered by a "execute next step in flow instance x" message
-  * This messaging system can be replaced by a database scheduler
+* Execution of the next step in the flow is triggered by the "execute next step in flow instance x" message
 * Assumptions for mermaid diagrams
-  * Rectangle represent stages with their associated actions. Format: StageName `actionName()`
+  * The Rectangle represents stages with their associated actions. Format: StageName `actionName()`
   * When an action fails, the stage will be marked with a StageStatus of failed (not shown in diagram)
-  * It will be possible to add retry strategy for each stage.
+  * It will be possible to add a retry strategy for each stage.
   * Arrows represent transitions between stages, triggered by action completion (and StageStatus change) or events
   * Choice nodes represent routing decisions
   * Events can trigger stage transitions. They represent external triggers that change the process stage (e.g., `onEvent SwitchToCashPayment`)
   * Terminal stages are represented by transitions to `[*]`
 
-### Parallel Execution (Idea)
-
-FlowLite achieves parallelism through parent-child flow relationships.
-
-#### Parent-Child Flow Model
-
-FlowLite implements parallel execution using a parent-child flow model where:
-
-- Parent flows can start one or more child flows
-- Child flows execute independently and in parallel
-- Parent flows can wait for specific child flows at designated stages
-- The parent flow continues its own execution while child flows run
-
-#### Diagram Example
-
-The following diagram illustrates a typical parent-child flow pattern:
-
-```mermaid
-stateDiagram-v2
-    ValidatingBasicInfo: ValidatingBasicInfo validateBasicInfo()
-    [*] --> ValidatingBasicInfo
-    
-    state fork_state <<fork>>
-    ValidatingBasicInfo --> fork_state
-    
-    fork_state --> RunningCreditCheck: Main Flow
-    fork_state --> VerifyingIncome: startChildFlow(Income)
-    
-    RunningCreditCheck: RunningCreditCheck performCreditCheck()
-    RunningCreditCheck --> ReviewingCreditHistory
-    
-    ReviewingCreditHistory: ReviewingCreditHistory analyzeCreditHistory()
-    ReviewingCreditHistory --> EvaluatingInitialEligibility
-    
-    VerifyingIncome: VerifyingIncome verifyIncome()
-    VerifyingIncome --> CalculatingDebtToIncome
-    
-    CalculatingDebtToIncome: CalculatingDebtToIncome calculateRatios()
-    CalculatingDebtToIncome --> VerifyingEmployment
-    
-    VerifyingEmployment: VerifyingEmployment contactEmployer()
-    VerifyingEmployment --> WaitingForIncomeVerification: Income child flow ends
-    
-    EvaluatingInitialEligibility: EvaluatingInitialEligibility assessInitialRisk()
-    EvaluatingInitialEligibility --> WaitingForIncomeVerification
-    
-    WaitingForIncomeVerification: WaitingForIncomeVerification waitForChildFlows(Income)
-    
-    WaitingForIncomeVerification --> MakingFinalDecision
-    MakingFinalDecision: MakingFinalDecision determineLoanApproval()
-    
-    MakingFinalDecision --> [*]
-```
-
-#### API for Parallel Execution
-
-```kotlin
-// Starting a child flow
-fun <T : Any, R : Any> FlowBuilder<T>.startChildFlow(
-    childFlowId: String,
-    initialStateMapper: (parentState: T) -> R,
-): FlowBuilder<T>
-
-// Processing child flow results
-fun <T : Any, R : Any> FlowBuilder<T>.waitForChildFlow(
-    childFlowId: String,
-    resultMapper: (parentState: T, childResult: R) -> T,
-): FlowBuilder<T>
-```
-
 ## TOD0
 
-* Implement API to the point that next step is possible
-* Diagram generator and flow validator
+* Cleanup implementation after generator implementation vibe code session
+  * compare diagram
+  * compare generateDetailedDiagram and generateDiagram
+  * when the same stage (or event to the stage) is added to the flow throw exception
+  * remove println
+  * do we need internal addStage?
+  * var action -> val action?
+  * implement join in StageBuilder
+  * make condition implementation more compact
+  * what to do with FlowApiTest
+* Business errors
 * Define second flow?
 * Full implementation of engine with working example
 * onTrue/onFalse as methods?
@@ -147,6 +85,76 @@ stateDiagram-v2
     CompletingOrder --> [*]
 ```
 
-## Code
+### Code
 
 See [PizzaDomain.kt](test/PizzaDomain.kt) and [PizzaOrderFlowTest.kt](test/PizzaOrderFlowTest.kt)
+
+## Parallel Execution (Idea)
+
+FlowLite achieves parallelism through parent-child flow relationships.
+
+### Parent-Child Flow Model
+
+FlowLite implements parallel execution using a parent-child flow model where:
+
+- Parent flows can start one or more child flows
+- Child flows execute independently and in parallel
+- Parent flows can wait for specific child flows at designated stages
+- The parent flow continues its own execution while child flows run
+
+### Diagram Example
+
+The following diagram illustrates a typical parent-child flow pattern:
+
+```mermaid
+stateDiagram-v2
+    ValidatingBasicInfo: ValidatingBasicInfo validateBasicInfo()
+    [*] --> ValidatingBasicInfo
+    
+    state fork_state <<fork>>
+    ValidatingBasicInfo --> fork_state
+    
+    fork_state --> RunningCreditCheck: Main Flow
+    fork_state --> VerifyingIncome: startChildFlow(Income)
+    
+    RunningCreditCheck: RunningCreditCheck performCreditCheck()
+    RunningCreditCheck --> ReviewingCreditHistory
+    
+    ReviewingCreditHistory: ReviewingCreditHistory analyzeCreditHistory()
+    ReviewingCreditHistory --> EvaluatingInitialEligibility
+    
+    VerifyingIncome: VerifyingIncome verifyIncome()
+    VerifyingIncome --> CalculatingDebtToIncome
+    
+    CalculatingDebtToIncome: CalculatingDebtToIncome calculateRatios()
+    CalculatingDebtToIncome --> VerifyingEmployment
+    
+    VerifyingEmployment: VerifyingEmployment contactEmployer()
+    VerifyingEmployment --> WaitingForIncomeVerification: Income child flow ends
+    
+    EvaluatingInitialEligibility: EvaluatingInitialEligibility assessInitialRisk()
+    EvaluatingInitialEligibility --> WaitingForIncomeVerification
+    
+    WaitingForIncomeVerification: WaitingForIncomeVerification waitForChildFlows(Income)
+    
+    WaitingForIncomeVerification --> MakingFinalDecision
+    MakingFinalDecision: MakingFinalDecision determineLoanApproval()
+    
+    MakingFinalDecision --> [*]
+```
+
+### API for Parallel Execution
+
+```kotlin
+// Starting a child flow
+fun <T : Any, R : Any> FlowBuilder<T>.startChildFlow(
+    childFlowId: String,
+    initialStateMapper: (parentState: T) -> R,
+): FlowBuilder<T>
+
+// Processing child flow results
+fun <T : Any, R : Any> FlowBuilder<T>.waitForChildFlow(
+    childFlowId: String,
+    resultMapper: (parentState: T, childResult: R) -> T,
+): FlowBuilder<T>
+```

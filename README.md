@@ -31,15 +31,17 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 ## TOD0
 
 * Cleanup implementation after generator implementation vibe code session
-  * compare diagram
-  * compare generateDetailedDiagram and generateDiagram
   * when the same stage (or event to the stage) is added to the flow throw exception
+  * fixes to diagram
+    * some events are not attached to proper stages e.g. ReadyForDelivery event is the event attached to StartingOrderPreparation stage
+  * Add api for adding description to condition
   * remove println
   * do we need internal addStage?
   * var action -> val action?
   * implement join in StageBuilder
   * make condition implementation more compact
   * what to do with FlowApiTest
+  * review generateDiagram in details
 * Business errors
 * Define second flow?
 * Full implementation of engine with working example

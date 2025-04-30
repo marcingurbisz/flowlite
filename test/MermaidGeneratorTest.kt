@@ -71,37 +71,5 @@ class MermaidGeneratorTest {
                    diagram.contains("$CancellingOrder --> [*]"),
                    "Diagram should have at least one terminal state")
     }
-
-    @Test
-    fun `test generate detailed mermaid diagram with custom condition labels`() {
-        // Get the pizza flow definition from our test domain
-        val pizzaFlow = createPizzaOrderFlow()
-        
-        // Create an instance of our generator
-        val generator = MermaidGenerator()
-        
-        // Define custom condition labels for the payment method condition
-        val conditionLabels = mapOf(
-            "if_started-${InitializingCashPayment}" to "paymentMethod = CASH",
-            "if_started-${InitializingOnlinePayment}" to "paymentMethod = ONLINE"
-        )
-        
-        // Generate a more detailed diagram with custom labels for conditions
-        val detailedDiagram = generator.generateDetailedDiagram("pizza-order", pizzaFlow, conditionLabels)
-        
-        println("Generated Detailed Mermaid Diagram:")
-        println(detailedDiagram)
-        
-        // Basic assertions to verify diagram contents
-        assertTrue(detailedDiagram.contains("stateDiagram-v2"), "Diagram should start with stateDiagram-v2")
-        assertTrue(detailedDiagram.contains("[*] --> $Started"), "Diagram should have initial state")
-        assertTrue(detailedDiagram.contains("state if_"), "Diagram should have at least one choice node")
-        
-        // Verify presence of custom labels if condition nodes are correctly generated
-        if (detailedDiagram.contains("if_started")) {
-            assertTrue(detailedDiagram.contains("paymentMethod = CASH") || 
-                       detailedDiagram.contains("paymentMethod = ONLINE"),
-                       "Diagram should include custom condition labels")
-        }
-    }
+    
 }

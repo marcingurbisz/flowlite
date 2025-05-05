@@ -28,7 +28,29 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
   * Events can trigger stage transitions. They represent external triggers that change the process stage (e.g., `onEvent SwitchToCashPayment`)
   * Terminal stages are represented by transitions to `[*]`
 
-## TOD0
+### Error Handling
+
+#### Exception Handling Principles
+
+* Exceptions thrown from actions will cause the stage to fail
+* Stage status transitions to `FAILED` when an action throws an exception
+* Failed stages can be retried via the FlowLite cockpit
+* Error information is preserved for debugging and analysis
+
+#### Error Classification
+
+FlowLite differentiates between two types of exceptions:
+
+* **System Exceptions**: Unexpected errors that represent technical issues (database connection failures, system unavailability)
+* **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (`BusinessException` marker interface)
+
+Business exceptions are displayed differently in the FlowLite cockpit (or not at all) and can be handled according to specific business needs.
+
+#### Error Storage
+
+FlowLite uses a separate error repository to store and manage error information.
+
+## TODO
 
 * Cleanup implementation after generator implementation vibe code session
   * fix todos in the code

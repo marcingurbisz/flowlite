@@ -16,7 +16,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 ## Assumptions
 * FlowLite uses an Action-Oriented approach for stages, where stage names indicate ongoing activities (e.g., "InitializingPayment")
-* Each stage has an associated StageStatus (PENDING, IN_PROGRESS, COMPLETED, FAILED)
+* Each stage has an associated StageStatus e.g. (PENDING, IN_PROGRESS, COMPLETED, ERROR)
 * The combination of stage and StageStatus (plus eventually retry_count and retry configuration) fully defines what the engine should do next
 * Execution of the next step in the flow is triggered by the "execute next step in flow instance x" message
 * Assumptions for mermaid diagrams
@@ -33,22 +33,19 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 #### Exception Handling Principles
 
 * Exceptions thrown from actions will cause the stage to fail
-* Stage status transitions to `FAILED` when an action throws an exception
-* Failed stages can be retried via the FlowLite cockpit
+* FlowLite differentiates between two types of exceptions:
+  * **Process Exceptions**: Unexpected errors that represent technical issues (database connection failures, system unavailability)
+  * **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (those which implements `BusinessException` marker interface)
+* Business exceptions are designed with the assumption that a process supervisor will review the case and potentially retry the stage with corrected data.
+* Stage status transitions to different error states depending on exception type:
+  * PROCESS_ERROR for technical/system exceptions
+  * BUSINESS_ERROR for expected business exceptions
+* Process errors can be retried via the FlowLite cockpit. Business exceptions are displayed differently (or not at all). 
 * Error information is preserved for debugging and analysis
-
-#### Error Classification
-
-FlowLite differentiates between two types of exceptions:
-
-* **System Exceptions**: Unexpected errors that represent technical issues (database connection failures, system unavailability)
-* **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (`BusinessException` marker interface)
-
-Business exceptions are displayed differently in the FlowLite cockpit (or not at all) and can be handled according to specific business needs.
 
 #### Error Storage
 
-FlowLite uses a separate error repository to store and manage error information.
+FlowLite uses a separate error repository to store and manage error information
 
 ## TODO
 
@@ -63,9 +60,9 @@ FlowLite uses a separate error repository to store and manage error information.
   * make condition implementation more compact
   * what to do with FlowApiTest
   * combine stage(stage: Stage, action: (item: T) -> T) and stage(stage: Stage) ?
-* Business errors
 * Define second flow?
 * Full implementation of engine with working example
+* Implement error handling
 * onTrue/onFalse as methods?
 * add startChildFlow
 * add subFlow

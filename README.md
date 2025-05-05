@@ -30,22 +30,17 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 
 ### Error Handling
 
-#### Exception Handling Principles
-
 * Exceptions thrown from actions will cause the stage to fail
 * FlowLite differentiates between two types of exceptions:
   * **Process Exceptions**: Unexpected errors that represent technical issues (database connection failures, system unavailability)
   * **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (those which implements `BusinessException` marker interface)
 * Business exceptions are designed with the assumption that a process supervisor will review the case and potentially retry the stage with corrected data.
-* Stage status transitions to different error states depending on exception type:
+* Stage status transitions to different error states depending on an exception type:
   * PROCESS_ERROR for technical/system exceptions
   * BUSINESS_ERROR for expected business exceptions
 * Process errors can be retried via the FlowLite cockpit. Business exceptions are displayed differently (or not at all). 
 * Error information is preserved for debugging and analysis
-
-#### Error Storage
-
-FlowLite uses a separate error repository to store and manage error information
+* FlowLite uses a separate error repository to store and manage error information
 
 ## TODO
 

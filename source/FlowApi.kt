@@ -54,40 +54,20 @@ class FlowBuilder<T : Any> {
     private var initialStage: Stage? = null
 
     /**
-     * Defines a stage with an associated action.
+     * Defines a stage with an optional associated action.
      *
      * @param stage The stage to define
-     * @param action The action to execute when entering this stage
+     * @param action The action to execute when entering this stage (optional)
      * @return A StageBuilder for continuing the flow definition from this stage
      */
-    fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
+    fun stage(stage: Stage, action: ((item: T) -> T)? = null): StageBuilder<T> {
         if (initialStage == null) {
             initialStage = stage
         }
-        var stageDefinition = stages[stage]
-        if (stageDefinition == null) {
-            stageDefinition = StageDefinition(stage, action)
-            stages[stage] = stageDefinition
-        } else if (stageDefinition.action != null && action != stageDefinition.action) {
-            //TODO find a better way to detect that stage was added by join before actual definition
-            //maybe separate join stages list that is precessed at the end?
-            throw FlowDefinitionException("Stage $stage already defined with a different action")
+        if (stage in stages) {
+            throw FlowDefinitionException("Stage $stage already defined")
         }
-        return StageBuilder(this, stageDefinition)
-    }
-
-    /**
-     * Defines a stage without an associated action.
-     *
-     * @param stage The stage to define
-     * @return A StageBuilder for continuing the flow definition from this stage
-     */
-    fun stage(stage: Stage): StageBuilder<T> {
-        //TODO: detect when we add already defined stage
-        if (initialStage == null) {
-            initialStage = stage
-        }
-        val stageDefinition = stages.getOrPut(stage) { StageDefinition(stage) }
+        val stageDefinition = StageDefinition<T>(stage, action).also { stages[stage] = it }
         return StageBuilder(this, stageDefinition)
     }
     

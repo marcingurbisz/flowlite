@@ -72,14 +72,6 @@ class FlowBuilder<T : Any> {
     }
     
     /**
-     * Internal method to check if a stage exists in the flow
-     */
-    //TODO: Check if really needed
-    internal fun hasStage(stage: Stage): Boolean {
-        return stages.containsKey(stage)
-    }
-    
-    /**
      * Internal method to ensure a stage exists, creating it if needed
      */
     //TODO: Check if really needed
@@ -89,61 +81,15 @@ class FlowBuilder<T : Any> {
     
     /**
      * Add a stage and its definition to the flow.
-     * If the stage already exists, merge the definitions.
-     * TODO: Merging definitions looks to me as not necessary
+     * If the stage already exists, throw an exception.
      */
     internal fun addStage(stage: Stage, definition: StageDefinition<T>) {
-        val existingDef = stages[stage]
-        if (existingDef == null) {
-            // If this stage doesn't exist yet, add it
-            stages[stage] = definition
-            
-            // Also add any event target stages that might be referenced
-            definition.eventHandlers.forEach { (_, handler) ->
-                ensureStage(handler.targetStage)
-            }
-            
-            // Ensure condition target stages exist if present
-            definition.conditionHandler?.let { handler ->
-                ensureStage(handler.trueStage)
-                ensureStage(handler.falseStage)
-            }
-        } else {
-            // If the stage already exists, merge the definitions
-            // Copy the action if not already set
-            if (existingDef.action == null) {
-                existingDef.action = definition.action
-            } else if (definition.action != null && definition.action != existingDef.action) {
-                throw FlowDefinitionException("Cannot add stage $stage with a different action than the one already defined")
-            }
-            
-            // Copy the condition handler if not already set
-            if (existingDef.conditionHandler == null) {
-                existingDef.conditionHandler = definition.conditionHandler
-                
-                // Make sure both branch target stages exist
-                definition.conditionHandler?.let { handler ->
-                    ensureStage(handler.trueStage)
-                    ensureStage(handler.falseStage)
-                }
-            } else if (definition.conditionHandler != null && 
-                      (definition.conditionHandler?.trueStage != existingDef.conditionHandler?.trueStage || 
-                       definition.conditionHandler?.falseStage != existingDef.conditionHandler?.falseStage)) {
-                throw FlowDefinitionException("Cannot add stage $stage with a different condition than the one already defined")
-            }
-            
-            // Copy event handlers
-            definition.eventHandlers.forEach { (event, handler) ->
-                val existingHandler = existingDef.eventHandlers[event]
-                if (existingHandler != null && existingHandler.targetStage != handler.targetStage) {
-                    throw FlowDefinitionException("Cannot add event $event to stage $stage with a different target stage than the one already defined")
-                }
-                existingDef.eventHandlers.putIfAbsent(event, handler)
-                
-                // Make sure the target stage exists
-                ensureStage(handler.targetStage)
-            }
+        if (stage in stages) {
+            throw FlowDefinitionException("Stage $stage already exists in the flow")
         }
+        
+        // Add the stage
+        stages[stage] = definition
     }
 
     /**
@@ -224,7 +170,7 @@ class StageBuilder<T : Any>(
         val trueFlow = FlowBuilder<T>().apply(onTrue).build()
         val falseFlow = FlowBuilder<T>().apply(onFalse).build()
         
-        // Create and add condition handler to current stage
+        // Create and add condition handler to the current stage
         stageDefinition.conditionHandler = ConditionHandler(
             predicate, 
             trueFlow.initialStage, 
@@ -234,7 +180,7 @@ class StageBuilder<T : Any>(
         // Add all stages from both branches to the main flow
         trueFlow.stages.forEach { (stage, definition) -> flowBuilder.addStage(stage, definition) }
         falseFlow.stages.forEach { (stage, definition) -> flowBuilder.addStage(stage, definition) }
-        
+
         return flowBuilder
     }
 

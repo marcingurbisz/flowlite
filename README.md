@@ -42,19 +42,124 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
 * Error information is preserved for debugging and analysis
 * FlowLite uses a separate error repository to store and manage error information
 
+## Development Guide
+
+### Windows Setup
+
+If you're cloning this repository on Windows, symbolic links (like `CLAUDE.md -> README.md`) require special Git configuration:
+
+**Option 1: Enable symlinks globally (recommended)**
+```bash
+git config --global core.symlinks true
+git clone <repository-url>
+```
+
+**Option 2: Clone with symlinks enabled**
+```bash
+git clone -c core.symlinks=true <repository-url>
+```
+
+**Requirements:** Git for Windows 2.10.2+, NTFS file system, and either Developer Mode enabled or Administrator privileges.
+
+If symbolic links don't work, `CLAUDE.md` will appear as a text file containing "README.md" - in this case, just refer to README.md directly.
+
+### Build and Test Commands
+- `./gradlew build` - Build the entire project
+- `./gradlew test` - Run all tests
+- `./gradlew clean` - Clean build artifacts
+- `./gradlew check` - Run all verification tasks
+
+### Code Structure
+
+FlowLite uses a **flat directory structure** to keep the codebase simple and organized:
+
+- `source/` - All main source code (flat structure, no subdirectories for main package)
+- `test/` - All test code (flat structure)
+- Resources are placed directly in source directory alongside code files, not in a separate resources directory
+
+**Directory Guidelines:**
+- Do not create subdirectories for the main package
+- For subpackages within the main package, subdirectories are optional - create them only if needed for organization
+- Maintain consistency with the existing flat structure
+
+### Core Architecture
+
+#### Flow Definition System (`source/FlowApi.kt`)
+- `FlowBuilder<T>` - Fluent API for defining workflows
+- `StageBuilder<T>` - Builder for individual stages within flows
+- `EventBuilder<T>` - Builder for event-based transitions
+- `Flow<T>` - Immutable flow definition container
+
+#### Core Interfaces
+- `Stage` - Enum-based stage definitions (action-oriented naming)
+- `Event` - Enum-based event definitions for transitions
+- `StatePersister<T>` - Interface for persisting workflow state
+
+#### Flow Components
+- `StageDefinition<T>` - Contains stage action, event handlers, condition handler, and next stage
+- `ConditionHandler<T>` - Handles conditional branching
+- `EventHandler<T>` - Handles event-based transitions
+- `FlowEngine` - Runtime engine for executing flows
+
+#### Diagram Generation (`source/MermaidGenerator.kt`)
+- `MermaidGenerator` - Converts flow definitions to Mermaid diagrams
+
+### Stage Transitions
+
+FlowLite supports three types of stage transitions:
+
+1. **Automatic Progression**: Sequential stages automatically flow to the next stage
+   ```kotlin
+   .stage(InitializingConfirmation, ::initializeOrderConfirmation)
+   .stage(WaitingForConfirmation) // Automatic progression
+   ```
+
+2. **Event-Based Transitions**: Explicit events trigger transitions
+   ```kotlin
+   .onEvent(PaymentConfirmed).stage(ProcessingPayment, ::processPayment)
+   ```
+
+3. **Conditional Branching**: Logic-based routing decisions
+   ```kotlin
+   .condition(
+       predicate = { it.paymentMethod == PaymentMethod.CASH },
+       onTrue = { /* cash flow */ },
+       onFalse = { /* online flow */ }
+   )
+   ```
+
+4. **Join Operations**: Reference existing stages from other branches
+   ```kotlin
+   .onEvent(PaymentCompleted).join(ProcessingOrder)
+   ```
+
+### Design Principles
+- **Action-Oriented Stages**: Stage names indicate ongoing activities
+- **Type Safety**: Leverages Kotlin's type system for robust workflow definitions
+- **Immutable Flow Definitions**: Built flows are immutable containers
+- **Cross-Branch References**: `join()` allows stages to reference stages defined in other branches
+
+### Examples
+- Pizza Order Flow: `test/PizzaDomain.kt` and `test/PizzaOrderFlowTest.kt`
+- Order Confirmation Flow: `test/orderConfirmationTest.kt` and `test/OrderConfirmationFlowTest.kt`
+
+### Development Notes
+- Uses Kotlin 2.1 with Java 21 toolchain
+- Context receivers enabled with `-Xcontext-receivers` flag
+- JUnit 5 for testing with MockK for mocking
+- Gradle build system with Maven publishing configuration
+
 ## TODO
 
-* Cleanup implementation after generator implementation vibe code session
-  * fix todos in the code
-  * method names missing on generated diagram
-  * Add api for adding description to condition
-  * remove println
-  * do we need internal addStage?
-  * var action -> val action?
-  * implement join in StageBuilder
-  * make condition implementation more compact
-  * what to do with FlowApiTest
-  * combine stage(stage: Stage, action: (item: T) -> T) and stage(stage: Stage) ?
+* fix todos in the code
+* combine orderConfirmationTest.kt and OrderConfirmationFlowTest.kt into one file and switch to kotest
+* review readme
+* method names missing on generated diagram
+* Add api for adding description to condition
+* remove println
+* var action -> val action?
+* what to do with FlowApiTest
+* combine stage(stage: Stage, action: (item: T) -> T) and stage(stage: Stage) ?
 * Define second flow?
 * Full implementation of engine with working example
 * Implement error handling

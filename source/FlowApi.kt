@@ -50,8 +50,9 @@ class Flow<T : Any>(
  */
 class FlowBuilder<T : Any> {
 
-    private val stages = mutableMapOf<Stage, StageDefinition<T>>()
-    private var initialStage: Stage? = null
+    internal val stages = mutableMapOf<Stage, StageDefinition<T>>()
+    internal val joinReferences = mutableListOf<JoinReference<T>>()
+    internal var initialStage: Stage? = null
 
     /**
      * Defines a stage with an optional associated action.
@@ -64,39 +65,71 @@ class FlowBuilder<T : Any> {
         if (initialStage == null) {
             initialStage = stage
         }
-        if (stage in stages) {
-            throw FlowDefinitionException("Stage $stage already defined")
-        }
-        val stageDefinition = StageDefinition<T>(stage, action).also { stages[stage] = it }
+        val stageDefinition = StageDefinition<T>(stage, action)
+        addStage(stage, stageDefinition)
         return StageBuilder(this, stageDefinition)
     }
     
     /**
-     * Internal method to ensure a stage exists, creating it if needed
-     */
-    //TODO: Check if really needed
-    internal fun ensureStage(stage: Stage): StageDefinition<T> {
-        return stages.getOrPut(stage) { StageDefinition<T>(stage) }
-    }
-    
-    /**
      * Add a stage and its definition to the flow.
-     * If the stage already exists, throw an exception.
+     * Throws exception if stage is already defined.
      */
     internal fun addStage(stage: Stage, definition: StageDefinition<T>) {
         if (stage in stages) {
-            throw FlowDefinitionException("Stage $stage already exists in the flow")
+            throw FlowDefinitionException("Stage $stage already defined - each stage should be defined only once")
         }
-        
-        // Add the stage
         stages[stage] = definition
+    }
+    
+    /**
+     * Add a join reference to be resolved during build()
+     */
+    internal fun addJoinReference(fromStage: Stage, event: Event, targetStage: Stage) {
+        joinReferences.add(JoinReference(fromStage, event, targetStage))
     }
 
     /**
      * Builds and returns an immutable flow.
      */
-    fun build(): Flow<T> = Flow(initialStage!!, stages.toMap())
+    fun build(): Flow<T> {
+        resolveJoinReferences(stages)
+        return Flow(initialStage!!, stages.toMap())
+    }
+
+    
+    /**
+     * Resolve join references by adding event handlers to the appropriate stages.
+     * Join references can point to stages defined in any branch of the flow.
+     */
+    private fun resolveJoinReferences(resolvedStages: Map<Stage, StageDefinition<T>>) {
+        joinReferences.forEach { joinRef ->
+            val fromStage = resolvedStages[joinRef.fromStage]
+                ?: throw FlowDefinitionException("From stage ${joinRef.fromStage} not found when resolving join reference")
+            
+            // Target stage must exist somewhere in the resolved stages
+            val targetStageExists = resolvedStages.containsKey(joinRef.targetStage)
+            if (!targetStageExists) {
+                throw FlowDefinitionException("Target stage ${joinRef.targetStage} not found when resolving join reference. Available stages: ${resolvedStages.keys.joinToString()}")
+            }
+            
+            // Add event handler to the from stage
+            if (joinRef.event in fromStage.eventHandlers) {
+                throw FlowDefinitionException("Duplicate event handler for ${joinRef.event} in stage ${joinRef.fromStage}")
+            }
+            
+            fromStage.eventHandlers[joinRef.event] = EventHandler(joinRef.event, joinRef.targetStage, null)
+        }
+    }
 }
+
+/**
+ * Represents a join reference that needs to be resolved during build
+ */
+data class JoinReference<T : Any>(
+    val fromStage: Stage,
+    val event: Event,
+    val targetStage: Stage
+)
 
 /**
  * Represents a stage definition within a flow.
@@ -107,6 +140,7 @@ class StageDefinition<T : Any>(
 ) {
     val eventHandlers = mutableMapOf<Event, EventHandler<T>>()
     var conditionHandler: ConditionHandler<T>? = null
+    var nextStage: Stage? = null
 }
 
 /**
@@ -121,6 +155,7 @@ class ConditionHandler<T : Any>(
 /**
  * Handler for events.
  */
+//TODO: Event handler should rather be connected with StageDefinition instead having stage and action?
 class EventHandler<T : Any>(
     val event: Event,
     val targetStage: Stage,
@@ -138,6 +173,8 @@ class StageBuilder<T : Any>(
      * Define a new stage with an action.
      */
     fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
+        //TODO: stage, onEvent and condition should check if they are used exclusively
+        stageDefinition.nextStage = stage
         return flowBuilder.stage(stage, action)
     }
 
@@ -145,6 +182,7 @@ class StageBuilder<T : Any>(
      * Define a new stage without an action.
      */
     fun stage(stage: Stage): StageBuilder<T> {
+        stageDefinition.nextStage = stage
         return flowBuilder.stage(stage)
     }
 
@@ -166,20 +204,32 @@ class StageBuilder<T : Any>(
         onTrue: FlowBuilder<T>.() -> Unit,
         onFalse: FlowBuilder<T>.() -> Unit
     ): FlowBuilder<T> {
-        // Create and build both branch flows
-        val trueFlow = FlowBuilder<T>().apply(onTrue).build()
-        val falseFlow = FlowBuilder<T>().apply(onFalse).build()
+        // Create both branch builders without building them yet
+        val trueBranch = FlowBuilder<T>().apply(onTrue)
+        val falseBranch = FlowBuilder<T>().apply(onFalse)
         
         // Create and add condition handler to the current stage
         stageDefinition.conditionHandler = ConditionHandler(
             predicate, 
-            trueFlow.initialStage, 
-            falseFlow.initialStage
+            trueBranch.initialStage!!, 
+            falseBranch.initialStage!!
         )
         
-        // Add all stages from both branches to the main flow
-        trueFlow.stages.forEach { (stage, definition) -> flowBuilder.addStage(stage, definition) }
-        falseFlow.stages.forEach { (stage, definition) -> flowBuilder.addStage(stage, definition) }
+        // Collect all stage definitions from both branches (without resolving join references)
+        trueBranch.stages.forEach { (stage, definition) ->
+            flowBuilder.addStage(stage, definition)
+        }
+        falseBranch.stages.forEach { (stage, definition) ->
+            flowBuilder.addStage(stage, definition)
+        }
+        
+        // Collect join references from both branches
+        trueBranch.joinReferences.forEach { joinRef ->
+            flowBuilder.addJoinReference(joinRef.fromStage, joinRef.event, joinRef.targetStage)
+        }
+        falseBranch.joinReferences.forEach { joinRef ->
+            flowBuilder.addJoinReference(joinRef.fromStage, joinRef.event, joinRef.targetStage)
+        }
 
         return flowBuilder
     }
@@ -188,17 +238,6 @@ class StageBuilder<T : Any>(
      * End the current stage definition and return to the flow builder.
      */
     fun end(): FlowBuilder<T> = flowBuilder
-
-    /**
-     * Join another stage in the flow.
-     *
-     * @param targetStage The stage to join
-     * @return The parent FlowBuilder instance for method chaining
-     */
-    fun join(targetStage: Stage): FlowBuilder<T> {
-        // TODO: Find stage and create it as a next stage for current stage
-        return flowBuilder
-    }
 }
 
 /**
@@ -242,15 +281,13 @@ class EventBuilder<T : Any>(
      * Join another stage in the flow.
      */
     fun join(targetStage: Stage): StageBuilder<T> {
-        // Create a placeholder stage definition if it doesn't exist yet
-        stageBuilder.flowBuilder.ensureStage(targetStage)
-        
-        // Create an event handler that transitions to the target stage
-        val eventHandler = EventHandler<T>(event, targetStage, null)
-        
-        // Register the event handler with the stage
-        stageBuilder.stageDefinition.eventHandlers[event] = eventHandler
-        
+        // Record this as a join reference to be resolved during build
+        stageBuilder.flowBuilder.addJoinReference(
+            stageBuilder.stageDefinition.stage,
+            event,
+            targetStage
+        )
+
         //TODO: Return flow builder since it is not allowed to do anything with
         // stage already defined elsewhere
         return stageBuilder

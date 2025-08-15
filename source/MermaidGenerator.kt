@@ -38,7 +38,7 @@ class MermaidGenerator {
         
         // Add terminal states
         flow.stages.keys.forEach { stage ->
-            if (isTerminalState(stage)) {
+            if (isTerminalState(stage, flow)) {
                 sb.append("    $stage --> [*]\n")
             }
         }
@@ -111,14 +111,31 @@ class MermaidGenerator {
                 processStage(flow, handler.targetStage, sb, visitedStages)
             }
         }
+        
+        // Process automatic progression to next stage
+        stageDefinition.nextStage?.let { nextStage ->
+            sb.append("    $currentStage --> $nextStage\n")
+            
+            // Process the next stage if not already processed
+            if (!visitedStages.contains(nextStage)) {
+                processStage(flow, nextStage, sb, visitedStages)
+            }
+        }
     }
     
     /**
      * Check if a stage is a terminal state (end of the flow)
      */
-    private fun isTerminalState(stage: Stage): Boolean {
-        // Treat CompletingOrder and CancellingOrder as terminal states
-        return stage.toString() == "CompletingOrder" || stage.toString() == "CancellingOrder"
+    private fun <T : Any> isTerminalState(stage: Stage, flow: Flow<T>): Boolean {
+        val stageDefinition = flow.stages[stage] ?: return false
+        
+        // A stage is terminal if it has no outgoing transitions:
+        // - No event handlers
+        // - No condition handler  
+        // - No next stage (automatic progression)
+        return stageDefinition.eventHandlers.isEmpty() && 
+               stageDefinition.conditionHandler == null &&
+               stageDefinition.nextStage == null
     }
     
     /**

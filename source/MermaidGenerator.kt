@@ -104,11 +104,11 @@ class MermaidGenerator {
         
         // Process event handlers
         stageDefinition.eventHandlers.forEach { (event, handler) ->
-            sb.append("    $currentStage --> ${handler.targetStage}: onEvent $event\n")
+            sb.append("    $currentStage --> ${handler.targetStageDefinition.stage}: onEvent $event\n")
             
             // Process the target stage if not already processed
-            if (!visitedStages.contains(handler.targetStage)) {
-                processStage(flow, handler.targetStage, sb, visitedStages)
+            if (!visitedStages.contains(handler.targetStageDefinition.stage)) {
+                processStage(flow, handler.targetStageDefinition.stage, sb, visitedStages)
             }
         }
         

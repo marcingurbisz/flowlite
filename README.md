@@ -159,10 +159,7 @@ FlowLite supports three types of stage transitions:
 ## TODO
 * Migrate from deprecated kotlinOptions to compilerOptions DSL
 * review readme
-* Add api for adding description to condition
-* remove println
 * var action -> val action?
-* what to do with FlowApiTest
 * combine stage(stage: Stage, action: (item: T) -> T) and stage(stage: Stage) ?
 * Define second flow?
 * Full implementation of engine with working example
@@ -211,7 +208,7 @@ stateDiagram-v2
 
 ### Code
 
-See [PizzaDomain.kt](test/PizzaDomain.kt) and [PizzaOrderFlowTest.kt](test/PizzaOrderFlowTest.kt)
+See examples in [test](test) directory
 
 ## Parallel Execution (Idea)
 

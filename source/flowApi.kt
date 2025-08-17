@@ -30,24 +30,11 @@ interface StatePersister<T : Any> {
     fun load(processId: String): T?
 }
 
-/**
- * Represents an immutable flow definition.
- *
- * @param T the type of context object the flow operates on
- */
-class Flow<T : Any>(
+data class Flow<T : Any>(
     val initialStage: Stage,
     val stages: Map<Stage, StageDefinition<T>>,
-) {
-    // Immutable container for flow definition
-    // Additional metadata could be added here
-}
+)
 
-/**
- * Builder for defining a workflow.
- *
- * @param T the type of context object the flow operates on
- */
 class FlowBuilder<T : Any> {
 
     internal val stages = mutableMapOf<Stage, StageDefinition<T>>()

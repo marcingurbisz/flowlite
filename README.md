@@ -3,6 +3,28 @@
 FlowLite is a lightweight, developer-friendly workflow engine for Kotlin defining business processes in intuitive and maintainable. 
 It provides a fluent API for defining process flows that are both easy to code and easy to understand.
 
+## Table of Contents
+
+- [Why FlowLite?](#why-flowlite)
+- [Assumptions](#assumptions)
+  - [Error Handling](#error-handling)
+- [Development Guide](#development-guide)
+  - [Windows Setup](#windows-setup)
+  - [Build and Test Commands](#build-and-test-commands)
+  - [Code Structure](#code-structure)
+  - [Core Architecture](#core-architecture)
+  - [Stage Transitions](#stage-transitions)
+  - [Development Notes](#development-notes)
+  - [Code Documentation Guidelines](#code-documentation-guidelines)
+- [TODO](#todo)
+- [Process Example](#process-example)
+  - [Diagram](#diagram)
+  - [Code](#code)
+- [Parallel Execution (Idea)](#parallel-execution-idea)
+  - [Parent-Child Flow Model](#parent-child-flow-model)
+  - [Diagram Example](#diagram-example)
+  - [API for Parallel Execution](#api-for-parallel-execution)
+
 ## Why FlowLite?
 
 Traditional business process management (BPM) solutions like Camunda are powerful but also complex and heavyweight. FlowLite offers:
@@ -121,16 +143,6 @@ FlowLite supports three types of stage transitions:
    flow.onEvent(PaymentCompleted).join(ProcessingOrder)
    ```
 
-### Design Principles
-- **Action-Oriented Stages**: Stage names indicate ongoing activities
-- **Type Safety**: Leverages Kotlin's type system for robust workflow definitions
-- **Immutable Flow Definitions**: Built flows are immutable containers
-- **Cross-Branch References**: `join()` allows stages to reference stages defined in other branches
-
-### Examples
-- Pizza Order Flow: `test/PizzaDomain.kt` and `test/PizzaOrderFlowTest.kt`
-- Order Confirmation Flow: `test/OrderConfirmationTest.kt`
-
 ### Development Notes
 - Uses Kotlin 2.1 with Java 21 toolchain
 - Context receivers enabled with `-Xcontext-receivers` flag
@@ -144,10 +156,11 @@ FlowLite supports three types of stage transitions:
 - **Clear naming over comments** - Use descriptive function/variable names instead of explanatory comments
 
 ## TODO
-* Migrate from deprecated kotlinOptions to compilerOptions DSL
-* review readme
+* define 2 more flows and show code and diagram in readme.md in automatic way
 * Introduce StageStatus
+* Migrate from deprecated kotlinOptions to compilerOptions DSL
 * Implement engine using Azure Service Bus emulator
+* Send for review to guys
 * Full implementation of engine with working example
 * Implement error handling
 * onTrue/onFalse as methods?

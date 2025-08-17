@@ -1,28 +1,25 @@
 # FlowLite
 
-FlowLite is a lightweight, developer-friendly workflow engine for Kotlin that makes defining business processes intuitive and maintainable. It provides a fluent API for defining process flows that are both easy to code and easy to understand.
+FlowLite is a lightweight, developer-friendly workflow engine for Kotlin defining business processes in intuitive and maintainable. 
+It provides a fluent API for defining process flows that are both easy to code and easy to understand.
 
 ## Why FlowLite?
 
-Traditional business process management (BPM) solutions like Camunda are powerful but can be complex and heavyweight. FlowLite offers:
+Traditional business process management (BPM) solutions like Camunda are powerful but also complex and heavyweight. FlowLite offers:
 
-- **Developer-first approach**: Designed with Kotlin developers in mind
-- **Type-safe fluent API**: Leverage Kotlin's type system to create robust workflows
+- **Type-safe fluent API**: Leverage Kotlin's type system and language features to create robust workflows
 - **Visual representation**: Automatically generates diagrams from your code
 - **Minimal learning curve**: Natural syntax that reads like plain English
-- **Customizable**: Easy to integrate with your existing codebase
-- **Composable**: Build complex flows from smaller, reusable pieces
 - **Lightweight**
 
 ## Assumptions
+
 * FlowLite uses an Action-Oriented approach for stages, where stage names indicate ongoing activities (e.g., "InitializingPayment")
 * Each stage has an associated StageStatus e.g. (PENDING, IN_PROGRESS, COMPLETED, ERROR)
 * The combination of stage and StageStatus (plus eventually retry_count and retry configuration) fully defines what the engine should do next
 * Execution of the next step in the flow is triggered by the "execute next step in flow instance x" message
 * Assumptions for mermaid diagrams
   * The Rectangle represents stages with their associated actions. Format: StageName `actionName()`
-  * When an action fails, the stage will be marked with a StageStatus of failed (not shown in diagram)
-  * It will be possible to add a retry strategy for each stage.
   * Arrows represent transitions between stages, triggered by action completion (and StageStatus change) or events
   * Choice nodes represent routing decisions
   * Events can trigger stage transitions. They represent external triggers that change the process stage (e.g., `onEvent SwitchToCashPayment`)
@@ -35,12 +32,7 @@ Traditional business process management (BPM) solutions like Camunda are powerfu
   * **Process Exceptions**: Unexpected errors that represent technical issues (database connection failures, system unavailability)
   * **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (those which implements `BusinessException` marker interface)
 * Business exceptions are designed with the assumption that a process supervisor will review the case and potentially retry the stage with corrected data.
-* Stage status transitions to different error states depending on an exception type:
-  * PROCESS_ERROR for technical/system exceptions
-  * BUSINESS_ERROR for expected business exceptions
-* Process errors can be retried via the FlowLite cockpit. Business exceptions are displayed differently (or not at all). 
-* Error information is preserved for debugging and analysis
-* FlowLite uses a separate error repository to store and manage error information
+* Process errors can be retried via the FlowLite cockpit. Business exceptions are displayed differently (not yet decided how). 
 
 ## Development Guide
 
@@ -77,14 +69,9 @@ FlowLite uses a **flat directory structure** to keep the codebase simple and org
 - `test/` - All test code (flat structure)
 - Resources are placed directly in source directory alongside code files, not in a separate resources directory
 
-**Directory Guidelines:**
-- Do not create subdirectories for the main package
-- For subpackages within the main package, subdirectories are optional - create them only if needed for organization
-- Maintain consistency with the existing flat structure
-
 ### Core Architecture
 
-#### Flow Definition System (`source/FlowApi.kt`)
+#### Flow Definition System (`source/flowApi.kt`)
 - `FlowBuilder<T>` - Fluent API for defining workflows
 - `StageBuilder<T>` - Builder for individual stages within flows
 - `EventBuilder<T>` - Builder for event-based transitions
@@ -159,6 +146,8 @@ FlowLite supports three types of stage transitions:
 ## TODO
 * Migrate from deprecated kotlinOptions to compilerOptions DSL
 * review readme
+* Introduce StageStatus
+* Implement engine using Azure Service Bus emulator
 * Full implementation of engine with working example
 * Implement error handling
 * onTrue/onFalse as methods?

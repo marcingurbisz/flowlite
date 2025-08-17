@@ -80,14 +80,12 @@ class FlowBuilder<T : Any> {
         joinReferences.forEach { joinRef ->
             val fromStage = resolvedStages[joinRef.fromStage]
                 ?: throw FlowDefinitionException("From stage ${joinRef.fromStage} not found when resolving join reference")
-            
-            // Target stage must exist somewhere in the resolved stages
+
             val targetStageExists = resolvedStages.containsKey(joinRef.targetStage)
             if (!targetStageExists) {
                 throw FlowDefinitionException("Target stage ${joinRef.targetStage} not found when resolving join reference. Available stages: ${resolvedStages.keys.joinToString()}")
             }
-            
-            // Add event handler to the from stage
+
             if (joinRef.event in fromStage.eventHandlers) {
                 throw FlowDefinitionException("Duplicate event handler for ${joinRef.event} in stage ${joinRef.fromStage}")
             }
@@ -116,20 +114,14 @@ enum class TransitionType {
     CONDITION  // Conditional branching
 }
 
-/**
- * Represents a stage definition within a flow.
- */
-class StageDefinition<T : Any>(
+data class StageDefinition<T : Any>(
     val stage: Stage,
-    var action: ((item: T) -> T)? = null,
+    val action: ((item: T) -> T)? = null,
 ) {
     val eventHandlers = mutableMapOf<Event, EventHandler<T>>()
     var conditionHandler: ConditionHandler<T>? = null
     var nextStage: Stage? = null
     
-    /**
-     * Check if this stage already has conflicting transition mechanisms.
-     */
     fun hasConflictingTransitions(newTransitionType: TransitionType): Boolean {
         return when (newTransitionType) {
             TransitionType.DIRECT -> eventHandlers.isNotEmpty() || conditionHandler != null
@@ -137,10 +129,7 @@ class StageDefinition<T : Any>(
             TransitionType.CONDITION -> nextStage != null || eventHandlers.isNotEmpty()
         }
     }
-    
-    /**
-     * Get a description of existing transitions for error messages.
-     */
+
     fun getExistingTransitions(): String {
         val transitions = mutableListOf<String>()
         if (nextStage != null) transitions.add("nextStage")
@@ -150,9 +139,6 @@ class StageDefinition<T : Any>(
     }
 }
 
-/**
- * Handler for conditional branching.
- */
 data class ConditionHandler<T : Any>(
     val predicate: (item: T) -> Boolean,
     val trueStage: Stage,
@@ -172,7 +158,7 @@ class StageBuilder<T : Any>(
     val flowBuilder: FlowBuilder<T>,
     val stageDefinition: StageDefinition<T>,
 ) {
-    fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
+    fun stage(stage: Stage, action: ((item: T) -> T)? = null): StageBuilder<T> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
             throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
@@ -180,21 +166,7 @@ class StageBuilder<T : Any>(
         return flowBuilder.stage(stage, action)
     }
 
-    fun stage(stage: Stage): StageBuilder<T> {
-        if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
-            throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
-        }
-        stageDefinition.nextStage = stage
-        return flowBuilder.stage(stage)
-    }
-
     fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this, event)
-
-    fun condition(
-        predicate: (item: T) -> Boolean,
-        onTrue: FlowBuilder<T>.() -> Unit,
-        onFalse: FlowBuilder<T>.() -> Unit
-    ): FlowBuilder<T> = condition(predicate, onTrue, onFalse, null)
 
     fun condition(
         predicate: (item: T) -> Boolean,
@@ -244,7 +216,7 @@ class EventBuilder<T : Any>(
     private val stageBuilder: StageBuilder<T>,
     private val event: Event
 ) {
-    fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
+    fun stage(stage: Stage, action: ((item: T) -> T)? = null): StageBuilder<T> {
         if (stageBuilder.stageDefinition.hasConflictingTransitions(TransitionType.EVENT)) {
             throw FlowDefinitionException("Stage ${stageBuilder.stageDefinition.stage} already has transitions defined: ${stageBuilder.stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
@@ -254,23 +226,6 @@ class EventBuilder<T : Any>(
         
         // Create an event handler for this event with the target stage definition
         val eventHandler = EventHandler(event, targetStageBuilder.stageDefinition)
-        
-        // Register the event handler with the current stage
-        stageBuilder.stageDefinition.eventHandlers[event] = eventHandler
-        
-        return targetStageBuilder
-    }
-
-    fun stage(stage: Stage): StageBuilder<T> {
-        if (stageBuilder.stageDefinition.hasConflictingTransitions(TransitionType.EVENT)) {
-            throw FlowDefinitionException("Stage ${stageBuilder.stageDefinition.stage} already has transitions defined: ${stageBuilder.stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
-        }
-        
-        // Create a new StageBuilder for the target stage first
-        val targetStageBuilder = stageBuilder.flowBuilder.stage(stage)
-        
-        // Create an event handler for this event with the target stage definition
-        val eventHandler = EventHandler<T>(event, targetStageBuilder.stageDefinition)
         
         // Register the event handler with the current stage
         stageBuilder.stageDefinition.eventHandlers[event] = eventHandler

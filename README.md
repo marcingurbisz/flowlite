@@ -159,9 +159,6 @@ FlowLite supports three types of stage transitions:
 ## TODO
 * Migrate from deprecated kotlinOptions to compilerOptions DSL
 * review readme
-* var action -> val action?
-* combine stage(stage: Stage, action: (item: T) -> T) and stage(stage: Stage) ?
-* Define second flow?
 * Full implementation of engine with working example
 * Implement error handling
 * onTrue/onFalse as methods?

@@ -141,18 +141,16 @@ FlowLite supports three types of stage transitions:
 
 ### Examples
 - Pizza Order Flow: `test/PizzaDomain.kt` and `test/PizzaOrderFlowTest.kt`
-- Order Confirmation Flow: `test/orderConfirmationTest.kt` and `test/OrderConfirmationFlowTest.kt`
+- Order Confirmation Flow: `test/OrderConfirmationTest.kt`
 
 ### Development Notes
 - Uses Kotlin 2.1 with Java 21 toolchain
 - Context receivers enabled with `-Xcontext-receivers` flag
-- JUnit 5 for testing with MockK for mocking
+- Kotest for testing with BehaviorSpec style and MockK for mocking
 - Gradle build system with Maven publishing configuration
 
 ## TODO
-
-* fix todos in the code
-* combine orderConfirmationTest.kt and OrderConfirmationFlowTest.kt into one file and switch to kotest
+* Migrate from deprecated kotlinOptions to compilerOptions DSL
 * review readme
 * method names missing on generated diagram
 * Add api for adding description to condition

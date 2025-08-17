@@ -196,9 +196,6 @@ class StageBuilder<T : Any>(
     val flowBuilder: FlowBuilder<T>,
     val stageDefinition: StageDefinition<T>,
 ) {
-    /**
-     * Define a new stage with an action.
-     */
     fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
             throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
@@ -207,9 +204,6 @@ class StageBuilder<T : Any>(
         return flowBuilder.stage(stage, action)
     }
 
-    /**
-     * Define a new stage without an action.
-     */
     fun stage(stage: Stage): StageBuilder<T> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
             throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
@@ -218,19 +212,8 @@ class StageBuilder<T : Any>(
         return flowBuilder.stage(stage)
     }
 
-    /**
-     * Handle an event that can trigger this flow.
-     */
     fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this, event)
 
-    /**
-     * Conditional branching with both true and false branches defined directly.
-     *
-     * @param predicate Function that evaluates the condition based on the process state
-     * @param onTrue Builder function to define the flow when the condition is true
-     * @param onFalse Builder function to define the flow when the condition is false
-     * @return The parent StageBuilder for method chaining
-     */
     fun condition(
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T>.() -> Unit,
@@ -270,24 +253,13 @@ class StageBuilder<T : Any>(
         return flowBuilder
     }
 
-    /**
-     * End the current stage definition and return to the flow builder.
-     */
     fun end(): FlowBuilder<T> = flowBuilder
 }
 
-/**
- * Builder for event-based transitions in a flow.
- *
- * @param T the type of context object the flow operates on
- */
 class EventBuilder<T : Any>(
     private val stageBuilder: StageBuilder<T>,
     private val event: Event
 ) {
-    /**
-     * Define an action with a stage change for this event.
-     */
     fun stage(stage: Stage, action: (item: T) -> T): StageBuilder<T> {
         if (stageBuilder.stageDefinition.hasConflictingTransitions(TransitionType.EVENT)) {
             throw FlowDefinitionException("Stage ${stageBuilder.stageDefinition.stage} already has transitions defined: ${stageBuilder.stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
@@ -305,9 +277,6 @@ class EventBuilder<T : Any>(
         return targetStageBuilder
     }
 
-    /**
-     * Transition to a specific stage without performing any action.
-     */
     fun stage(stage: Stage): StageBuilder<T> {
         if (stageBuilder.stageDefinition.hasConflictingTransitions(TransitionType.EVENT)) {
             throw FlowDefinitionException("Stage ${stageBuilder.stageDefinition.stage} already has transitions defined: ${stageBuilder.stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
@@ -325,21 +294,12 @@ class EventBuilder<T : Any>(
         return targetStageBuilder
     }
 
-    /**
-     * Join another stage in the flow.
-     */
-    fun join(targetStage: Stage): StageBuilder<T> {
-        // Record this as a join reference to be resolved during build
-        stageBuilder.flowBuilder.addJoinReference(
+    fun join(targetStage: Stage) = stageBuilder.flowBuilder.addJoinReference(
             stageBuilder.stageDefinition.stage,
             event,
             targetStage
         )
 
-        //TODO: Return flow builder since it is not allowed to do anything with
-        // stage already defined elsewhere
-        return stageBuilder
-    }
 }
 
 /**

@@ -1,11 +1,10 @@
 package io.flowlite.test
 
-import io.flowlite.api.Event
-import io.flowlite.api.Flow
-import io.flowlite.api.FlowBuilder
-import io.flowlite.api.Stage
+import io.flowlite.api.*
 import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.*
+import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.string.shouldContain
 
 enum class OrderConfirmationStage : Stage {
     InitializingConfirmation,
@@ -72,3 +71,46 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
         .end()
         .build()
 }
+
+/**
+ * Tests for the order confirmation flow definition and diagram generation.
+ */
+class OrderConfirmationTest : BehaviorSpec({
+
+    given("an order confirmation flow") {
+        val flow = createOrderConfirmationFlow()
+        val generator = MermaidGenerator()
+
+        `when`("generating a mermaid diagram") {
+            val diagram = generator.generateDiagram("order-confirmation", flow)
+
+            then("should be a valid state diagram") {
+                diagram shouldContain "stateDiagram-v2"
+                diagram shouldContain "[*] --> InitializingConfirmation"
+            }
+
+            then("should contain all stages") {
+                diagram shouldContain "InitializingConfirmation"
+                diagram shouldContain "WaitingForConfirmation"
+                diagram shouldContain "RemovingFromConfirmationQueue"
+                diagram shouldContain "InformingCustomer"
+            }
+
+            then("should show automatic progressions") {
+                diagram shouldContain "InitializingConfirmation --> WaitingForConfirmation"
+                diagram shouldContain "RemovingFromConfirmationQueue --> InformingCustomer"
+            }
+
+            then("should contain event transitions") {
+                diagram shouldContain "onEvent ConfirmedDigitally"
+                diagram shouldContain "onEvent ConfirmedPhysically"
+                diagram shouldContain "WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally"
+                diagram shouldContain "WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically"
+            }
+
+            then("should have terminal state") {
+                diagram shouldContain "InformingCustomer --> [*]"
+            }
+        }
+    }
+})

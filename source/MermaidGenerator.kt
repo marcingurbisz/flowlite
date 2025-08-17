@@ -76,8 +76,8 @@ class MermaidGenerator {
             sb.append("    $currentStage --> $choiceNodeName\n")
             
             // Add true branch
-            val trueLabel = if (conditionHandler.predicate.toString().contains("it.paymentMethod")) {
-                "paymentMethod = CASH"
+            val trueLabel = if (conditionHandler.description != null) {
+                "(${conditionHandler.description}) == true"
             } else {
                 "true"
             }
@@ -89,8 +89,8 @@ class MermaidGenerator {
             }
             
             // Add false branch
-            val falseLabel = if (conditionHandler.predicate.toString().contains("it.paymentMethod")) {
-                "paymentMethod = ONLINE"
+            val falseLabel = if (conditionHandler.description != null) {
+                "(${conditionHandler.description}) == false"
             } else {
                 "false"
             }
@@ -142,9 +142,20 @@ class MermaidGenerator {
      * Extract a readable function name from a function reference
      */
     private fun extractActionName(action: Any): String {
-        return action.toString()
-            .substringAfterLast(".")
-            .substringBefore("(")
-            .substringBefore("$")
+        val actionStr = action.toString()
+        return when {
+            // Handle function references like "fun functionName(params): ReturnType"
+            actionStr.startsWith("fun ") -> {
+                actionStr.substringAfter("fun ")
+                    .substringBefore("(")
+            }
+            // Fallback to original logic for other cases
+            else -> {
+                actionStr.substringAfterLast(".")
+                    .substringBefore("(")
+                    .substringBefore("$")
+            }
+        }
     }
+    
 }

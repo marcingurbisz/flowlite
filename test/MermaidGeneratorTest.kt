@@ -19,6 +19,10 @@ class MermaidGeneratorTest : BehaviorSpec({
 
         `when`("generating a mermaid diagram") {
             val diagram = generator.generateDiagram("pizza-order", pizzaFlow)
+            
+            println("\n=== PIZZA ORDER FLOW DIAGRAM ===")
+            println(diagram)
+            println("=== END DIAGRAM ===\n")
 
             then("should start with stateDiagram-v2 syntax") {
                 diagram shouldContain "stateDiagram-v2"
@@ -64,6 +68,21 @@ class MermaidGeneratorTest : BehaviorSpec({
 
             then("should not have incorrect event attachments") {
                 diagram shouldNotContain "$InitializingCashPayment --> $InitializingDelivery: onEvent $ReadyForDelivery"
+            }
+
+            then("should include method names in stage descriptions") {
+                diagram shouldContain "$InitializingCashPayment: $InitializingCashPayment initializeCashPayment()"
+                diagram shouldContain "$StartingOrderPreparation: $StartingOrderPreparation startOrderPreparation()"
+                diagram shouldContain "$InitializingDelivery: $InitializingDelivery initializeDelivery()"
+                diagram shouldContain "$CompletingOrder: $CompletingOrder completeOrder()"
+                diagram shouldContain "$CancellingOrder: $CancellingOrder sendOrderCancellation()"
+                diagram shouldContain "$InitializingOnlinePayment: $InitializingOnlinePayment initializeOnlinePayment()"
+            }
+
+            then("should include condition descriptions on transitions") {
+                diagram shouldContain "state if_started <<choice>>"
+                diagram shouldContain "if_started --> $InitializingCashPayment: (paymentMethod == PaymentMethod.CASH) == true"
+                diagram shouldContain "if_started --> $InitializingOnlinePayment: (paymentMethod == PaymentMethod.CASH) == false"
             }
         }
     }

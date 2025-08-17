@@ -45,6 +45,12 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    
+    // Show test output in console
+    testLogging {
+        events("passed", "skipped", "failed", "standardOut", "standardError")
+        showStandardStreams = true
+    }
 }
 
 java {

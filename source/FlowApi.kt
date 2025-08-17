@@ -54,13 +54,6 @@ class FlowBuilder<T : Any> {
     internal val joinReferences = mutableListOf<JoinReference>()
     internal var initialStage: Stage? = null
 
-    /**
-     * Defines a stage with an optional associated action.
-     *
-     * @param stage The stage to define
-     * @param action The action to execute when entering this stage (optional)
-     * @return A StageBuilder for continuing the flow definition from this stage
-     */
     fun stage(stage: Stage, action: ((item: T) -> T)? = null): StageBuilder<T> {
         if (initialStage == null) {
             initialStage = stage
@@ -96,11 +89,6 @@ class FlowBuilder<T : Any> {
         return Flow(initialStage!!, stages.toMap())
     }
 
-    
-    /**
-     * Resolve join references by adding event handlers to the appropriate stages.
-     * Join references can point to stages defined in any branch of the flow.
-     */
     private fun resolveJoinReferences(resolvedStages: Map<Stage, StageDefinition<T>>) {
         joinReferences.forEach { joinRef ->
             val fromStage = resolvedStages[joinRef.fromStage]
@@ -178,10 +166,11 @@ class StageDefinition<T : Any>(
 /**
  * Handler for conditional branching.
  */
-class ConditionHandler<T : Any>(
+data class ConditionHandler<T : Any>(
     val predicate: (item: T) -> Boolean,
     val trueStage: Stage,
     val falseStage: Stage,
+    val description: String? = null,
 )
 
 data class EventHandler<T : Any>(
@@ -218,6 +207,13 @@ class StageBuilder<T : Any>(
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T>.() -> Unit,
         onFalse: FlowBuilder<T>.() -> Unit
+    ): FlowBuilder<T> = condition(predicate, onTrue, onFalse, null)
+
+    fun condition(
+        predicate: (item: T) -> Boolean,
+        onTrue: FlowBuilder<T>.() -> Unit,
+        onFalse: FlowBuilder<T>.() -> Unit,
+        description: String? = null
     ): FlowBuilder<T> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.CONDITION)) {
             throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
@@ -231,7 +227,8 @@ class StageBuilder<T : Any>(
         stageDefinition.conditionHandler = ConditionHandler(
             predicate, 
             trueBranch.initialStage!!, 
-            falseBranch.initialStage!!
+            falseBranch.initialStage!!,
+            description
         )
         
         // Collect all stage definitions from both branches (without resolving join references)
@@ -326,13 +323,6 @@ class FlowEngine {
         stateClasses[flowId] = stateClass
     }
 
-    /**
-     * Starts a new process instance.
-     *
-     * @param flowId The ID of the registered ProcessDefinition.
-     * @param initialState The initial state object (must include initial stage).
-     * @return The generated unique process instance ID.
-     */
     fun <T : Any> startProcess(flowId: String, initialState: T): String {
         val processId = UUID.randomUUID().toString()
         return processId

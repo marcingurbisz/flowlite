@@ -110,18 +110,19 @@ FlowLite supports three types of stage transitions:
 
 1. **Automatic Progression**: Sequential stages automatically flow to the next stage
    ```kotlin
-   .stage(InitializingConfirmation, ::initializeOrderConfirmation)
-   .stage(WaitingForConfirmation) // Automatic progression
+   flow
+       .stage(InitializingConfirmation, ::initializeOrderConfirmation)
+       .stage(WaitingForConfirmation) // Automatic progression
    ```
 
 2. **Event-Based Transitions**: Explicit events trigger transitions
    ```kotlin
-   .onEvent(PaymentConfirmed).stage(ProcessingPayment, ::processPayment)
+   flow.onEvent(PaymentConfirmed).stage(ProcessingPayment, ::processPayment)
    ```
 
 3. **Conditional Branching**: Logic-based routing decisions
    ```kotlin
-   .condition(
+   flow.condition(
        predicate = { it.paymentMethod == PaymentMethod.CASH },
        onTrue = { /* cash flow */ },
        onFalse = { /* online flow */ }
@@ -130,7 +131,7 @@ FlowLite supports three types of stage transitions:
 
 4. **Join Operations**: Reference existing stages from other branches
    ```kotlin
-   .onEvent(PaymentCompleted).join(ProcessingOrder)
+   flow.onEvent(PaymentCompleted).join(ProcessingOrder)
    ```
 
 ### Design Principles
@@ -149,10 +150,15 @@ FlowLite supports three types of stage transitions:
 - Kotest for testing with BehaviorSpec style and MockK for mocking
 - Gradle build system with Maven publishing configuration
 
+### Code Documentation Guidelines
+- **Avoid documentation in code** - Code should be self-explanatory through clear naming and structure
+- **Documentation is an exception** - Only add code comments for non-obvious cases or complex logic
+- **Prefer README over code docs** - Document architecture, design decisions, and usage patterns in README.md
+- **Clear naming over comments** - Use descriptive function/variable names instead of explanatory comments
+
 ## TODO
 * Migrate from deprecated kotlinOptions to compilerOptions DSL
 * review readme
-* method names missing on generated diagram
 * Add api for adding description to condition
 * remove println
 * var action -> val action?

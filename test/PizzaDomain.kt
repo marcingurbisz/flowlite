@@ -79,7 +79,7 @@ fun createPizzaOrderFlow(): Flow<PizzaOrder> {
     return FlowBuilder<PizzaOrder>()
         .stage(Started)
         .condition(
-            { it.paymentMethod == PaymentMethod.CASH },
+            predicate = { it.paymentMethod == PaymentMethod.CASH },
             onTrue = {
                 stage(InitializingCashPayment, ::initializeCashPayment).apply {
                     onEvent(PaymentConfirmed)
@@ -104,6 +104,7 @@ fun createPizzaOrderFlow(): Flow<PizzaOrder> {
                     }
                 }
             },
+            description = "paymentMethod == PaymentMethod.CASH"
         )
         .build()
 }

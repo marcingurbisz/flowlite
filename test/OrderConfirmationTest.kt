@@ -83,6 +83,10 @@ class OrderConfirmationTest : BehaviorSpec({
 
         `when`("generating a mermaid diagram") {
             val diagram = generator.generateDiagram("order-confirmation", flow)
+            
+            println("\n=== ORDER CONFIRMATION FLOW DIAGRAM ===")
+            println(diagram)
+            println("=== END DIAGRAM ===\n")
 
             then("should be a valid state diagram") {
                 diagram shouldContain "stateDiagram-v2"
@@ -110,6 +114,12 @@ class OrderConfirmationTest : BehaviorSpec({
 
             then("should have terminal state") {
                 diagram shouldContain "InformingCustomer --> [*]"
+            }
+
+            then("should include method names in stage descriptions") {
+                diagram shouldContain "InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()"
+                diagram shouldContain "RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()"
+                diagram shouldContain "InformingCustomer: InformingCustomer informCustomer()"
             }
         }
     }

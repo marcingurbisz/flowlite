@@ -1,6 +1,6 @@
 # FlowLite
 
-FlowLite is a lightweight, developer-friendly workflow engine for Kotlin defining business processes in intuitive and maintainable. 
+FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to define business processes in intuitive and maintainable way. 
 It provides a fluent API for defining process flows that are both easy to code and easy to understand.
 
 ## Table of Contents
@@ -158,9 +158,9 @@ FlowLite supports three types of stage transitions:
 ## TODO
 * define 2 more flows and show code and diagram in readme.md in automatic way
 * Introduce StageStatus
-* Migrate from deprecated kotlinOptions to compilerOptions DSL
 * Implement engine using Azure Service Bus emulator
 * Send for review to guys
+* Migrate from deprecated kotlinOptions to compilerOptions DSL
 * Full implementation of engine with working example
 * Implement error handling
 * onTrue/onFalse as methods?

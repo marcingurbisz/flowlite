@@ -31,23 +31,94 @@ interface StatePersister<T : Any> {
 }
 
 data class Flow<T : Any>(
-    val initialStage: Stage,
+    val initialStage: Stage?,
+    val initialCondition: ConditionHandler<T>?,
     val stages: Map<Stage, StageDefinition<T>>,
-)
+) {
+    init {
+        require((initialStage != null) xor (initialCondition != null)) {
+            "Flow must have either an initial stage or an initial condition, but not both"
+        }
+    }
+}
 
 class FlowBuilder<T : Any> {
 
     internal val stages = mutableMapOf<Stage, StageDefinition<T>>()
     internal val joinReferences = mutableListOf<JoinReference>()
     internal var initialStage: Stage? = null
+    internal var initialCondition: ConditionHandler<T>? = null
+    private var hasUserCalledStage = false
+    private var hasUserCalledCondition = false
 
     fun stage(stage: Stage, action: ((item: T) -> T)? = null): StageBuilder<T> {
-        if (initialStage == null) {
+        return internalStage(stage, action, fromUser = true)
+    }
+    
+    internal fun internalStage(stage: Stage, action: ((item: T) -> T)? = null, fromUser: Boolean = false): StageBuilder<T> {
+        if (fromUser) {
+            if (hasUserCalledStage) {
+                throw FlowDefinitionException("Initial stage already defined. FlowBuilder.stage() can only be called once.")
+            }
+            if (hasUserCalledCondition) {
+                throw FlowDefinitionException("Initial condition already defined. Cannot call stage() after condition() on FlowBuilder.")
+            }
+            hasUserCalledStage = true
+        }
+        
+        if (initialStage == null && initialCondition == null) {
             initialStage = stage
         }
+        
         val stageDefinition = StageDefinition<T>(stage, action)
         addStage(stage, stageDefinition)
         return StageBuilder(this, stageDefinition)
+    }
+    
+    fun condition(
+        predicate: (item: T) -> Boolean,
+        onTrue: FlowBuilder<T>.() -> Unit,
+        onFalse: FlowBuilder<T>.() -> Unit,
+        description: String? = null
+    ): FlowBuilder<T> {
+        if (hasUserCalledCondition) {
+            throw FlowDefinitionException("Initial condition already defined. FlowBuilder.condition() can only be called once.")
+        }
+        if (hasUserCalledStage) {
+            throw FlowDefinitionException("Initial stage already defined. Cannot call condition() after stage() on FlowBuilder.")
+        }
+        
+        hasUserCalledCondition = true
+        
+        // Create both branch builders
+        val trueBranch = FlowBuilder<T>().apply(onTrue)
+        val falseBranch = FlowBuilder<T>().apply(onFalse)
+        
+        // Set the initial condition
+        initialCondition = ConditionHandler(
+            predicate, 
+            trueBranch.initialStage!!, 
+            falseBranch.initialStage!!,
+            description
+        )
+        
+        // Collect all stage definitions from both branches
+        trueBranch.stages.forEach { (stage, definition) ->
+            addStage(stage, definition)
+        }
+        falseBranch.stages.forEach { (stage, definition) ->
+            addStage(stage, definition)
+        }
+        
+        // Collect join references from both branches
+        trueBranch.joinReferences.forEach { joinRef ->
+            addJoinReference(joinRef.fromStage, joinRef.event, joinRef.targetStage)
+        }
+        falseBranch.joinReferences.forEach { joinRef ->
+            addJoinReference(joinRef.fromStage, joinRef.event, joinRef.targetStage)
+        }
+
+        return this
     }
     
     /**
@@ -73,7 +144,7 @@ class FlowBuilder<T : Any> {
      */
     fun build(): Flow<T> {
         resolveJoinReferences(stages)
-        return Flow(initialStage!!, stages.toMap())
+        return Flow(initialStage, initialCondition, stages.toMap())
     }
 
     private fun resolveJoinReferences(resolvedStages: Map<Stage, StageDefinition<T>>) {
@@ -163,7 +234,7 @@ class StageBuilder<T : Any>(
             throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
         stageDefinition.nextStage = stage
-        return flowBuilder.stage(stage, action)
+        return flowBuilder.internalStage(stage, action, fromUser = false)
     }
 
     fun onEvent(event: Event): EventBuilder<T> = EventBuilder(this, event)
@@ -222,7 +293,7 @@ class EventBuilder<T : Any>(
         }
         
         // Create a new StageBuilder for the target stage first
-        val targetStageBuilder = stageBuilder.flowBuilder.stage(stage, action)
+        val targetStageBuilder = stageBuilder.flowBuilder.internalStage(stage, action, fromUser = false)
         
         // Create an event handler for this event with the target stage definition
         val eventHandler = EventHandler(event, targetStageBuilder.stageDefinition)

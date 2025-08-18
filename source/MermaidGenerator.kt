@@ -30,11 +30,44 @@ class MermaidGenerator {
             }
         }
         
-        // Start with the initial stage
-        sb.append("    [*] --> ${flow.initialStage}\n")
+        // Add choice node for initial condition if present
+        flow.initialCondition?.let {
+            sb.append("    state if_initial <<choice>>\n")
+        }
         
-        // Process all stages starting with the initial stage
-        processStage(flow, flow.initialStage, sb, visitedStages)
+        // Handle initial stage or initial condition
+        if (flow.initialStage != null) {
+            sb.append("    [*] --> ${flow.initialStage}\n")
+            // Process all stages starting with the initial stage
+            processStage(flow, flow.initialStage, sb, visitedStages)
+        } else if (flow.initialCondition != null) {
+            // Handle initial condition
+            sb.append("    [*] --> if_initial\n")
+            
+            val conditionHandler = flow.initialCondition
+            
+            // Add true branch
+            val trueLabel = if (conditionHandler.description != null) {
+                conditionHandler.description
+            } else {
+                "true"
+            }
+            sb.append("    if_initial --> ${conditionHandler.trueStage}: $trueLabel\n")
+            
+            // Process the true stage
+            processStage(flow, conditionHandler.trueStage, sb, visitedStages)
+            
+            // Add false branch  
+            val falseLabel = if (conditionHandler.description != null) {
+                "NOT (${conditionHandler.description})"
+            } else {
+                "false"
+            }
+            sb.append("    if_initial --> ${conditionHandler.falseStage}: $falseLabel\n")
+            
+            // Process the false stage
+            processStage(flow, conditionHandler.falseStage, sb, visitedStages)
+        }
         
         // Add terminal states
         flow.stages.keys.forEach { stage ->

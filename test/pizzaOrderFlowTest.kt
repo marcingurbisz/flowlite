@@ -30,7 +30,6 @@ class PizzaOrderFlowTest : BehaviorSpec({
             then("should be able to start a process instance") {
                 flowEngine.startProcess("pizza-order", PizzaOrder(
                     customerName = "customer-name",
-                    stage = Started,
                     paymentMethod = PaymentMethod.ONLINE,
                 ))
             }
@@ -48,12 +47,11 @@ class PizzaOrderFlowTest : BehaviorSpec({
                 diagram shouldContain "stateDiagram-v2"
             }
 
-            then("should have initial state") {
-                diagram shouldContain "[*] --> $Started"
+            then("should have initial condition") {
+                diagram shouldContain "[*] --> if_initial"
             }
 
             then("should contain all stages") {
-                diagram shouldContain Started.toString()
                 diagram shouldContain InitializingCashPayment.toString()
                 diagram shouldContain InitializingOnlinePayment.toString()
                 diagram shouldContain ExpiringOnlinePayment.toString()
@@ -100,9 +98,9 @@ class PizzaOrderFlowTest : BehaviorSpec({
             }
 
             then("should include condition descriptions on transitions") {
-                diagram shouldContain "state if_started <<choice>>"
-                diagram shouldContain "if_started --> $InitializingCashPayment: (paymentMethod == PaymentMethod.CASH) == true"
-                diagram shouldContain "if_started --> $InitializingOnlinePayment: (paymentMethod == PaymentMethod.CASH) == false"
+                diagram shouldContain "state if_initial <<choice>>"
+                diagram shouldContain "if_initial --> $InitializingCashPayment: paymentMethod == PaymentMethod.CASH"
+                diagram shouldContain "if_initial --> $InitializingOnlinePayment: NOT (paymentMethod == PaymentMethod.CASH)"
             }
         }
     }
@@ -112,7 +110,6 @@ class PizzaOrderFlowTest : BehaviorSpec({
 
 /** Represents the stage of a pizza order. */
 enum class OrderStage : Stage {
-    Started, // Order details recorded
     InitializingCashPayment, // Processing cash payment
     InitializingOnlinePayment, // Processing online payment
     ExpiringOnlinePayment, // Online payment session timed out
@@ -143,7 +140,6 @@ enum class PaymentMethod {
 
 data class PizzaOrder(
     val processId: String = "", // Will be set by the engine when starting
-    val stage: OrderStage, // Ensure OrderStage is imported/defined correctly
     val customerName: String,
     val paymentMethod: PaymentMethod,
     val paymentTransactionId: String? = null,
@@ -151,27 +147,26 @@ data class PizzaOrder(
 
 // --- Top-Level Action Functions (returning new instances) ---
 
-fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order.copy(stage = InitializingCashPayment)
+fun initializeCashPayment(order: PizzaOrder): PizzaOrder = order
 
 fun initializeOnlinePayment(order: PizzaOrder): PizzaOrder {
     val transactionId = "TXN-" + System.currentTimeMillis()
-    return order.copy(stage = InitializingOnlinePayment, paymentTransactionId = transactionId)
+    return order.copy(paymentTransactionId = transactionId)
 }
 
-fun startOrderPreparation(order: PizzaOrder): PizzaOrder = order.copy(stage = StartingOrderPreparation)
+fun startOrderPreparation(order: PizzaOrder): PizzaOrder = order
 
-fun initializeDelivery(order: PizzaOrder): PizzaOrder = order.copy(stage = InitializingDelivery)
+fun initializeDelivery(order: PizzaOrder): PizzaOrder = order
 
-fun completeOrder(order: PizzaOrder): PizzaOrder = order.copy(stage = CompletingOrder)
+fun completeOrder(order: PizzaOrder): PizzaOrder = order
 
-fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order.copy(stage = CancellingOrder)
+fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order
 
 // --- Flow Definition ---
 fun createPizzaOrderFlow(): Flow<PizzaOrder> {
 
     // Define main pizza order flow
     return FlowBuilder<PizzaOrder>()
-        .stage(Started)
         .condition(
             predicate = { it.paymentMethod == PaymentMethod.CASH },
             onTrue = {

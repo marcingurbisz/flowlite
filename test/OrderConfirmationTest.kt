@@ -58,6 +58,7 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
     return confirmation.copy(stage = InformingCustomer, isCustomerInformed = true)
 }
 
+// [FLOW_DEFINITION_START:OrderConfirmation]
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
     return FlowBuilder<OrderConfirmation>()
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
@@ -71,6 +72,7 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
         .end()
         .build()
 }
+// [FLOW_DEFINITION_END:OrderConfirmation]
 
 /**
  * Tests for the order confirmation flow definition and diagram generation.

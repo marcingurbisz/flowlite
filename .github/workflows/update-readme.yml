@@ -1,0 +1,66 @@
+name: Auto-update README with Flow Definitions
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'test/**/*.kt'
+      - 'updateReadme.kts'
+  pull_request:
+    branches: [ main ]
+    paths: 
+      - 'test/**/*.kt'
+      - 'updateReadme.kts'
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+        
+    - name: Set up Kotlin
+      run: |
+        # Install Kotlin compiler
+        curl -s https://get.sdkman.io | bash
+        source ~/.sdkman/bin/sdkman-init.sh
+        sdk install kotlin
+        
+    - name: Make script executable
+      run: chmod +x updateReadme.kts
+      
+    - name: Update README with flow definitions
+      run: kotlin updateReadme.kts
+      
+    - name: Check for changes
+      id: verify-changed-files
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Commit updated README
+      if: steps.verify-changed-files.outputs.changed == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add README.md
+        git commit -m "Auto-update README with latest flow definitions"
+        
+    - name: Push changes
+      if: steps.verify-changed-files.outputs.changed == 'true' && github.event_name == 'push'
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}

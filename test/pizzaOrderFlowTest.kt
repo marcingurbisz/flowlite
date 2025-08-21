@@ -171,25 +171,25 @@ fun createPizzaOrderFlow(): Flow<PizzaOrder> {
             predicate = { it.paymentMethod == PaymentMethod.CASH },
             onTrue = {
                 stage(InitializingCashPayment, ::initializeCashPayment).apply {
-                    onEvent(PaymentConfirmed)
+                    waitFor(PaymentConfirmed)
                         .stage(StartingOrderPreparation, ::startOrderPreparation)
-                        .onEvent(ReadyForDelivery)
+                        .waitFor(ReadyForDelivery)
                         .stage(InitializingDelivery, ::initializeDelivery)
                         .apply {
-                            onEvent(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
-                            onEvent(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
+                            waitFor(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
+                            waitFor(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
                         }
-                    onEvent(Cancel).join(CancellingOrder)
+                    waitFor(Cancel).join(CancellingOrder)
                 }
             },
             onFalse = {
                 stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
-                    onEvent(PaymentCompleted).join(StartingOrderPreparation)
-                    onEvent(SwitchToCashPayment).join(InitializingCashPayment)
-                    onEvent(Cancel).join(CancellingOrder)
-                    onEvent(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
-                        onEvent(RetryPayment).join(InitializingOnlinePayment)
-                        onEvent(Cancel).join(CancellingOrder)
+                    waitFor(PaymentCompleted).join(StartingOrderPreparation)
+                    waitFor(SwitchToCashPayment).join(InitializingCashPayment)
+                    waitFor(Cancel).join(CancellingOrder)
+                    waitFor(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
+                        waitFor(RetryPayment).join(InitializingOnlinePayment)
+                        waitFor(Cancel).join(CancellingOrder)
                     }
                 }
             },

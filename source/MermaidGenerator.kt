@@ -21,52 +21,20 @@ class MermaidGenerator {
         
         // Track visited stages to avoid cycles in the diagram
         val visitedStages = mutableSetOf<Stage>()
+        val visitedConditions = mutableSetOf<ConditionHandler<T>>()
         
         // Add all choice nodes (condition handlers)
-        flow.stages.forEach { (stage, definition) ->
-            if (definition.conditionHandler != null) {
-                val choiceNodeName = "if_${stage.toString().lowercase()}"
-                sb.append("    state $choiceNodeName <<choice>>\n")
-            }
-        }
-        
-        // Add choice node for initial condition if present
-        flow.initialCondition?.let {
-            sb.append("    state if_initial <<choice>>\n")
-        }
+        addAllChoiceNodes(flow, sb)
         
         // Handle initial stage or initial condition
         if (flow.initialStage != null) {
             sb.append("    [*] --> ${flow.initialStage}\n")
             // Process all stages starting with the initial stage
-            processStage(flow, flow.initialStage, sb, visitedStages)
+            processStage(flow, flow.initialStage, sb, visitedStages, visitedConditions)
         } else if (flow.initialCondition != null) {
             // Handle initial condition
             sb.append("    [*] --> if_initial\n")
-            
-            val conditionHandler = flow.initialCondition
-            
-            // Add true branch
-            val trueLabel = if (conditionHandler.description != null) {
-                conditionHandler.description
-            } else {
-                "true"
-            }
-            sb.append("    if_initial --> ${conditionHandler.trueStage}: $trueLabel\n")
-            
-            // Process the true stage
-            processStage(flow, conditionHandler.trueStage, sb, visitedStages)
-            
-            // Add false branch  
-            val falseLabel = if (conditionHandler.description != null) {
-                "NOT (${conditionHandler.description})"
-            } else {
-                "false"
-            }
-            sb.append("    if_initial --> ${conditionHandler.falseStage}: $falseLabel\n")
-            
-            // Process the false stage
-            processStage(flow, conditionHandler.falseStage, sb, visitedStages)
+            processCondition(flow, flow.initialCondition, "if_initial", sb, visitedStages, visitedConditions)
         }
         
         // Add terminal states
@@ -80,13 +48,125 @@ class MermaidGenerator {
     }
     
     /**
+     * Add all choice nodes for conditions in the flow
+     */
+    private fun <T : Any> addAllChoiceNodes(flow: Flow<T>, sb: StringBuilder) {
+        val visitedConditions = mutableSetOf<ConditionHandler<T>>()
+        
+        // Add choice node for initial condition if present
+        flow.initialCondition?.let {
+            sb.append("    state if_initial <<choice>>\n")
+            addNestedChoiceNodes(it, sb, visitedConditions)
+        }
+        
+        // Add all choice nodes (condition handlers in stages)
+        flow.stages.forEach { (stage, definition) ->
+            if (definition.conditionHandler != null) {
+                val choiceNodeName = "if_${stage.toString().lowercase()}"
+                sb.append("    state $choiceNodeName <<choice>>\n")
+                
+                // Add nested choice nodes recursively
+                addNestedChoiceNodes(definition.conditionHandler!!, sb, visitedConditions)
+            }
+            
+            // Add choice nodes for event-based conditions
+            definition.eventHandlers.forEach { (_, handler) ->
+                if (handler.targetCondition != null) {
+                    val nodeName = generateConditionNodeName(handler.targetCondition)
+                    if (!visitedConditions.contains(handler.targetCondition)) {
+                        sb.append("    state $nodeName <<choice>>\n")
+                        addNestedChoiceNodes(handler.targetCondition, sb, visitedConditions)
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Recursively add choice nodes for nested conditions
+     */
+    private fun <T : Any> addNestedChoiceNodes(
+        condition: ConditionHandler<T>, 
+        sb: StringBuilder, 
+        visitedConditions: MutableSet<ConditionHandler<T>>
+    ) {
+        if (!visitedConditions.add(condition)) {
+            return  // Already processed this condition
+        }
+        
+        condition.trueCondition?.let { trueCondition ->
+            val nodeName = generateConditionNodeName(trueCondition)
+            sb.append("    state $nodeName <<choice>>\n")
+            addNestedChoiceNodes(trueCondition, sb, visitedConditions)
+        }
+        
+        condition.falseCondition?.let { falseCondition ->
+            val nodeName = generateConditionNodeName(falseCondition)
+            sb.append("    state $nodeName <<choice>>\n")
+            addNestedChoiceNodes(falseCondition, sb, visitedConditions)
+        }
+    }
+    
+    /**
+     * Process a condition handler and its branches
+     */
+    private fun <T : Any> processCondition(
+        flow: Flow<T>,
+        condition: ConditionHandler<T>,
+        choiceNodeName: String,
+        sb: StringBuilder,
+        visitedStages: MutableSet<Stage>,
+        visitedConditions: MutableSet<ConditionHandler<T>>
+    ) {
+        if (!visitedConditions.add(condition)) {
+            return  // Avoid cycles
+        }
+        
+        // Process true branch
+        val trueLabel = condition.description ?: "true"
+        
+        if (condition.trueStage != null) {
+            sb.append("    $choiceNodeName --> ${condition.trueStage}: $trueLabel\n")
+            processStage(flow, condition.trueStage, sb, visitedStages, visitedConditions)
+        } else if (condition.trueCondition != null) {
+            val trueChoiceNode = generateConditionNodeName(condition.trueCondition)
+            sb.append("    $choiceNodeName --> $trueChoiceNode: $trueLabel\n")
+            processCondition(flow, condition.trueCondition, trueChoiceNode, sb, visitedStages, visitedConditions)
+        }
+        
+        // Process false branch
+        val falseLabel = if (condition.description != null) {
+            "NOT (${condition.description})"
+        } else {
+            "false"
+        }
+        
+        if (condition.falseStage != null) {
+            sb.append("    $choiceNodeName --> ${condition.falseStage}: $falseLabel\n")
+            processStage(flow, condition.falseStage, sb, visitedStages, visitedConditions)
+        } else if (condition.falseCondition != null) {
+            val falseChoiceNode = generateConditionNodeName(condition.falseCondition)
+            sb.append("    $choiceNodeName --> $falseChoiceNode: $falseLabel\n")
+            processCondition(flow, condition.falseCondition, falseChoiceNode, sb, visitedStages, visitedConditions)
+        }
+    }
+    
+    /**
+     * Generate a consistent node name for a condition
+     */
+    private fun <T : Any> generateConditionNodeName(condition: ConditionHandler<T>): String {
+        return "if_condition_${condition.hashCode().toString().replace("-", "neg")}"
+    }
+    
+    /**
      * Process a stage and its transitions
      */
     private fun <T : Any> processStage(
         flow: Flow<T>,
         currentStage: Stage,
         sb: StringBuilder,
-        visitedStages: MutableSet<Stage>
+        visitedStages: MutableSet<Stage>,
+        visitedConditions: MutableSet<ConditionHandler<T>>
     ) {
         // Skip if already visited to avoid cycles
         if (!visitedStages.add(currentStage)) {
@@ -108,40 +188,27 @@ class MermaidGenerator {
             // Add transition to choice node
             sb.append("    $currentStage --> $choiceNodeName\n")
             
-            // Add true branch
-            val trueLabel = if (conditionHandler.description != null) {
-                "(${conditionHandler.description}) == true"
-            } else {
-                "true"
-            }
-            sb.append("    $choiceNodeName --> ${conditionHandler.trueStage}: $trueLabel\n")
-            
-            // Process the true stage
-            if (!visitedStages.contains(conditionHandler.trueStage)) {
-                processStage(flow, conditionHandler.trueStage, sb, visitedStages)
-            }
-            
-            // Add false branch
-            val falseLabel = if (conditionHandler.description != null) {
-                "(${conditionHandler.description}) == false"
-            } else {
-                "false"
-            }
-            sb.append("    $choiceNodeName --> ${conditionHandler.falseStage}: $falseLabel\n")
-            
-            // Process the false stage
-            if (!visitedStages.contains(conditionHandler.falseStage)) {
-                processStage(flow, conditionHandler.falseStage, sb, visitedStages)
-            }
+            // Process the condition using the helper method
+            processCondition(flow, conditionHandler, choiceNodeName, sb, visitedStages, visitedConditions)
         }
         
         // Process event handlers
         stageDefinition.eventHandlers.forEach { (event, handler) ->
-            sb.append("    $currentStage --> ${handler.targetStageDefinition.stage}: onEvent $event\n")
-            
-            // Process the target stage if not already processed
-            if (!visitedStages.contains(handler.targetStageDefinition.stage)) {
-                processStage(flow, handler.targetStageDefinition.stage, sb, visitedStages)
+            if (handler.targetStage != null) {
+                // Event leads to a stage
+                sb.append("    $currentStage --> ${handler.targetStage}: onEvent $event\n")
+                
+                // Process the target stage if not already processed
+                if (!visitedStages.contains(handler.targetStage)) {
+                    processStage(flow, handler.targetStage, sb, visitedStages, visitedConditions)
+                }
+            } else if (handler.targetCondition != null) {
+                // Event leads to a condition
+                val conditionNodeName = generateConditionNodeName(handler.targetCondition)
+                sb.append("    $currentStage --> $conditionNodeName: onEvent $event\n")
+                
+                // Process the target condition
+                processCondition(flow, handler.targetCondition, conditionNodeName, sb, visitedStages, visitedConditions)
             }
         }
         
@@ -151,7 +218,7 @@ class MermaidGenerator {
             
             // Process the next stage if not already processed
             if (!visitedStages.contains(nextStage)) {
-                processStage(flow, nextStage, sb, visitedStages)
+                processStage(flow, nextStage, sb, visitedStages, visitedConditions)
             }
         }
     }

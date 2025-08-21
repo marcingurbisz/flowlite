@@ -156,7 +156,8 @@ FlowLite supports three types of stage transitions:
 - **Clear naming over comments** - Use descriptive function/variable names instead of explanatory comments
 
 ## TODO
-* define 2 more flows and show code and diagram in readme.md in automatic way
+* show code and diagram in readme.md in automatic way
+* show condition on diagram for waitFor
 * Introduce StageStatus
 * Implement engine using Azure Service Bus emulator
 * Send for review to guys

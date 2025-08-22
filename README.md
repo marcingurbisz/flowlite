@@ -207,6 +207,96 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
 ```
 
 
+### Employee Onboarding
+
+```mermaid
+stateDiagram-v2
+    state if_initial <<choice>>
+    state if_createuserinsystem <<choice>>
+    state if_updatesecurityclearancelevels <<choice>>
+    state if_condition_neg1871874348 <<choice>>
+    state if_condition_177298765 <<choice>>
+    [*] --> if_initial
+    if_initial --> CreateUserInSystem: isOnboardingAutomated
+    CreateUserInSystem: CreateUserInSystem createUserInSystem()
+    CreateUserInSystem --> if_createuserinsystem
+    if_createuserinsystem --> UpdateSecurityClearanceLevels: isExecutiveRole || isSecurityClearanceRequired
+    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels updateSecurityClearanceLevels()
+    UpdateSecurityClearanceLevels --> if_updatesecurityclearancelevels
+    if_updatesecurityclearancelevels --> if_condition_neg1871874348: isSecurityClearanceRequired
+    if_condition_neg1871874348 --> SetDepartmentAccess: isFullOnboardingRequired
+    SetDepartmentAccess: SetDepartmentAccess setDepartmentAccess()
+    SetDepartmentAccess --> GenerateEmployeeDocuments
+    GenerateEmployeeDocuments: GenerateEmployeeDocuments generateEmployeeDocuments()
+    GenerateEmployeeDocuments --> SendContractForSigning
+    SendContractForSigning: SendContractForSigning sendContractForSigning()
+    SendContractForSigning --> WaitingForEmployeeDocumentsSigned
+    WaitingForEmployeeDocumentsSigned --> WaitingForContractSigned: onEvent EmployeeDocumentsSigned
+    WaitingForContractSigned --> if_condition_177298765: onEvent ContractSigned
+    if_condition_177298765 --> ActivateSpecializedEmployee: isExecutiveRole || isSecurityClearanceRequired
+    ActivateSpecializedEmployee: ActivateSpecializedEmployee activateEmployee()
+    ActivateSpecializedEmployee --> UpdateStatusInHRSystem
+    UpdateStatusInHRSystem: UpdateStatusInHRSystem updateStatusInHRSystem()
+    if_condition_177298765 --> WaitingForOnboardingCompletion: NOT (isExecutiveRole || isSecurityClearanceRequired)
+    WaitingForOnboardingCompletion --> UpdateStatusInHRSystem: onEvent OnboardingComplete
+    if_condition_neg1871874348 --> GenerateEmployeeDocuments: NOT (isFullOnboardingRequired)
+    if_updatesecurityclearancelevels --> WaitingForContractSigned: NOT (isSecurityClearanceRequired)
+    if_createuserinsystem --> ActivateStandardEmployee: NOT (isExecutiveRole || isSecurityClearanceRequired)
+    ActivateStandardEmployee: ActivateStandardEmployee activateEmployee()
+    ActivateStandardEmployee --> GenerateEmployeeDocuments
+    if_initial --> WaitingForContractSigned: NOT (isOnboardingAutomated)
+    UpdateStatusInHRSystem --> [*]
+
+```
+
+```kotlin
+fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
+    return FlowBuilder<EmployeeOnboarding>()
+        .condition(
+            predicate = { it.isOnboardingAutomated },
+            description = "isOnboardingAutomated",
+            onTrue = {
+                // Automated path
+                stage(CreateUserInSystem, ::createUserInSystem)
+                    .condition( { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                        description = "isExecutiveRole || isSecurityClearanceRequired",
+                        onFalse = {
+                            stage(ActivateStandardEmployee, ::activateEmployee)
+                                .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
+                                .stage(SendContractForSigning, ::sendContractForSigning)
+                                .stage(WaitingForEmployeeDocumentsSigned)
+                                .waitFor(EmployeeDocumentsSigned)
+                                .stage(WaitingForContractSigned)
+                                .waitFor(ContractSigned, condition = {it.isContractSigned})
+                                .condition({ it.isExecutiveRole || it.isSecurityClearanceRequired },
+                                    description = "isExecutiveRole || isSecurityClearanceRequired",
+                                    onTrue = {
+                                        stage(ActivateSpecializedEmployee, ::activateEmployee)
+                                            .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem) },
+                                    onFalse = {
+                                        stage(WaitingForOnboardingCompletion).waitFor(OnboardingComplete).join(UpdateStatusInHRSystem)}
+                                ) },
+                        onTrue = {
+                            stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                .condition( {it.isSecurityClearanceRequired },
+                                    description = "isSecurityClearanceRequired",
+                                    onTrue = {condition ({it.isFullOnboardingRequired},
+                                        description = "isFullOnboardingRequired",
+                                        onTrue = {stage(SetDepartmentAccess, ::setDepartmentAccess).join(GenerateEmployeeDocuments)},
+                                        onFalse = {join(GenerateEmployeeDocuments)})},
+                                    onFalse = {join(WaitingForContractSigned)})
+                        })
+            },
+            onFalse = {
+                // Manual path
+                join(WaitingForContractSigned)
+            }
+        )
+        .build()
+}
+```
+
+
 ### Pizza Order
 
 ```mermaid
@@ -269,96 +359,6 @@ fun createPizzaOrderFlow(): Flow<PizzaOrder> {
                 }
             },
             description = "paymentMethod == PaymentMethod.CASH"
-        )
-        .build()
-}
-```
-
-
-### Employee Onboarding
-
-```mermaid
-stateDiagram-v2
-    state if_initial <<choice>>
-    state if_createuserinsystem <<choice>>
-    state if_updatesecurityclearancelevels <<choice>>
-    state if_condition_1125387715 <<choice>>
-    state if_condition_657778191 <<choice>>
-    [*] --> if_initial
-    if_initial --> CreateUserInSystem: isOnboardingAutomated
-    CreateUserInSystem: CreateUserInSystem createUserInSystem()
-    CreateUserInSystem --> if_createuserinsystem
-    if_createuserinsystem --> UpdateSecurityClearanceLevels: isExecutiveRole || isSecurityClearanceRequired
-    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels updateSecurityClearanceLevels()
-    UpdateSecurityClearanceLevels --> if_updatesecurityclearancelevels
-    if_updatesecurityclearancelevels --> if_condition_1125387715: isSecurityClearanceRequired
-    if_condition_1125387715 --> SetDepartmentAccess: isFullOnboardingRequired
-    SetDepartmentAccess: SetDepartmentAccess setDepartmentAccess()
-    SetDepartmentAccess --> GenerateEmployeeDocuments
-    GenerateEmployeeDocuments: GenerateEmployeeDocuments generateEmployeeDocuments()
-    GenerateEmployeeDocuments --> SendContractForSigning
-    SendContractForSigning: SendContractForSigning sendContractForSigning()
-    SendContractForSigning --> WaitingForEmployeeDocumentsSigned
-    WaitingForEmployeeDocumentsSigned --> WaitingForContractSigned: onEvent EmployeeDocumentsSigned
-    WaitingForContractSigned --> if_condition_657778191: onEvent ContractSigned
-    if_condition_657778191 --> ActivateSpecializedEmployee: isExecutiveRole || isSecurityClearanceRequired
-    ActivateSpecializedEmployee: ActivateSpecializedEmployee activateEmployee()
-    ActivateSpecializedEmployee --> UpdateStatusInHRSystem
-    UpdateStatusInHRSystem: UpdateStatusInHRSystem updateStatusInHRSystem()
-    if_condition_657778191 --> WaitingForOnboardingCompletion: NOT (isExecutiveRole || isSecurityClearanceRequired)
-    WaitingForOnboardingCompletion --> UpdateStatusInHRSystem: onEvent OnboardingComplete
-    if_condition_1125387715 --> GenerateEmployeeDocuments: NOT (isFullOnboardingRequired)
-    if_updatesecurityclearancelevels --> WaitingForContractSigned: NOT (isSecurityClearanceRequired)
-    if_createuserinsystem --> ActivateStandardEmployee: NOT (isExecutiveRole || isSecurityClearanceRequired)
-    ActivateStandardEmployee: ActivateStandardEmployee activateEmployee()
-    ActivateStandardEmployee --> GenerateEmployeeDocuments
-    if_initial --> WaitingForContractSigned: NOT (isOnboardingAutomated)
-    UpdateStatusInHRSystem --> [*]
-
-```
-
-```kotlin
-fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
-    return FlowBuilder<EmployeeOnboarding>()
-        .condition(
-            predicate = { it.isOnboardingAutomated },
-            description = "isOnboardingAutomated",
-            onTrue = {
-                // Automated path
-                stage(CreateUserInSystem, ::createUserInSystem)
-                    .condition( { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                        description = "isExecutiveRole || isSecurityClearanceRequired",
-                        onFalse = {
-                            stage(ActivateStandardEmployee, ::activateEmployee)
-                                .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
-                                .stage(SendContractForSigning, ::sendContractForSigning)
-                                .stage(WaitingForEmployeeDocumentsSigned)
-                                .waitFor(EmployeeDocumentsSigned)
-                                .stage(WaitingForContractSigned)
-                                .waitFor(ContractSigned, condition = {it.isContractSigned})
-                                .condition({ it.isExecutiveRole || it.isSecurityClearanceRequired },
-                                    description = "isExecutiveRole || isSecurityClearanceRequired",
-                                    onTrue = {
-                                        stage(ActivateSpecializedEmployee, ::activateEmployee)
-                                            .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem) },
-                                    onFalse = {
-                                        stage(WaitingForOnboardingCompletion).waitFor(OnboardingComplete).join(UpdateStatusInHRSystem)}
-                                ) },
-                        onTrue = {
-                            stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
-                                .condition( {it.isSecurityClearanceRequired },
-                                    description = "isSecurityClearanceRequired",
-                                    onTrue = {condition ({it.isFullOnboardingRequired},
-                                        description = "isFullOnboardingRequired",
-                                        onTrue = {stage(SetDepartmentAccess, ::setDepartmentAccess).join(GenerateEmployeeDocuments)},
-                                        onFalse = {join(GenerateEmployeeDocuments)})},
-                                    onFalse = {join(WaitingForContractSigned)})
-                        })
-            },
-            onFalse = {
-                // Manual path
-                join(WaitingForContractSigned)
-            }
         )
         .build()
 }

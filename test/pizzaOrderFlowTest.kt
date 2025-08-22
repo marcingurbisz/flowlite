@@ -163,6 +163,7 @@ fun completeOrder(order: PizzaOrder): PizzaOrder = order
 fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order
 
 // --- Flow Definition ---
+// FLOW-DEFINITION-START
 fun createPizzaOrderFlow(): Flow<PizzaOrder> {
 
     // Define main pizza order flow
@@ -197,6 +198,7 @@ fun createPizzaOrderFlow(): Flow<PizzaOrder> {
         )
         .build()
 }
+// FLOW-DEFINITION-END
 
 /** Simple in-memory state persister for testing purposes */
 class InMemoryStatePersister<T : Any> : StatePersister<T> {

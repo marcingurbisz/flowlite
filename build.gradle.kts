@@ -79,6 +79,11 @@ kotlin {
     jvmToolchain(21)
 }
 
+tasks.register<JavaExec>("updateReadme") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.flowlite.test.ReadmeUpdaterKt")
+}
+
 publishing {
     publications {
         create<MavenPublication>("maven") {

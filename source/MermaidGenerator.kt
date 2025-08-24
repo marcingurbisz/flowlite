@@ -6,6 +6,10 @@ package io.flowlite.api
  */
 class MermaidGenerator {
 
+    // Tracks assigned names for conditions to ensure stable node names
+    private val conditionNodeNames = mutableMapOf<ConditionHandler<*>, String>()
+    private val conditionNameCounts = mutableMapOf<String, Int>()
+
     /**
      * Generates a Mermaid diagram string from a Flow object.
      *
@@ -14,15 +18,17 @@ class MermaidGenerator {
      * @return String containing the Mermaid diagram definition
      */
     fun <T : Any> generateDiagram(flowId: String, flow: Flow<T>): String {
+        conditionNodeNames.clear()
+        conditionNameCounts.clear()
         val sb = StringBuilder()
-        
+
         // Start the mermaid stateDiagram
         sb.append("stateDiagram-v2\n")
-        
+
         // Track visited stages to avoid cycles in the diagram
         val visitedStages = mutableSetOf<Stage>()
         val visitedConditions = mutableSetOf<ConditionHandler<T>>()
-        
+
         // Add all choice nodes (condition handlers)
         addAllChoiceNodes(flow, sb)
         
@@ -32,9 +38,9 @@ class MermaidGenerator {
             // Process all stages starting with the initial stage
             processStage(flow, flow.initialStage, sb, visitedStages, visitedConditions)
         } else if (flow.initialCondition != null) {
-            // Handle initial condition
-            sb.append("    [*] --> if_initial\n")
-            processCondition(flow, flow.initialCondition, "if_initial", sb, visitedStages, visitedConditions)
+            val nodeName = generateConditionNodeName(flow.initialCondition)
+            sb.append("    [*] --> $nodeName\n")
+            processCondition(flow, flow.initialCondition, nodeName, sb, visitedStages, visitedConditions)
         }
         
         // Add terminal states
@@ -55,16 +61,17 @@ class MermaidGenerator {
         
         // Add choice node for initial condition if present
         flow.initialCondition?.let {
-            sb.append("    state if_initial <<choice>>\n")
+            val nodeName = generateConditionNodeName(it)
+            sb.append("    state $nodeName <<choice>>\n")
             addNestedChoiceNodes(it, sb, visitedConditions)
         }
         
         // Add all choice nodes (condition handlers in stages)
         flow.stages.forEach { (stage, definition) ->
             if (definition.conditionHandler != null) {
-                val choiceNodeName = "if_${stage.toString().lowercase()}"
+                val choiceNodeName = generateConditionNodeName(definition.conditionHandler!!)
                 sb.append("    state $choiceNodeName <<choice>>\n")
-                
+
                 // Add nested choice nodes recursively
                 addNestedChoiceNodes(definition.conditionHandler!!, sb, visitedConditions)
             }
@@ -123,7 +130,7 @@ class MermaidGenerator {
         }
         
         // Process true branch
-        val trueLabel = condition.description ?: "true"
+        val trueLabel = condition.description
         
         if (condition.trueStage != null) {
             sb.append("    $choiceNodeName --> ${condition.trueStage}: $trueLabel\n")
@@ -135,11 +142,7 @@ class MermaidGenerator {
         }
         
         // Process false branch
-        val falseLabel = if (condition.description != null) {
-            "NOT (${condition.description})"
-        } else {
-            "false"
-        }
+        val falseLabel = "NOT (${condition.description})"
         
         if (condition.falseStage != null) {
             sb.append("    $choiceNodeName --> ${condition.falseStage}: $falseLabel\n")
@@ -152,10 +155,17 @@ class MermaidGenerator {
     }
     
     /**
-     * Generate a consistent node name for a condition
+     * Generate a unique node name for a condition based on its description
      */
-    private fun <T : Any> generateConditionNodeName(condition: ConditionHandler<T>): String {
-        return "if_condition_${condition.hashCode().toString().replace("-", "neg")}"
+    private fun generateConditionNodeName(condition: ConditionHandler<*>): String {
+        return conditionNodeNames.getOrPut(condition) {
+            val base = "if_" + condition.description.lowercase()
+                .replace(Regex("[^a-z0-9]+"), "_")
+                .trim('_')
+            val count = (conditionNameCounts[base] ?: 0) + 1
+            conditionNameCounts[base] = count
+            if (count == 1) base else "${base}_$count"
+        }
     }
     
     /**
@@ -183,11 +193,11 @@ class MermaidGenerator {
         
         // Process condition handler if present
         stageDefinition.conditionHandler?.let { conditionHandler ->
-            val choiceNodeName = "if_${currentStage.toString().lowercase()}"
-            
+            val choiceNodeName = generateConditionNodeName(conditionHandler)
+
             // Add transition to choice node
             sb.append("    $currentStage --> $choiceNodeName\n")
-            
+
             // Process the condition using the helper method
             processCondition(flow, conditionHandler, choiceNodeName, sb, visitedStages, visitedConditions)
         }

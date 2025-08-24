@@ -68,7 +68,7 @@ class FlowBuilder<T : Any> {
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T>.() -> Unit,
         onFalse: FlowBuilder<T>.() -> Unit,
-        description: String? = null
+        description: String
     ): FlowBuilder<T> {
         initialCondition = createConditionHandler(predicate, onTrue, onFalse, description)
         return this
@@ -85,7 +85,7 @@ class FlowBuilder<T : Any> {
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T>.() -> Unit,
         onFalse: FlowBuilder<T>.() -> Unit,
-        description: String?
+        description: String
     ): ConditionHandler<T> {
         // Create both branch builders
         val trueBranch = FlowBuilder<T>().apply(onTrue)
@@ -158,7 +158,7 @@ data class ConditionHandler<T : Any>(
     val trueCondition: ConditionHandler<T>?,
     val falseStage: Stage?,
     val falseCondition: ConditionHandler<T>?,
-    val description: String? = null,
+    val description: String,
 )
 
 data class EventHandler<T : Any>(
@@ -187,7 +187,7 @@ class StageBuilder<T : Any>(
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T>.() -> Unit,
         onFalse: FlowBuilder<T>.() -> Unit,
-        description: String? = null
+        description: String
     ): FlowBuilder<T> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.CONDITION)) {
             throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
@@ -231,7 +231,7 @@ class EventBuilder<T : Any>(
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T>.() -> Unit,
         onFalse: FlowBuilder<T>.() -> Unit,
-        description: String? = null
+        description: String
     ): FlowBuilder<T> {
         stageBuilder.stageDefinition.eventHandlers[event] = EventHandler(event, null,
             stageBuilder.flowBuilder.createConditionHandler(predicate, onTrue, onFalse, description))

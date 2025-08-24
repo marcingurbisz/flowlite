@@ -110,7 +110,7 @@ fun updateStatusInHRSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
 }
 
 // --- Flow Definition ---
-
+// FLOW-DEFINITION-START
 fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
     return FlowBuilder<EmployeeOnboarding>()
         .condition(
@@ -155,3 +155,4 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
         )
         .build()
 }
+// FLOW-DEFINITION-END

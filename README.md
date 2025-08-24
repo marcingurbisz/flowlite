@@ -170,45 +170,206 @@ FlowLite supports three types of stage transitions:
 * Waiting on multiple events (event with conditional?)
 * History of changes
 
-## Process Example
+## Flow Examples
 
-### Diagram
+The examples below are generated from test flows. Each flow builder is wrapped with
+`// FLOW-DEFINITION-START` and `// FLOW-DEFINITION-END` markers in its test file.
+To document a new flow, add it to the `documentedFlows` list in
+`test/ReadmeUpdater.kt` with its id, title, source file path and factory
+function.
+
+<!-- FLOW-DOCS-START -->
+
+### Pizza Order
 
 ```mermaid
 stateDiagram-v2
-    state if_payment_method <<choice>>
-    
-    [*] --> Started
-    Started --> if_payment_method
-    CancellingOrder --> [*]
-    if_payment_method --> InitializingCashPayment: paymentMethod = CASH
-    if_payment_method --> InitializingOnlinePayment: paymentMethod = ONLINE
+    state if_paymentmethod_paymentmethod_cash <<choice>>
+    [*] --> if_paymentmethod_paymentmethod_cash
+    if_paymentmethod_paymentmethod_cash --> InitializingCashPayment: paymentMethod == PaymentMethod.CASH
     InitializingCashPayment: InitializingCashPayment initializeCashPayment()
     InitializingCashPayment --> StartingOrderPreparation: onEvent PaymentConfirmed
-    InitializingCashPayment --> CancellingOrder: onEvent Cancel
-    InitializingOnlinePayment: InitializingOnlinePayment initializeOnlinePayment()
-    InitializingOnlinePayment --> InitializingCashPayment: onEvent SwitchToCashPayment
-    InitializingOnlinePayment --> StartingOrderPreparation: onEvent PaymentCompleted
-    InitializingOnlinePayment --> CancellingOrder: onEvent Cancel 
-    InitializingOnlinePayment --> ExpiringOnlinePayment: onEvent PaymentSessionExpired
-    ExpiringOnlinePayment: ExpiringOnlinePayment handlePaymentExpiration()
-    ExpiringOnlinePayment --> InitializingOnlinePayment: onEvent RetryPayment
-    ExpiringOnlinePayment --> CancellingOrder: onEvent Cancel
     StartingOrderPreparation: StartingOrderPreparation startOrderPreparation()
     StartingOrderPreparation --> InitializingDelivery: onEvent ReadyForDelivery
-     
     InitializingDelivery: InitializingDelivery initializeDelivery()
     InitializingDelivery --> CompletingOrder: onEvent DeliveryCompleted
-    InitializingDelivery --> CancellingOrder: onEvent DeliveryFailed
-    
     CompletingOrder: CompletingOrder completeOrder()
+    InitializingDelivery --> CancellingOrder: onEvent DeliveryFailed
     CancellingOrder: CancellingOrder sendOrderCancellation()
+    InitializingCashPayment --> CancellingOrder: onEvent Cancel
+    if_paymentmethod_paymentmethod_cash --> InitializingOnlinePayment: NOT (paymentMethod == PaymentMethod.CASH)
+    InitializingOnlinePayment: InitializingOnlinePayment initializeOnlinePayment()
+    InitializingOnlinePayment --> StartingOrderPreparation: onEvent PaymentCompleted
+    InitializingOnlinePayment --> InitializingCashPayment: onEvent SwitchToCashPayment
+    InitializingOnlinePayment --> CancellingOrder: onEvent Cancel
+    InitializingOnlinePayment --> ExpiringOnlinePayment: onEvent PaymentSessionExpired
+    ExpiringOnlinePayment --> InitializingOnlinePayment: onEvent RetryPayment
+    ExpiringOnlinePayment --> CancellingOrder: onEvent Cancel
     CompletingOrder --> [*]
+    CancellingOrder --> [*]
+
 ```
 
-### Code
+```kotlin
+fun createPizzaOrderFlow(): Flow<PizzaOrder> {
 
-See examples in [test](test) directory
+    // Define main pizza order flow
+    return FlowBuilder<PizzaOrder>()
+        .condition(
+            predicate = { it.paymentMethod == PaymentMethod.CASH },
+            onTrue = {
+                stage(InitializingCashPayment, ::initializeCashPayment).apply {
+                    waitFor(PaymentConfirmed)
+                        .stage(StartingOrderPreparation, ::startOrderPreparation)
+                        .waitFor(ReadyForDelivery)
+                        .stage(InitializingDelivery, ::initializeDelivery)
+                        .apply {
+                            waitFor(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
+                            waitFor(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
+                        }
+                    waitFor(Cancel).join(CancellingOrder)
+                }
+            },
+            onFalse = {
+                stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
+                    waitFor(PaymentCompleted).join(StartingOrderPreparation)
+                    waitFor(SwitchToCashPayment).join(InitializingCashPayment)
+                    waitFor(Cancel).join(CancellingOrder)
+                    waitFor(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
+                        waitFor(RetryPayment).join(InitializingOnlinePayment)
+                        waitFor(Cancel).join(CancellingOrder)
+                    }
+                }
+            },
+            description = "paymentMethod == PaymentMethod.CASH"
+        )
+        .build()
+}
+```
+
+
+### Employee Onboarding
+
+```mermaid
+stateDiagram-v2
+    state if_isonboardingautomated <<choice>>
+    state if_isexecutiverole_issecurityclearancerequired <<choice>>
+    state if_issecurityclearancerequired <<choice>>
+    state if_isfullonboardingrequired <<choice>>
+    state if_isexecutiverole_issecurityclearancerequired_2 <<choice>>
+    [*] --> if_isonboardingautomated
+    if_isonboardingautomated --> CreateUserInSystem: isOnboardingAutomated
+    CreateUserInSystem: CreateUserInSystem createUserInSystem()
+    CreateUserInSystem --> if_isexecutiverole_issecurityclearancerequired
+    if_isexecutiverole_issecurityclearancerequired --> UpdateSecurityClearanceLevels: isExecutiveRole || isSecurityClearanceRequired
+    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels updateSecurityClearanceLevels()
+    UpdateSecurityClearanceLevels --> if_issecurityclearancerequired
+    if_issecurityclearancerequired --> if_isfullonboardingrequired: isSecurityClearanceRequired
+    if_isfullonboardingrequired --> SetDepartmentAccess: isFullOnboardingRequired
+    SetDepartmentAccess: SetDepartmentAccess setDepartmentAccess()
+    SetDepartmentAccess --> GenerateEmployeeDocuments
+    GenerateEmployeeDocuments: GenerateEmployeeDocuments generateEmployeeDocuments()
+    GenerateEmployeeDocuments --> SendContractForSigning
+    SendContractForSigning: SendContractForSigning sendContractForSigning()
+    SendContractForSigning --> WaitingForEmployeeDocumentsSigned
+    WaitingForEmployeeDocumentsSigned --> WaitingForContractSigned: onEvent EmployeeDocumentsSigned
+    WaitingForContractSigned --> if_isexecutiverole_issecurityclearancerequired_2: onEvent ContractSigned
+    if_isexecutiverole_issecurityclearancerequired_2 --> ActivateSpecializedEmployee: isExecutiveRole || isSecurityClearanceRequired
+    ActivateSpecializedEmployee: ActivateSpecializedEmployee activateEmployee()
+    ActivateSpecializedEmployee --> UpdateStatusInHRSystem
+    UpdateStatusInHRSystem: UpdateStatusInHRSystem updateStatusInHRSystem()
+    if_isexecutiverole_issecurityclearancerequired_2 --> WaitingForOnboardingCompletion: NOT (isExecutiveRole || isSecurityClearanceRequired)
+    WaitingForOnboardingCompletion --> UpdateStatusInHRSystem: onEvent OnboardingComplete
+    if_isfullonboardingrequired --> GenerateEmployeeDocuments: NOT (isFullOnboardingRequired)
+    if_issecurityclearancerequired --> WaitingForContractSigned: NOT (isSecurityClearanceRequired)
+    if_isexecutiverole_issecurityclearancerequired --> ActivateStandardEmployee: NOT (isExecutiveRole || isSecurityClearanceRequired)
+    ActivateStandardEmployee: ActivateStandardEmployee activateEmployee()
+    ActivateStandardEmployee --> GenerateEmployeeDocuments
+    if_isonboardingautomated --> WaitingForContractSigned: NOT (isOnboardingAutomated)
+    UpdateStatusInHRSystem --> [*]
+
+```
+
+```kotlin
+fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
+    return FlowBuilder<EmployeeOnboarding>()
+        .condition(
+            predicate = { it.isOnboardingAutomated },
+            description = "isOnboardingAutomated",
+            onTrue = {
+                // Automated path
+                stage(CreateUserInSystem, ::createUserInSystem)
+                    .condition( { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                        description = "isExecutiveRole || isSecurityClearanceRequired",
+                        onFalse = {
+                            stage(ActivateStandardEmployee, ::activateEmployee)
+                                .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
+                                .stage(SendContractForSigning, ::sendContractForSigning)
+                                .stage(WaitingForEmployeeDocumentsSigned)
+                                .waitFor(EmployeeDocumentsSigned)
+                                .stage(WaitingForContractSigned)
+                                .waitFor(ContractSigned, condition = {it.isContractSigned})
+                                .condition({ it.isExecutiveRole || it.isSecurityClearanceRequired },
+                                    description = "isExecutiveRole || isSecurityClearanceRequired",
+                                    onTrue = {
+                                        stage(ActivateSpecializedEmployee, ::activateEmployee)
+                                            .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem) },
+                                    onFalse = {
+                                        stage(WaitingForOnboardingCompletion).waitFor(OnboardingComplete).join(UpdateStatusInHRSystem)}
+                                ) },
+                        onTrue = {
+                            stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                .condition( {it.isSecurityClearanceRequired },
+                                    description = "isSecurityClearanceRequired",
+                                    onTrue = {condition ({it.isFullOnboardingRequired},
+                                        description = "isFullOnboardingRequired",
+                                        onTrue = {stage(SetDepartmentAccess, ::setDepartmentAccess).join(GenerateEmployeeDocuments)},
+                                        onFalse = {join(GenerateEmployeeDocuments)})},
+                                    onFalse = {join(WaitingForContractSigned)})
+                        })
+            },
+            onFalse = {
+                // Manual path
+                join(WaitingForContractSigned)
+            }
+        )
+        .build()
+}
+```
+
+
+### Order Confirmation
+
+```mermaid
+stateDiagram-v2
+    [*] --> InitializingConfirmation
+    InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()
+    InitializingConfirmation --> WaitingForConfirmation
+    WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally
+    RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()
+    RemovingFromConfirmationQueue --> InformingCustomer
+    InformingCustomer: InformingCustomer informCustomer()
+    WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically
+    InformingCustomer --> [*]
+
+```
+
+```kotlin
+fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
+    return FlowBuilder<OrderConfirmation>()
+        .stage(InitializingConfirmation, ::initializeOrderConfirmation)
+        .stage(WaitingForConfirmation)
+        .apply {
+            waitFor(OrderConfirmationEvent.ConfirmedDigitally)
+                .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+                .stage(InformingCustomer, ::informCustomer)
+            waitFor(ConfirmedPhysically).join(InformingCustomer)
+        }
+        .end()
+        .build()
+}
+```
+<!-- FLOW-DOCS-END -->
 
 ## Parallel Execution (Idea)
 

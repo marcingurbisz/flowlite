@@ -48,7 +48,7 @@ class PizzaOrderFlowTest : BehaviorSpec({
             }
 
             then("should have initial condition") {
-                diagram shouldContain "[*] --> if_initial"
+                diagram shouldContain "[*] --> if_paymentmethod_paymentmethod_cash"
             }
 
             then("should contain all stages") {
@@ -98,9 +98,9 @@ class PizzaOrderFlowTest : BehaviorSpec({
             }
 
             then("should include condition descriptions on transitions") {
-                diagram shouldContain "state if_initial <<choice>>"
-                diagram shouldContain "if_initial --> $InitializingCashPayment: paymentMethod == PaymentMethod.CASH"
-                diagram shouldContain "if_initial --> $InitializingOnlinePayment: NOT (paymentMethod == PaymentMethod.CASH)"
+                diagram shouldContain "state if_paymentmethod_paymentmethod_cash <<choice>>"
+                diagram shouldContain "if_paymentmethod_paymentmethod_cash --> $InitializingCashPayment: paymentMethod == PaymentMethod.CASH"
+                diagram shouldContain "if_paymentmethod_paymentmethod_cash --> $InitializingOnlinePayment: NOT (paymentMethod == PaymentMethod.CASH)"
             }
         }
     }
@@ -163,6 +163,7 @@ fun completeOrder(order: PizzaOrder): PizzaOrder = order
 fun sendOrderCancellation(order: PizzaOrder): PizzaOrder = order
 
 // --- Flow Definition ---
+// FLOW-DEFINITION-START
 fun createPizzaOrderFlow(): Flow<PizzaOrder> {
 
     // Define main pizza order flow
@@ -197,6 +198,7 @@ fun createPizzaOrderFlow(): Flow<PizzaOrder> {
         )
         .build()
 }
+// FLOW-DEFINITION-END
 
 /** Simple in-memory state persister for testing purposes */
 class InMemoryStatePersister<T : Any> : StatePersister<T> {

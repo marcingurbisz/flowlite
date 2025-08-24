@@ -174,74 +174,6 @@ FlowLite supports three types of stage transitions:
 
 <!-- FLOW-DOCS-START -->
 
-### Pizza Order
-
-```mermaid
-stateDiagram-v2
-    state if_paymentmethod_paymentmethod_cash <<choice>>
-    [*] --> if_paymentmethod_paymentmethod_cash
-    if_paymentmethod_paymentmethod_cash --> InitializingCashPayment: paymentMethod == PaymentMethod.CASH
-    InitializingCashPayment: InitializingCashPayment initializeCashPayment()
-    InitializingCashPayment --> StartingOrderPreparation: onEvent PaymentConfirmed
-    StartingOrderPreparation: StartingOrderPreparation startOrderPreparation()
-    StartingOrderPreparation --> InitializingDelivery: onEvent ReadyForDelivery
-    InitializingDelivery: InitializingDelivery initializeDelivery()
-    InitializingDelivery --> CompletingOrder: onEvent DeliveryCompleted
-    CompletingOrder: CompletingOrder completeOrder()
-    InitializingDelivery --> CancellingOrder: onEvent DeliveryFailed
-    CancellingOrder: CancellingOrder sendOrderCancellation()
-    InitializingCashPayment --> CancellingOrder: onEvent Cancel
-    if_paymentmethod_paymentmethod_cash --> InitializingOnlinePayment: NOT (paymentMethod == PaymentMethod.CASH)
-    InitializingOnlinePayment: InitializingOnlinePayment initializeOnlinePayment()
-    InitializingOnlinePayment --> StartingOrderPreparation: onEvent PaymentCompleted
-    InitializingOnlinePayment --> InitializingCashPayment: onEvent SwitchToCashPayment
-    InitializingOnlinePayment --> CancellingOrder: onEvent Cancel
-    InitializingOnlinePayment --> ExpiringOnlinePayment: onEvent PaymentSessionExpired
-    ExpiringOnlinePayment --> InitializingOnlinePayment: onEvent RetryPayment
-    ExpiringOnlinePayment --> CancellingOrder: onEvent Cancel
-    CompletingOrder --> [*]
-    CancellingOrder --> [*]
-
-```
-
-```kotlin
-fun createPizzaOrderFlow(): Flow<PizzaOrder> {
-
-    // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>()
-        .condition(
-            predicate = { it.paymentMethod == PaymentMethod.CASH },
-            onTrue = {
-                stage(InitializingCashPayment, ::initializeCashPayment).apply {
-                    waitFor(PaymentConfirmed)
-                        .stage(StartingOrderPreparation, ::startOrderPreparation)
-                        .waitFor(ReadyForDelivery)
-                        .stage(InitializingDelivery, ::initializeDelivery)
-                        .apply {
-                            waitFor(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
-                            waitFor(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
-                        }
-                    waitFor(Cancel).join(CancellingOrder)
-                }
-            },
-            onFalse = {
-                stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
-                    waitFor(PaymentCompleted).join(StartingOrderPreparation)
-                    waitFor(SwitchToCashPayment).join(InitializingCashPayment)
-                    waitFor(Cancel).join(CancellingOrder)
-                    waitFor(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
-                        waitFor(RetryPayment).join(InitializingOnlinePayment)
-                        waitFor(Cancel).join(CancellingOrder)
-                    }
-                }
-            },
-            description = "paymentMethod == PaymentMethod.CASH"
-        )
-        .build()
-}
-```
-
-
 ### Order Confirmation
 
 ```mermaid
@@ -359,6 +291,74 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
                 // Manual path
                 join(WaitingForContractSigned)
             }
+        )
+        .build()
+}
+```
+
+
+### Pizza Order
+
+```mermaid
+stateDiagram-v2
+    state if_paymentmethod_paymentmethod_cash <<choice>>
+    [*] --> if_paymentmethod_paymentmethod_cash
+    if_paymentmethod_paymentmethod_cash --> InitializingCashPayment: paymentMethod == PaymentMethod.CASH
+    InitializingCashPayment: InitializingCashPayment initializeCashPayment()
+    InitializingCashPayment --> StartingOrderPreparation: onEvent PaymentConfirmed
+    StartingOrderPreparation: StartingOrderPreparation startOrderPreparation()
+    StartingOrderPreparation --> InitializingDelivery: onEvent ReadyForDelivery
+    InitializingDelivery: InitializingDelivery initializeDelivery()
+    InitializingDelivery --> CompletingOrder: onEvent DeliveryCompleted
+    CompletingOrder: CompletingOrder completeOrder()
+    InitializingDelivery --> CancellingOrder: onEvent DeliveryFailed
+    CancellingOrder: CancellingOrder sendOrderCancellation()
+    InitializingCashPayment --> CancellingOrder: onEvent Cancel
+    if_paymentmethod_paymentmethod_cash --> InitializingOnlinePayment: NOT (paymentMethod == PaymentMethod.CASH)
+    InitializingOnlinePayment: InitializingOnlinePayment initializeOnlinePayment()
+    InitializingOnlinePayment --> StartingOrderPreparation: onEvent PaymentCompleted
+    InitializingOnlinePayment --> InitializingCashPayment: onEvent SwitchToCashPayment
+    InitializingOnlinePayment --> CancellingOrder: onEvent Cancel
+    InitializingOnlinePayment --> ExpiringOnlinePayment: onEvent PaymentSessionExpired
+    ExpiringOnlinePayment --> InitializingOnlinePayment: onEvent RetryPayment
+    ExpiringOnlinePayment --> CancellingOrder: onEvent Cancel
+    CompletingOrder --> [*]
+    CancellingOrder --> [*]
+
+```
+
+```kotlin
+fun createPizzaOrderFlow(): Flow<PizzaOrder> {
+
+    // Define main pizza order flow
+    return FlowBuilder<PizzaOrder>()
+        .condition(
+            predicate = { it.paymentMethod == PaymentMethod.CASH },
+            onTrue = {
+                stage(InitializingCashPayment, ::initializeCashPayment).apply {
+                    waitFor(PaymentConfirmed)
+                        .stage(StartingOrderPreparation, ::startOrderPreparation)
+                        .waitFor(ReadyForDelivery)
+                        .stage(InitializingDelivery, ::initializeDelivery)
+                        .apply {
+                            waitFor(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
+                            waitFor(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
+                        }
+                    waitFor(Cancel).join(CancellingOrder)
+                }
+            },
+            onFalse = {
+                stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
+                    waitFor(PaymentCompleted).join(StartingOrderPreparation)
+                    waitFor(SwitchToCashPayment).join(InitializingCashPayment)
+                    waitFor(Cancel).join(CancellingOrder)
+                    waitFor(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
+                        waitFor(RetryPayment).join(InitializingOnlinePayment)
+                        waitFor(Cancel).join(CancellingOrder)
+                    }
+                }
+            },
+            description = "paymentMethod == PaymentMethod.CASH"
         )
         .build()
 }

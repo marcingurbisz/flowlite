@@ -1,27 +1,36 @@
 # FlowLite
 
-FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to define business processes in intuitive and maintainable way. 
-It provides a fluent API for defining process flows that are both easy to code and easy to understand.
+FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to define business processes in an intuitive and maintainable way. It provides a fluent, type-safe API that stays close to domain language while remaining simple to reason about.
 
 ## Table of Contents
-
-//TODO: create table of contents
+1. Why FlowLite?
+2. Example flow
+3. Key concepts
+4. Assumptions & status
+5. More examples (auto-generated)
+6. Core Architecture
+7. Diagram Generation
+8. Error Handling
+9. Stage Transitions
+10. Conditional Branching & Joins
+11. Development Guide
+12. Code Documentation Guidelines
 
 ## Why FlowLite?
 
-Traditional business process management (BPM) solutions like Camunda are powerful but also complex and heavyweight.
-FlowLite offers: //TODO: strengths instead of offers?
+Traditional BPM platforms (e.g. Camunda) are powerful but often heavyweight for code-centric teams.
 
-- **Type-safe fluent API**: Leverage Kotlin's type system and language features to create robust workflows
-- **Visual representation**: Automatically generates diagrams from your code
-- **Minimal learning curve**: Natural syntax that reads like plain English
-- **Lightweight**
+FlowLite at a glance:
+- **Type-safe fluent API** – Kotlin-first (enums + functions)
+- **Visuals from code** – Mermaid diagrams generated automatically
+- **Natural syntax** – Reads close to business intent
+- **Lightweight** – Minimal surface area, no BPMN modeling overhead
 
 ## Example flow
 
-<!-- FlowDoc(orderConfirmation) -->
-
+<!-- FlowDoc(order-confirmation) -->
 ```kotlin
+fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
     return FlowBuilder<OrderConfirmation>()
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
@@ -33,6 +42,7 @@ FlowLite offers: //TODO: strengths instead of offers?
         }
         .end()
         .build()
+}
 ```
 
 ```mermaid
@@ -51,20 +61,23 @@ stateDiagram-v2
 
 <!-- FlowDoc.end -->
 
-## Assumptions //TODO: better name for chapter then Assumptions?
+## Key concepts and assumptions
 
-* FlowLite uses an Activity-Oriented approach for stages, where stage names indicate ongoing activities (e.g., "InitializingPayment") //TODO: explain also what a stage, and what is action, better use word activity or action?
-* Each stage has an associated StageStatus e.g. (PENDING, IN_PROGRESS, COMPLETED, ERROR)
-* The combination of Stage and StageStatus (and retry configuration) fully defines what the engine should do next
-* Execution of the next step in the flow is triggered by the "execute next step in flow for instance x" message
-* Assumptions for mermaid diagrams
-  * The Rectangle represents stages with their associated actions. Format: StageName `actionName()`
-  * Arrows represent transitions between stages, triggered by action completion or events
-  * Choice nodes represent routing decisions
-  * Events triggers stage transitions. They represent external triggers that change the process stage (e.g., `onEvent SwitchToCashPayment`)
-  * Terminal stages are represented by transitions to `[*]`
+- **Stage**: A named step (implements `Stage`, usually enum). Represents “we are doing X” - activity-oriented naming (e.g. `InitializingPayment`).
+- **Action**: Function executed when entering a stage `.stage(InitializingConfirmation, ::initializeOrderConfirmation)` (optional).
+- **Event**: External trigger causing a transition (implements `Event`).
+- **Condition**: Binary branching with a predicate -> true/false branch (renders as a choice node).
+- **Join**: Converges control flow by pointing to an existing stage.
+- **Flow**: Immutable definition produced by `FlowBuilder<T>.build()`.
+- Code-first definitions -> diagrams are derived artifacts.
+- Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
+- StageStatus enum (PENDING, IN_PROGRESS, COMPLETED, ERROR) //TODO: this and next points mark as todo. Maybe some emoji?
+- (Stage, StageStatus, retry config) driving next action selection logic
+- External message trigger mechanism ("execute next step in flow for instance x")
+- Retry semantics & cockpit UI for technical replays
+- `BusinessException` marker + differentiated retry UX
 
-## More Examples
+## More examples
 
 The examples below are generated from test flows. Each flow builder is wrapped with
 `// FLOW-DEFINITION-START` and `// FLOW-DEFINITION-END` markers in its test file.
@@ -73,6 +86,194 @@ To document a new flow, add it to the `documentedFlows` list in
 function.
 
 <!-- FlowDoc(all) -->
+### Pizza Order
+
+```kotlin
+fun createPizzaOrderFlow(): Flow<PizzaOrder> {
+
+    // Define main pizza order flow
+    return FlowBuilder<PizzaOrder>()
+        .condition(
+            predicate = { it.paymentMethod == PaymentMethod.CASH },
+            onTrue = {
+                stage(InitializingCashPayment, ::initializeCashPayment).apply {
+                    waitFor(PaymentConfirmed)
+                        .stage(StartingOrderPreparation, ::startOrderPreparation)
+                        .waitFor(ReadyForDelivery)
+                        .stage(InitializingDelivery, ::initializeDelivery)
+                        .apply {
+                            waitFor(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
+                            waitFor(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
+                        }
+                    waitFor(Cancel).join(CancellingOrder)
+                }
+            },
+            onFalse = {
+                stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
+                    waitFor(PaymentCompleted).join(StartingOrderPreparation)
+                    waitFor(SwitchToCashPayment).join(InitializingCashPayment)
+                    waitFor(Cancel).join(CancellingOrder)
+                    waitFor(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
+                        waitFor(RetryPayment).join(InitializingOnlinePayment)
+                        waitFor(Cancel).join(CancellingOrder)
+                    }
+                }
+            },
+            description = "paymentMethod == PaymentMethod.CASH"
+        )
+        .build()
+}
+```
+
+```mermaid
+stateDiagram-v2
+    state if_paymentmethod_paymentmethod_cash <<choice>>
+    [*] --> if_paymentmethod_paymentmethod_cash
+    if_paymentmethod_paymentmethod_cash --> InitializingCashPayment: paymentMethod == PaymentMethod.CASH
+    InitializingCashPayment: InitializingCashPayment initializeCashPayment()
+    InitializingCashPayment --> StartingOrderPreparation: onEvent PaymentConfirmed
+    StartingOrderPreparation: StartingOrderPreparation startOrderPreparation()
+    StartingOrderPreparation --> InitializingDelivery: onEvent ReadyForDelivery
+    InitializingDelivery: InitializingDelivery initializeDelivery()
+    InitializingDelivery --> CompletingOrder: onEvent DeliveryCompleted
+    CompletingOrder: CompletingOrder completeOrder()
+    InitializingDelivery --> CancellingOrder: onEvent DeliveryFailed
+    CancellingOrder: CancellingOrder sendOrderCancellation()
+    InitializingCashPayment --> CancellingOrder: onEvent Cancel
+    if_paymentmethod_paymentmethod_cash --> InitializingOnlinePayment: NOT (paymentMethod == PaymentMethod.CASH)
+    InitializingOnlinePayment: InitializingOnlinePayment initializeOnlinePayment()
+    InitializingOnlinePayment --> StartingOrderPreparation: onEvent PaymentCompleted
+    InitializingOnlinePayment --> InitializingCashPayment: onEvent SwitchToCashPayment
+    InitializingOnlinePayment --> CancellingOrder: onEvent Cancel
+    InitializingOnlinePayment --> ExpiringOnlinePayment: onEvent PaymentSessionExpired
+    ExpiringOnlinePayment --> InitializingOnlinePayment: onEvent RetryPayment
+    ExpiringOnlinePayment --> CancellingOrder: onEvent Cancel
+    CompletingOrder --> [*]
+    CancellingOrder --> [*]
+
+```
+
+### Employee Onboarding
+
+```kotlin
+fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
+    return FlowBuilder<EmployeeOnboarding>()
+        .condition(
+            predicate = { it.isOnboardingAutomated },
+            description = "isOnboardingAutomated",
+            onTrue = {
+                // Automated path
+                stage(CreateUserInSystem, ::createUserInSystem)
+                    .condition( { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                        description = "isExecutiveRole || isSecurityClearanceRequired",
+                        onFalse = {
+                            stage(ActivateStandardEmployee, ::activateEmployee)
+                                .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
+                                .stage(SendContractForSigning, ::sendContractForSigning)
+                                .stage(WaitingForEmployeeDocumentsSigned)
+                                .waitFor(EmployeeDocumentsSigned)
+                                .stage(WaitingForContractSigned)
+                                .waitFor(ContractSigned, condition = {it.isContractSigned})
+                                .condition({ it.isExecutiveRole || it.isSecurityClearanceRequired },
+                                    description = "isExecutiveRole || isSecurityClearanceRequired",
+                                    onTrue = {
+                                        stage(ActivateSpecializedEmployee, ::activateEmployee)
+                                            .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem) },
+                                    onFalse = {
+                                        stage(WaitingForOnboardingCompletion).waitFor(OnboardingComplete).join(UpdateStatusInHRSystem)}
+                                ) },
+                        onTrue = {
+                            stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                .condition( {it.isSecurityClearanceRequired },
+                                    description = "isSecurityClearanceRequired",
+                                    onTrue = {condition ({it.isFullOnboardingRequired},
+                                        description = "isFullOnboardingRequired",
+                                        onTrue = {stage(SetDepartmentAccess, ::setDepartmentAccess).join(GenerateEmployeeDocuments)},
+                                        onFalse = {join(GenerateEmployeeDocuments)})},
+                                    onFalse = {join(WaitingForContractSigned)})
+                        })
+            },
+            onFalse = {
+                // Manual path
+                join(WaitingForContractSigned)
+            }
+        )
+        .build()
+}
+```
+
+```mermaid
+stateDiagram-v2
+    state if_isonboardingautomated <<choice>>
+    state if_isexecutiverole_issecurityclearancerequired <<choice>>
+    state if_issecurityclearancerequired <<choice>>
+    state if_isfullonboardingrequired <<choice>>
+    state if_isexecutiverole_issecurityclearancerequired_2 <<choice>>
+    [*] --> if_isonboardingautomated
+    if_isonboardingautomated --> CreateUserInSystem: isOnboardingAutomated
+    CreateUserInSystem: CreateUserInSystem createUserInSystem()
+    CreateUserInSystem --> if_isexecutiverole_issecurityclearancerequired
+    if_isexecutiverole_issecurityclearancerequired --> UpdateSecurityClearanceLevels: isExecutiveRole || isSecurityClearanceRequired
+    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels updateSecurityClearanceLevels()
+    UpdateSecurityClearanceLevels --> if_issecurityclearancerequired
+    if_issecurityclearancerequired --> if_isfullonboardingrequired: isSecurityClearanceRequired
+    if_isfullonboardingrequired --> SetDepartmentAccess: isFullOnboardingRequired
+    SetDepartmentAccess: SetDepartmentAccess setDepartmentAccess()
+    SetDepartmentAccess --> GenerateEmployeeDocuments
+    GenerateEmployeeDocuments: GenerateEmployeeDocuments generateEmployeeDocuments()
+    GenerateEmployeeDocuments --> SendContractForSigning
+    SendContractForSigning: SendContractForSigning sendContractForSigning()
+    SendContractForSigning --> WaitingForEmployeeDocumentsSigned
+    WaitingForEmployeeDocumentsSigned --> WaitingForContractSigned: onEvent EmployeeDocumentsSigned
+    WaitingForContractSigned --> if_isexecutiverole_issecurityclearancerequired_2: onEvent ContractSigned
+    if_isexecutiverole_issecurityclearancerequired_2 --> ActivateSpecializedEmployee: isExecutiveRole || isSecurityClearanceRequired
+    ActivateSpecializedEmployee: ActivateSpecializedEmployee activateEmployee()
+    ActivateSpecializedEmployee --> UpdateStatusInHRSystem
+    UpdateStatusInHRSystem: UpdateStatusInHRSystem updateStatusInHRSystem()
+    if_isexecutiverole_issecurityclearancerequired_2 --> WaitingForOnboardingCompletion: NOT (isExecutiveRole || isSecurityClearanceRequired)
+    WaitingForOnboardingCompletion --> UpdateStatusInHRSystem: onEvent OnboardingComplete
+    if_isfullonboardingrequired --> GenerateEmployeeDocuments: NOT (isFullOnboardingRequired)
+    if_issecurityclearancerequired --> WaitingForContractSigned: NOT (isSecurityClearanceRequired)
+    if_isexecutiverole_issecurityclearancerequired --> ActivateStandardEmployee: NOT (isExecutiveRole || isSecurityClearanceRequired)
+    ActivateStandardEmployee: ActivateStandardEmployee activateEmployee()
+    ActivateStandardEmployee --> GenerateEmployeeDocuments
+    if_isonboardingautomated --> WaitingForContractSigned: NOT (isOnboardingAutomated)
+    UpdateStatusInHRSystem --> [*]
+
+```
+
+### Order Confirmation
+
+```kotlin
+fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
+    return FlowBuilder<OrderConfirmation>()
+        .stage(InitializingConfirmation, ::initializeOrderConfirmation)
+        .stage(WaitingForConfirmation)
+        .apply {
+            waitFor(OrderConfirmationEvent.ConfirmedDigitally)
+                .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+                .stage(InformingCustomer, ::informCustomer)
+            waitFor(ConfirmedPhysically).join(InformingCustomer)
+        }
+        .end()
+        .build()
+}
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> InitializingConfirmation
+    InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()
+    InitializingConfirmation --> WaitingForConfirmation
+    WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally
+    RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()
+    RemovingFromConfirmationQueue --> InformingCustomer
+    InformingCustomer: InformingCustomer informCustomer()
+    WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically
+    InformingCustomer --> [*]
+
+```
+
 <!-- FlowDoc.end -->
 
 ## Core Architecture
@@ -97,13 +298,6 @@ function.
 ### Diagram Generation (`source/MermaidGenerator.kt`)
 - `MermaidGenerator` - Converts flow definitions to Mermaid diagrams
 
-### Error Handling
-
-* FlowLite differentiates between two types of exceptions:
-  * **Process Exceptions**: Unexpected errors that represent technical issues (e.g. database connection failures, bug in the process action code)
-  * **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (those which implements `BusinessException` marker interface)
-* Process exceptions can be retried via the FlowLite cockpit (accessible by technical stuff only)
-* Business exceptions meant to be retried via FlowLite api (which you can use when you build your own UI to show process status) but also via FlowLite cockpit.
 
 ### Stage Transitions
 
@@ -177,7 +371,7 @@ FlowLite uses a **flat directory structure** to keep the codebase simple and org
 - Gradle build system with Maven publishing configuration
 
 ### Code Documentation Guidelines
-- **Avoid documentation in code** - Code should be self-explanatory through clear naming and structure
-- **Documentation is an exception** - Only add code comments for non-obvious cases or complex logic
-- **Prefer README over code docs** - Document architecture, design decisions, and usage patterns in README.md
-- **Clear naming over comments** - Use descriptive function/variable names instead of explanatory comments
+- Keep the code self-explanatory through clear naming and structure
+- Favor clear naming over comments
+- Comment only non-obvious cases or complex logic
+- Keep architectural & usage docs in this README

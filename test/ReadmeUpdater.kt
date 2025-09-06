@@ -6,6 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readLines
 import kotlin.io.path.readText
+import kotlin.system.exitProcess
 
 /** Updates README.md with flow diagrams and code snippets extracted from test files. */
 
@@ -39,48 +40,119 @@ private val documentedFlows = listOf(
 
 fun main() {
     val generator = MermaidGenerator()
-    val flows = mutableListOf<FlowDoc>()
 
-    documentedFlows.forEach { spec ->
+    // Build FlowDoc objects for all documented flows
+    val allDocs = documentedFlows.mapNotNull { spec ->
         val lines = spec.source.readLines()
         val start = lines.indexOfFirst { it.contains("FLOW-DEFINITION-START") }
         val end = lines.indexOfFirst { it.contains("FLOW-DEFINITION-END") }
-        if (start != -1 && end != -1 && end > start) {
+        if (start == -1 || end == -1 || end <= start) {
+            println("WARN: Could not find definition markers for flow id='${spec.id}' in ${spec.source}")
+            null
+        } else {
             val codeLines = lines.subList(start + 1, end)
             val code = codeLines.joinToString(System.lineSeparator())
             @Suppress("UNCHECKED_CAST")
             val flow = spec.factory() as Flow<Any>
             val diagram = generator.generateDiagram(spec.id, flow)
-            flows += FlowDoc(title = spec.title, diagram = diagram, code = code)
+            FlowDoc(title = spec.title, diagram = diagram, code = code, id = spec.id)
         }
     }
 
     val readmePath = Path.of("README.md")
-    val startMarker = "<!-- FLOW-DOCS-START -->"
-    val endMarker = "<!-- FLOW-DOCS-END -->"
     val content = readmePath.readText()
-    val startIdx = content.indexOf(startMarker)
-    val endIdx = content.indexOf(endMarker)
-    if (startIdx == -1 || endIdx == -1 || endIdx < startIdx) {
-        println("README markers not found")
-        return
+    val lines = content.lines()
+
+    // Regex for FlowDoc markers: <!-- FlowDoc(id) --> and terminator <!-- FlowDoc.end -->
+    val startRegex = Regex("<!--\\s*FlowDoc\\(([^)]+)\\)\\s*-->")
+    val endMarker = "<!-- FlowDoc.end -->"
+
+    if (lines.none { it.contains("FlowDoc(") }) {
+        println("No FlowDoc markers found; nothing to update.")
+        exitProcess(0)
     }
-    val before = content.substring(0, startIdx + startMarker.length)
-    val after = content.substring(endIdx)
-    val newline = System.lineSeparator()
-    val builder = StringBuilder()
-    flows.forEach { doc ->
-        builder.append(newline).append(newline).append("### ").append(doc.title).append(newline).append(newline)
-        builder.append("```mermaid").append(newline).append(doc.diagram).append(newline).append("```").append(newline).append(newline)
-        builder.append("```kotlin").append(newline).append(doc.code).append(newline).append("```").append(newline)
+
+    val updated = StringBuilder()
+    var i = 0
+    while (i < lines.size) {
+        val line = lines[i]
+        val match = startRegex.find(line)
+        if (match == null) {
+            updated.append(line).append('\n')
+            i++
+            continue
+        }
+
+        val rawId = match.groupValues[1].trim()
+        updated.append(line).append('\n') // keep the start marker line
+
+        // Skip existing block until end marker
+        var j = i + 1
+        var foundEnd = false
+        while (j < lines.size) {
+            if (lines[j].trim() == endMarker) {
+                foundEnd = true
+                break
+            }
+            j++
+        }
+        if (!foundEnd) {
+            println("WARN: Missing FlowDoc.end for marker id='$rawId'")
+            // Just treat rest as normal text
+            i++
+            continue
+        }
+
+        // Generate replacement block content
+        val block = buildBlock(rawId, allDocs)
+        updated.append(block)
+        updated.append(endMarker).append('\n')
+        i = j + 1
     }
-    val newContent = before + builder.toString() + after
+
+    val newContent = updated.toString().trimEnd() + '\n'
     if (newContent != content) {
         Files.writeString(readmePath, newContent)
+        println("README updated using FlowDoc markers.")
     } else {
-        println("README is up to date")
+        println("README is up to date.")
     }
 }
 
-data class FlowDoc(val title: String, val diagram: String, val code: String)
+private fun buildBlock(requestedId: String, docs: List<FlowDoc>): String {
+    val newline = System.lineSeparator()
+    val builder = StringBuilder()
+    val normalizedRequested = normalizeId(requestedId)
+
+    val selected = if (normalizedRequested == "all") {
+        docs
+    } else {
+        val match = docs.find { normalizeId(it.id) == normalizedRequested || normalizeId(it.title) == normalizedRequested }
+        if (match == null) emptyList() else listOf(match)
+    }
+
+    if (selected.isEmpty()) {
+        builder.append("> No flows matched id '$requestedId'\n")
+        return builder.toString()
+    }
+
+    selected.forEach { doc ->
+        if (normalizedRequested == "all") {
+            builder.append("### ").append(doc.title).append(newline).append(newline)
+        }
+        // Code first (matches existing README example), then mermaid diagram
+        builder.append("```kotlin").append(newline).append(doc.code).append(newline).append("```").append(newline).append(newline)
+        builder.append("```mermaid").append(newline).append(doc.diagram).append(newline).append("```").append(newline).append(newline)
+    }
+    return builder.toString()
+}
+
+private fun normalizeId(id: String): String = id
+    .trim()
+    .replace(Regex("([a-z0-9])([A-Z])"), "$1-$2") // camelCase -> camel-Case
+    .lowercase()
+    .replace(Regex("[^a-z0-9]+"), "-")
+    .trim('-')
+
+data class FlowDoc(val title: String, val diagram: String, val code: String, val id: String)
 

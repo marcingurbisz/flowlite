@@ -3,18 +3,27 @@
 FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to define business processes in an intuitive and maintainable way. It provides a fluent, type-safe API that stays close to domain language while remaining simple to reason about.
 
 ## Table of Contents
-1. Why FlowLite?
-2. Example flow
-3. Key concepts
-4. Assumptions & status
-5. More examples (auto-generated)
-6. Core Architecture
-7. Diagram Generation
-8. Error Handling
-9. Stage Transitions
-10. Conditional Branching & Joins
-11. Development Guide
-12. Code Documentation Guidelines
+- [Why FlowLite?](#why-flowlite)
+- [Example flow](#example-flow)
+- [Key concepts and assumptions](#key-concepts-and-assumptions)
+- [More examples](#more-examples)
+  - [Pizza Order](#pizza-order)
+  - [Employee Onboarding](#employee-onboarding)
+  - [Order Confirmation](#order-confirmation)
+- [Core Architecture](#core-architecture)
+  - [Flow Definition System](#flow-definition-system-sourceflowapikt)
+  - [Core Interfaces](#core-interfaces)
+  - [Flow Components](#flow-components)
+  - [Diagram Generation](#diagram-generation-sourcemermaidgeneratorkt)
+- [Stage Transitions](#stage-transitions)
+- [Conditional Branching](#conditional-branching)
+- [Join Operations](#join-operations)
+- [Development Guide](#development-guide)
+  - [Windows Setup](#windows-setup)
+  - [Build and Test Commands](#build-and-test-commands)
+  - [Code Structure](#code-structure)
+  - [Development Notes](#development-notes)
+- [Code Documentation Guidelines](#code-documentation-guidelines)
 
 ## Why FlowLite?
 
@@ -69,14 +78,18 @@ stateDiagram-v2
 - **Condition**: Binary branching with a predicate -> true/false branch (renders as a choice node).
 - **Join**: Converges control flow by pointing to an existing stage.
 - **Flow**: Immutable definition produced by `FlowBuilder<T>.build()`.
+- **Status**: Enum (PENDING, IN_PROGRESS, COMPLETED, ERROR) - details about stage and overall process status 🚧 **TODO**
 - Code-first definitions -> diagrams are derived artifacts.
 - Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
-- StageStatus enum (PENDING, IN_PROGRESS, COMPLETED, ERROR) //TODO: this and next points mark as todo. Maybe some emoji?
-- (Stage, StageStatus, retry config) driving next action selection logic
-- External message trigger mechanism ("execute next step in flow for instance x")
-- Retry semantics & cockpit UI for technical replays
-- `BusinessException` marker + differentiated retry UX
-
+- (Stage, Status, retry config) driving next action selection logic 🚧 **TODO**
+- External message trigger mechanism ("execute next step in flow for instance x") 🚧 **TODO**
+- Error Handling 🚧 **TODO**
+  - FlowLite differentiates between two types of exceptions: 
+      - **Process Exceptions**: Unexpected errors that represent technical issues (e.g. database connection failures, bug in the process action code)
+      - **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (those which implements `BusinessException` marker interface)
+  - Process exceptions can be retried via the FlowLite cockpit (accessible by technical stuff only)
+  - Business exceptions meant to be retried via FlowLite api (which you can use when you build your own UI to show process status) but also via FlowLite cockpit.
+  
 ## More examples
 
 The examples below are generated from test flows. Each flow builder is wrapped with

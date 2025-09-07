@@ -1,6 +1,5 @@
 ## TODO
-* update readme
-* show condition on diagram for waitFor
+* Uses Kotlin 2.1 with Java 21 toolchain
 * Introduce StageStatus
 * Implement engine using Azure Service Bus emulator
 * Send for review to guys

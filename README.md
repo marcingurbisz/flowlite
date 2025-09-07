@@ -208,50 +208,65 @@ stateDiagram-v2
 ### Employee Onboarding
 
 ```kotlin
-fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
-    return FlowBuilder<EmployeeOnboarding>()
-        .condition(
-            predicate = { it.isOnboardingAutomated },
-            description = "isOnboardingAutomated",
-            onTrue = {
-                // Automated path
-                stage(CreateUserInSystem, ::createUserInSystem)
-                    .condition( { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                        description = "isExecutiveRole || isSecurityClearanceRequired",
-                        onFalse = {
-                            stage(ActivateStandardEmployee, ::activateEmployee)
-                                .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
-                                .stage(SendContractForSigning, ::sendContractForSigning)
-                                .stage(WaitingForEmployeeDocumentsSigned)
-                                .waitFor(EmployeeDocumentsSigned)
-                                .stage(WaitingForContractSigned)
-                                .waitFor(ContractSigned)
-                                .condition({ it.isExecutiveRole || it.isSecurityClearanceRequired },
-                                    description = "isExecutiveRole || isSecurityClearanceRequired",
-                                    onTrue = {
-                                        stage(ActivateSpecializedEmployee, ::activateEmployee)
-                                            .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem) },
-                                    onFalse = {
-                                        stage(WaitingForOnboardingCompletion).waitFor(OnboardingComplete).join(UpdateStatusInHRSystem)}
-                                ) },
-                        onTrue = {
-                            stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
-                                .condition( {it.isSecurityClearanceRequired },
-                                    description = "isSecurityClearanceRequired",
-                                    onTrue = {condition ({it.isFullOnboardingRequired},
-                                        description = "isFullOnboardingRequired",
-                                        onTrue = {stage(SetDepartmentAccess, ::setDepartmentAccess).join(GenerateEmployeeDocuments)},
-                                        onFalse = {join(GenerateEmployeeDocuments)})},
-                                    onFalse = {join(WaitingForContractSigned)})
-                        })
-            },
-            onFalse = {
-                // Manual path
-                join(WaitingForContractSigned)
-            }
-        )
-        .build()
-}
+        FlowBuilder<EmployeeOnboarding>()
+            .condition(
+                predicate = { it.isOnboardingAutomated },
+                description = "isOnboardingAutomated",
+                onTrue = {
+                    // Automated path
+                    stage(CreateUserInSystem, ::createUserInSystem)
+                        .condition(
+                            { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                            description = "isExecutiveRole || isSecurityClearanceRequired",
+                            onFalse = {
+                                stage(ActivateStandardEmployee, ::activateEmployee)
+                                    .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
+                                    .stage(SendContractForSigning, ::sendContractForSigning)
+                                    .stage(WaitingForEmployeeDocumentsSigned)
+                                    .waitFor(EmployeeDocumentsSigned)
+                                    .stage(WaitingForContractSigned)
+                                    .waitFor(ContractSigned)
+                                    .condition(
+                                        { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                                        description = "isExecutiveRole || isSecurityClearanceRequired",
+                                        onTrue = {
+                                            stage(ActivateSpecializedEmployee, ::activateEmployee)
+                                                .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem)
+                                        },
+                                        onFalse = {
+                                            stage(WaitingForOnboardingCompletion)
+                                                .waitFor(OnboardingComplete)
+                                                .join(UpdateStatusInHRSystem)
+                                        },
+                                    )
+                            },
+                            onTrue = {
+                                stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                    .condition(
+                                        { it.isSecurityClearanceRequired },
+                                        description = "isSecurityClearanceRequired",
+                                        onTrue = {
+                                            condition(
+                                                { it.isFullOnboardingRequired },
+                                                description = "isFullOnboardingRequired",
+                                                onTrue = {
+                                                    stage(SetDepartmentAccess, ::setDepartmentAccess)
+                                                        .join(GenerateEmployeeDocuments)
+                                                },
+                                                onFalse = { join(GenerateEmployeeDocuments) },
+                                            )
+                                        },
+                                        onFalse = { join(WaitingForContractSigned) },
+                                    )
+                            },
+                        )
+                },
+                onFalse = {
+                    // Manual path
+                    join(WaitingForContractSigned)
+                },
+            )
+            .build()
 ```
 
 ```mermaid

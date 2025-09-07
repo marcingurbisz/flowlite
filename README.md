@@ -108,7 +108,7 @@ FlowLite supports 2 types of stage transitions:
 
 Event waiting semantics (`waitFor`):
 - A stage that calls `waitFor(EventX)` will transition when `EventX` is received.
-- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered (buffered / mailbox semantics).
+- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered (buffered / mailbox semantics).  🚧 **TODO**
 
 ### Conditional Branching
    ```kotlin
@@ -401,7 +401,7 @@ FlowLite uses a **flat directory structure** to keep the codebase simple and org
 - Resources are placed directly in source directory alongside code files, not in a separate resources directory
 
 ### Development Notes
-- Uses Kotlin 2.1 with Java 21 toolchain
+- Uses Kotlin 2.2 with Java 21 toolchain
 - Kotest for testing with BehaviorSpec style and MockK for mocking
 - Gradle build system with Maven publishing configuration
 

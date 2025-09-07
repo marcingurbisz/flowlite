@@ -6,6 +6,9 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
 - [Why FlowLite?](#why-flowlite)
 - [Example flow](#example-flow)
 - [Key concepts and assumptions](#key-concepts-and-assumptions)
+- [Stage Transitions](#stage-transitions)
+- [Conditional Branching](#conditional-branching)
+- [Join Operations](#join-operations)
 - [More examples](#more-examples)
   - [Pizza Order](#pizza-order)
   - [Employee Onboarding](#employee-onboarding)
@@ -15,9 +18,6 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
   - [Core Interfaces](#core-interfaces)
   - [Flow Components](#flow-components)
   - [Diagram Generation](#diagram-generation-sourcemermaidgeneratorkt)
-- [Stage Transitions](#stage-transitions)
-- [Conditional Branching](#conditional-branching)
-- [Join Operations](#join-operations)
 - [Development Guide](#development-guide)
   - [Windows Setup](#windows-setup)
   - [Build and Test Commands](#build-and-test-commands)
@@ -89,6 +89,41 @@ stateDiagram-v2
       - **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (those which implements `BusinessException` marker interface)
   - Process exceptions can be retried via the FlowLite cockpit (accessible by technical stuff only)
   - Business exceptions meant to be retried via FlowLite api (which you can use when you build your own UI to show process status) but also via FlowLite cockpit.
+
+### Stage Transitions
+
+FlowLite supports 2 types of stage transitions:
+
+1. **Automatic Progression**: Sequential stages automatically flow to the next stage
+   ```kotlin
+   flow
+       .stage(InitializingConfirmation, ::initializeOrderConfirmation)
+       .stage(WaitingForConfirmation) // Automatic progression
+   ```
+
+2. **Event-Based Transitions**: Explicit events trigger transitions
+   ```kotlin
+   flow.waitFor(PaymentConfirmed).stage(ProcessingPayment, ::processPayment)
+   ```
+
+Event waiting semantics (`waitFor`):
+- A stage that calls `waitFor(EventX)` will transition when `EventX` is received.
+- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered (buffered / mailbox semantics).
+
+### Conditional Branching
+   ```kotlin
+   flow.condition(
+       predicate = { it.paymentMethod == PaymentMethod.CASH },
+       onTrue = { /* cash flow */ },
+       onFalse = { /* online flow */ }
+   )
+   ```
+### Join Operations
+
+Reference existing stages from other branches
+   ```kotlin
+   flow.waitFor(PaymentCompleted).join(ProcessingOrder)
+   ```
   
 ## More examples
 
@@ -97,6 +132,10 @@ The examples below are generated from test flows. Each flow builder is wrapped w
 To document a new flow, add it to the `documentedFlows` list in
 `test/ReadmeUpdater.kt` with its id, title, source file path and factory
 function.
+
+Documentation refresh:
+- The GitHub Action `.github/workflows/update-readme.yml` regenerate all flow code examples and Mermaid diagrams between the `FlowDoc` markers on pushes and commits the update
+- Run `./gradlew updateReadme` if you want to run it locally
 
 <!-- FlowDoc(all) -->
 ### Pizza Order
@@ -169,50 +208,65 @@ stateDiagram-v2
 ### Employee Onboarding
 
 ```kotlin
-fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
-    return FlowBuilder<EmployeeOnboarding>()
-        .condition(
-            predicate = { it.isOnboardingAutomated },
-            description = "isOnboardingAutomated",
-            onTrue = {
-                // Automated path
-                stage(CreateUserInSystem, ::createUserInSystem)
-                    .condition( { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                        description = "isExecutiveRole || isSecurityClearanceRequired",
-                        onFalse = {
-                            stage(ActivateStandardEmployee, ::activateEmployee)
-                                .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
-                                .stage(SendContractForSigning, ::sendContractForSigning)
-                                .stage(WaitingForEmployeeDocumentsSigned)
-                                .waitFor(EmployeeDocumentsSigned)
-                                .stage(WaitingForContractSigned)
-                                .waitFor(ContractSigned, condition = {it.isContractSigned})
-                                .condition({ it.isExecutiveRole || it.isSecurityClearanceRequired },
-                                    description = "isExecutiveRole || isSecurityClearanceRequired",
-                                    onTrue = {
-                                        stage(ActivateSpecializedEmployee, ::activateEmployee)
-                                            .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem) },
-                                    onFalse = {
-                                        stage(WaitingForOnboardingCompletion).waitFor(OnboardingComplete).join(UpdateStatusInHRSystem)}
-                                ) },
-                        onTrue = {
-                            stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
-                                .condition( {it.isSecurityClearanceRequired },
-                                    description = "isSecurityClearanceRequired",
-                                    onTrue = {condition ({it.isFullOnboardingRequired},
-                                        description = "isFullOnboardingRequired",
-                                        onTrue = {stage(SetDepartmentAccess, ::setDepartmentAccess).join(GenerateEmployeeDocuments)},
-                                        onFalse = {join(GenerateEmployeeDocuments)})},
-                                    onFalse = {join(WaitingForContractSigned)})
-                        })
-            },
-            onFalse = {
-                // Manual path
-                join(WaitingForContractSigned)
-            }
-        )
-        .build()
-}
+        FlowBuilder<EmployeeOnboarding>()
+            .condition(
+                predicate = { it.isOnboardingAutomated },
+                description = "isOnboardingAutomated",
+                onTrue = {
+                    // Automated path
+                    stage(CreateUserInSystem, ::createUserInSystem)
+                        .condition(
+                            { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                            description = "isExecutiveRole || isSecurityClearanceRequired",
+                            onFalse = {
+                                stage(ActivateStandardEmployee, ::activateEmployee)
+                                    .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
+                                    .stage(SendContractForSigning, ::sendContractForSigning)
+                                    .stage(WaitingForEmployeeDocumentsSigned)
+                                    .waitFor(EmployeeDocumentsSigned)
+                                    .stage(WaitingForContractSigned)
+                                    .waitFor(ContractSigned)
+                                    .condition(
+                                        { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                                        description = "isExecutiveRole || isSecurityClearanceRequired",
+                                        onTrue = {
+                                            stage(ActivateSpecializedEmployee, ::activateEmployee)
+                                                .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem)
+                                        },
+                                        onFalse = {
+                                            stage(WaitingForOnboardingCompletion)
+                                                .waitFor(OnboardingComplete)
+                                                .join(UpdateStatusInHRSystem)
+                                        },
+                                    )
+                            },
+                            onTrue = {
+                                stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                    .condition(
+                                        { it.isSecurityClearanceRequired },
+                                        description = "isSecurityClearanceRequired",
+                                        onTrue = {
+                                            condition(
+                                                { it.isFullOnboardingRequired },
+                                                description = "isFullOnboardingRequired",
+                                                onTrue = {
+                                                    stage(SetDepartmentAccess, ::setDepartmentAccess)
+                                                        .join(GenerateEmployeeDocuments)
+                                                },
+                                                onFalse = { join(GenerateEmployeeDocuments) },
+                                            )
+                                        },
+                                        onFalse = { join(WaitingForContractSigned) },
+                                    )
+                            },
+                        )
+                },
+                onFalse = {
+                    // Manual path
+                    join(WaitingForContractSigned)
+                },
+            )
+            .build()
 ```
 
 ```mermaid
@@ -310,38 +364,6 @@ stateDiagram-v2
 
 ### Diagram Generation (`source/MermaidGenerator.kt`)
 - `MermaidGenerator` - Converts flow definitions to Mermaid diagrams
-
-
-### Stage Transitions
-
-FlowLite supports 2 types of stage transitions:
-
-1. **Automatic Progression**: Sequential stages automatically flow to the next stage
-   ```kotlin
-   flow
-       .stage(InitializingConfirmation, ::initializeOrderConfirmation)
-       .stage(WaitingForConfirmation) // Automatic progression
-   ```
-
-2. **Event-Based Transitions**: Explicit events trigger transitions
-   ```kotlin
-   flow.onEvent(PaymentConfirmed).stage(ProcessingPayment, ::processPayment)
-   ```
-
-### Conditional Branching
-   ```kotlin
-   flow.condition(
-       predicate = { it.paymentMethod == PaymentMethod.CASH },
-       onTrue = { /* cash flow */ },
-       onFalse = { /* online flow */ }
-   )
-   ```
-### Join Operations
-
-Reference existing stages from other branches
-   ```kotlin
-   flow.onEvent(PaymentCompleted).join(ProcessingOrder)
-   ```
 
 ## Development Guide
 

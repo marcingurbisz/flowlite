@@ -179,9 +179,7 @@ class StageBuilder<T : Any>(
         return flowBuilder.internalStage(stage, action)
     }
 
-    fun waitFor(event: Event, condition: ((item: T) -> Boolean)? = null): EventBuilder<T> {
-        return EventBuilder(this, event)
-    }
+    fun waitFor(event: Event): EventBuilder<T> = EventBuilder(this, event)
 
     fun condition(
         predicate: (item: T) -> Boolean,

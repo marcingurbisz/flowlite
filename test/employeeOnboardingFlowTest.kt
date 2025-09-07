@@ -6,30 +6,29 @@ import io.flowlite.api.Flow
 import io.flowlite.api.FlowBuilder
 import io.flowlite.api.Stage
 import io.flowlite.test.EmployeeEvent.*
-import io.kotest.core.spec.style.BehaviorSpec
 import io.flowlite.test.EmployeeStage.*
+import io.kotest.core.spec.style.BehaviorSpec
 
-class EmployeeOnboardingFlowTest : BehaviorSpec({
+class EmployeeOnboardingFlowTest :
+    BehaviorSpec({
+        given("an employee onboarding flow") {
+            When("generating a mermaid diagram") {
+                val flow = createEmployeeOnboardingFlow()
+                val generator = MermaidGenerator()
+                val diagram = generator.generateDiagram("employee-onboarding-flow", flow)
 
-    given("an employee onboarding flow") {
+                println("\n=== EMPLOYEE ONBOARDING FLOW DIAGRAM ===")
+                println(diagram)
+                println("=== END DIAGRAM ===\n")
 
-        When("generating a mermaid diagram") {
-            val flow = createEmployeeOnboardingFlow()
-            val generator = MermaidGenerator()
-            val diagram = generator.generateDiagram("employee-onboarding-flow", flow)
-
-            println("\n=== EMPLOYEE ONBOARDING FLOW DIAGRAM ===")
-            println(diagram)
-            println("=== END DIAGRAM ===\n")
-
-            then("should generate diagram successfully") {
-                // Just verify that diagram was generated (not empty)
-                assert(diagram.isNotEmpty())
-                assert(diagram.contains("stateDiagram-v2"))
+                then("should generate diagram successfully") {
+                    // Just verify that diagram was generated (not empty)
+                    assert(diagram.isNotEmpty())
+                    assert(diagram.contains("stateDiagram-v2"))
+                }
             }
         }
-    }
-})
+    })
 
 // --- Domain Classes ---
 
@@ -44,13 +43,13 @@ enum class EmployeeStage : Stage {
     WaitingForContractSigned,
     WaitingForOnboardingCompletion,
     UpdateStatusInHRSystem,
-    WaitingForEmployeeDocumentsSigned
+    WaitingForEmployeeDocumentsSigned,
 }
 
 enum class EmployeeEvent : Event {
     ContractSigned,
     OnboardingComplete,
-    EmployeeDocumentsSigned
+    EmployeeDocumentsSigned,
 }
 
 data class EmployeeOnboarding(
@@ -69,7 +68,7 @@ data class EmployeeOnboarding(
     val departmentAccessSet: Boolean = false,
     val documentsGenerated: Boolean = false,
     val contractSentForSigning: Boolean = false,
-    val statusUpdatedInHR: Boolean = false
+    val statusUpdatedInHR: Boolean = false,
 )
 
 // --- Action Functions ---
@@ -109,50 +108,67 @@ fun updateStatusInHRSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
     return employee
 }
 
-// --- Flow Definition ---
-// FLOW-DEFINITION-START
 fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
-    return FlowBuilder<EmployeeOnboarding>()
-        .condition(
-            predicate = { it.isOnboardingAutomated },
-            description = "isOnboardingAutomated",
-            onTrue = {
-                // Automated path
-                stage(CreateUserInSystem, ::createUserInSystem)
-                    .condition( { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                        description = "isExecutiveRole || isSecurityClearanceRequired",
-                        onFalse = {
-                            stage(ActivateStandardEmployee, ::activateEmployee)
-                                .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
-                                .stage(SendContractForSigning, ::sendContractForSigning)
-                                .stage(WaitingForEmployeeDocumentsSigned)
-                                .waitFor(EmployeeDocumentsSigned)
-                                .stage(WaitingForContractSigned)
-                                .waitFor(ContractSigned, condition = {it.isContractSigned})
-                                .condition({ it.isExecutiveRole || it.isSecurityClearanceRequired },
-                                    description = "isExecutiveRole || isSecurityClearanceRequired",
-                                    onTrue = {
-                                        stage(ActivateSpecializedEmployee, ::activateEmployee)
-                                            .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem) },
-                                    onFalse = {
-                                        stage(WaitingForOnboardingCompletion).waitFor(OnboardingComplete).join(UpdateStatusInHRSystem)}
-                                ) },
-                        onTrue = {
-                            stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
-                                .condition( {it.isSecurityClearanceRequired },
-                                    description = "isSecurityClearanceRequired",
-                                    onTrue = {condition ({it.isFullOnboardingRequired},
-                                        description = "isFullOnboardingRequired",
-                                        onTrue = {stage(SetDepartmentAccess, ::setDepartmentAccess).join(GenerateEmployeeDocuments)},
-                                        onFalse = {join(GenerateEmployeeDocuments)})},
-                                    onFalse = {join(WaitingForContractSigned)})
-                        })
-            },
-            onFalse = {
-                // Manual path
-                join(WaitingForContractSigned)
-            }
-        )
-        .build()
+    val flow = // FLOW-DEFINITION-START
+        FlowBuilder<EmployeeOnboarding>()
+            .condition(
+                predicate = { it.isOnboardingAutomated },
+                description = "isOnboardingAutomated",
+                onTrue = {
+                    // Automated path
+                    stage(CreateUserInSystem, ::createUserInSystem)
+                        .condition(
+                            { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                            description = "isExecutiveRole || isSecurityClearanceRequired",
+                            onFalse = {
+                                stage(ActivateStandardEmployee, ::activateEmployee)
+                                    .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
+                                    .stage(SendContractForSigning, ::sendContractForSigning)
+                                    .stage(WaitingForEmployeeDocumentsSigned)
+                                    .waitFor(EmployeeDocumentsSigned)
+                                    .stage(WaitingForContractSigned)
+                                    .waitFor(ContractSigned)
+                                    .condition(
+                                        { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                                        description = "isExecutiveRole || isSecurityClearanceRequired",
+                                        onTrue = {
+                                            stage(ActivateSpecializedEmployee, ::activateEmployee)
+                                                .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem)
+                                        },
+                                        onFalse = {
+                                            stage(WaitingForOnboardingCompletion)
+                                                .waitFor(OnboardingComplete)
+                                                .join(UpdateStatusInHRSystem)
+                                        },
+                                    )
+                            },
+                            onTrue = {
+                                stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                    .condition(
+                                        { it.isSecurityClearanceRequired },
+                                        description = "isSecurityClearanceRequired",
+                                        onTrue = {
+                                            condition(
+                                                { it.isFullOnboardingRequired },
+                                                description = "isFullOnboardingRequired",
+                                                onTrue = {
+                                                    stage(SetDepartmentAccess, ::setDepartmentAccess)
+                                                        .join(GenerateEmployeeDocuments)
+                                                },
+                                                onFalse = { join(GenerateEmployeeDocuments) },
+                                            )
+                                        },
+                                        onFalse = { join(WaitingForContractSigned) },
+                                    )
+                            },
+                        )
+                },
+                onFalse = {
+                    // Manual path
+                    join(WaitingForContractSigned)
+                },
+            )
+            .build()
+    // FLOW-DEFINITION-END
+    return flow
 }
-// FLOW-DEFINITION-END

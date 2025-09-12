@@ -14,6 +14,13 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
   - [Employee Onboarding](#employee-onboarding)
   - [Order Confirmation](#order-confirmation)
 - [Core Architecture](#core-architecture)
+    - [Runtime & Execution Model](#runtime--execution-model)
+    - [Transaction Boundaries](#transaction-boundaries)
+    - [Persistence Approach](#persistence-approach)
+    - [StatePersister Contract](#statepersister-contract)
+    - [Engine API](#engine-api)
+    - [Idempotency & Crash Safety](#idempotency--crash-safety)
+    - [Deferred / Future Enhancements](#deferred--future-enhancements)
   - [Flow Definition System](#flow-definition-system-sourceflowapikt)
   - [Core Interfaces](#core-interfaces)
   - [Flow Components](#flow-components)
@@ -27,7 +34,7 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
 
 ## Why FlowLite?
 
-Traditional BPM platforms (e.g. Camunda) are powerful but often heavyweight for code-centric teams.
+Traditional BPM platforms (e.g. Camunda) are powerful but also heavyweight for code-centric teams.
 
 FlowLite at a glance:
 - **Type-safe fluent API** – Kotlin-first (enums + functions)
@@ -74,21 +81,21 @@ stateDiagram-v2
 
 - **Stage**: A named step (implements `Stage`, usually enum). Represents “we are doing X” - activity-oriented naming (e.g. `InitializingPayment`).
 - **Action**: Function executed when entering a stage `.stage(InitializingConfirmation, ::initializeOrderConfirmation)` (optional).
-- **Event**: External trigger causing a transition (implements `Event`).
+- **Event**: External trigger causing a transition (implements `Event`). Submitted through engine API.
 - **Condition**: Binary branching with a predicate -> true/false branch (renders as a choice node).
-- **Join**: Converges control flow by pointing to an existing stage.
-- **Flow**: Immutable definition produced by `FlowBuilder<T>.build()`.
-- **Status**: Enum (PENDING, IN_PROGRESS, COMPLETED, ERROR) - details about stage and overall process status 🚧 **TODO**
+- **Join**: Converges control flow by pointing to an existing stage
+- **Flow**: Immutable definition produced by `FlowBuilder<T>.build()` and held in-memory.
+- **StageStatus**: Lifecycle state of the single active stage:
+    - `PENDING` – Active stage awaiting action execution or matching event.
+    - `RUNNING` – Action is currently executing (set before invocation for crash detection).
+    - `COMPLETED` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `PENDING` rather than persisting completion of the previous stage.
+    - `ERROR` – Action failed; requires manual retry.
+- Single-token model: only one active stage at any moment (no parallelism within one flow).
+- Engine drives flow progression via internal Tick messages
 - Code-first definitions -> diagrams are derived artifacts.
 - Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
-- (Stage, Status, retry config) driving next action selection logic 🚧 **TODO**
-- External message trigger mechanism ("execute next step in flow for instance x") 🚧 **TODO**
-- Error Handling 🚧 **TODO**
-  - FlowLite differentiates between two types of exceptions: 
-      - **Process Exceptions**: Unexpected errors that represent technical issues (e.g. database connection failures, bug in the process action code)
-      - **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (those which implements `BusinessException` marker interface)
-  - Process exceptions can be retried via the FlowLite cockpit (accessible by technical stuff only)
-  - Business exceptions meant to be retried via FlowLite api (which you can use when you build your own UI to show process status) but also via FlowLite cockpit.
+- Error handling: any exception marks stage `ERROR`; manual `retry(flowInstanceId)` restarts from that stage.
+- Migration: If the flow changes, migrations of existing instances are the responsibility of the application that uses FlowLite. No flow versioning nor migration support is planned in FlowLite.
 
 ### Stage Transitions
 
@@ -108,7 +115,7 @@ FlowLite supports 2 types of stage transitions:
 
 Event waiting semantics (`waitFor`):
 - A stage that calls `waitFor(EventX)` will transition when `EventX` is received.
-- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered (buffered / mailbox semantics).  🚧 **TODO**
+- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered (buffered / mailbox semantics).
 
 ### Conditional Branching
    ```kotlin
@@ -124,6 +131,14 @@ Reference existing stages from other branches
    ```kotlin
    flow.waitFor(PaymentCompleted).join(ProcessingOrder)
    ```
+
+### Action functions
+
+- Signature: `(state: T) -> T?`
+    - Return a new instance to persist domain changes and proceed.
+    - Return `null` to indicate no domain changes; the engine will reload fresh state and perform a stage/status-only update to advance.
+- Guidelines:
+    - Keep actions small and focused.
   
 ## More examples
 
@@ -345,6 +360,89 @@ stateDiagram-v2
 
 ## Core Architecture
 
+### Runtime & Execution Model
+
+1. Starting a flow instance persists an initial domain row (your table, e.g. `ORDER_CONFIRMATION`) with first stage `PENDING` and enqueues a Tick. You can also pre-create the row earlier with your business data and later start processing by calling the overload that accepts a provided id.
+2. Tick processing loop:
+     - Load process state (stage + status) via its `StatePersister`.
+     - If status `ERROR` → stop (await retry).
+     - If status `RUNNING` → no-op; another Tick will follow after the action completes.
+     - If stage has an action and status `PENDING`: set `RUNNING`, persist; execute action outside the transaction; on success advance to next stage with `PENDING` (or mark terminal `COMPLETED`) and enqueue another Tick; on failure set `ERROR`.
+     - If stage waits for events: query shared `pending_events` for one matching event for this process; if found, consume it and advance to the configured next stage with `PENDING` then enqueue another Tick.
+3. Terminal completion: final stage becomes `COMPLETED`; no further ticks are enqueued.
+4. External events: `sendEvent(flowInstanceId, eventType)` inserts a row into `pending_events` and always enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible. No special-casing or synchronous advancement on the send path.
+5. Duplicate ticks or events are harmless (idempotent progression via optimistic locking and event consumption checks).
+
+### Transaction Boundaries
+
+- Event submission (sendEvent): a single transaction that inserts into `pending_events`; no stage changes occur here.
+- Advancing on event: consume matching pending event and move the stage pointer to the configured next stage with `PENDING` in the same transaction; no action is executed inside this transaction.
+- Action execution: set `RUNNING` and persist; execute action outside of any open DB transaction; then persist state changes and move to the next stage (`PENDING`) or mark terminal `COMPLETED` in a new transaction.
+
+These boundaries keep side-effects out of long-lived transactions and make retries/idempotency straightforward.
+
+### Persistence Approach
+
+FlowLite does not impose a generic `process_instance` table. Each domain owns its table (e.g. `ORDER_CONFIRMATION`) containing business columns plus engine columns:
+
+- `process_id` (UUID optionally PK)
+- `stage` (VARCHAR)
+- `stage_status` (VARCHAR)
+- (Optionally a `version` column if your `StatePersister` uses optimistic locking internally)
+- Domain attributes (e.g. customer data)
+- `created_at`, `updated_at`(optionally)
+
+`pending_events` is a shared table:
+- `id` (PK)
+- `process_id`
+- `event_type`
+- `created_at`
+- `consumed_at` (nullable)
+
+Events sent before the process reaches a waiting stage stay pending until eligible.
+
+### StatePersister Contract
+
+The engine depends on a domain-specific `StatePersister<T>` (mandatory) to:
+- `load(flowInstanceId)` → current state (including `stage` and `stage_status`)
+- `save(processData)` → create or update atomically (includes stage/status changes and any domain modifications produced by actions)
+
+Optimistic locking is an internal concern of the persister. Recommended contract:
+- `save` returns `true` on success; returns `false` if an optimistic conflict is detected and the write was not applied;
+- throws on other errors (the engine will mark the stage `ERROR`).
+
+Engine behavior with action results:
+- If the action returns `null` (stage-only advance), and `save` returns `false` due to a race, the engine will repeat save.
+- If the action returns a non-null state and `save` fails with an optimistic conflict or throws, the engine treats it like an error: mark stage `ERROR` and stop until manual retry.
+
+The engine treats `false` as a benign no-op (common with duplicate ticks) and does not retry automatically.
+
+### Engine API
+
+- `registerFlow(flowId, stateClass, flow, statePersister)`
+- `startProcess(flowId, initialState)` – creates new flow instance (engine generates `flowInstanceId`, a UUID) and enqueues a Tick
+- `startProcess(flowId, flowInstanceId, initialState)` – starts processing for an already persisted domain row using a caller-provided UUID
+- `sendEvent(flowInstanceId, eventType)` – records pending event + enqueues Tick
+- `retry(flowInstanceId)` – if current stage is `ERROR`, enqueues Tick
+- `getStatus(flowInstanceId)` – returns `{ stage, stageStatus }`
+
+Identifiers and terminology:
+- Flow: a registered in-memory definition, identified by `flowId` (string).
+- Flow instance: a running instance of a flow, identified by `flowInstanceId` (UUID). You may generate this id externally and pass it to the engine.
+
+### Idempotency & Crash Safety
+
+- Setting `RUNNING` before action execution allows detection of in-flight actions if the JVM crashes (future recovery could re-evaluate such processes).
+- Duplicate ticks after advancement see updated stage/status and exit early.
+- Multiple identical events accumulate; only the first usable one is consumed; others remain (can be cleaned later if desired).
+
+### Deferred / Future Enhancements
+
+- Distinguish business vs technical errors with tailored retry policies
+- Cockpit
+- Parallelism
+- Metrics, tracing, structured audit history
+
 ### Flow Definition System (`source/flowApi.kt`)
 - `FlowBuilder<T>` - Fluent API for defining workflows
 - `StageBuilder<T>` - Builder for individual stages within flows
@@ -361,6 +459,10 @@ stateDiagram-v2
 - `ConditionHandler<T>` - Handles conditional branching
 - `EventHandler<T>` - Handles event-based transitions
 - `FlowEngine` - Runtime engine for executing flows
+    - Drives progression via internal Tick messages
+    - Maintains exactly one active stage per process
+    - Uses `StageStatus` to guard action execution and enable idempotent replay
+    - External events stored in a shared `pending_events` table and consumed when a matching waiting stage becomes active
 
 ### Diagram Generation (`source/MermaidGenerator.kt`)
 - `MermaidGenerator` - Converts flow definitions to Mermaid diagrams
@@ -410,3 +512,4 @@ FlowLite uses a **flat directory structure** to keep the codebase simple and org
 - Favor clear naming over comments
 - Comment only non-obvious cases or complex logic
 - Keep architectural & usage docs in this README
+- Remember to update "Table of Contents" in README when adding new chapter or changing existing

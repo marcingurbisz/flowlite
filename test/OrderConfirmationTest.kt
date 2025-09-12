@@ -29,7 +29,6 @@ data class OrderConfirmation(
     val orderNumber: String,
     val confirmationType: ConfirmationType,
     val customerName: String,
-    val customerPhone: String = "",
     val isRemovedFromQueue: Boolean = false,
     val isCustomerInformed: Boolean = false,
     val confirmationTimestamp: String = "",

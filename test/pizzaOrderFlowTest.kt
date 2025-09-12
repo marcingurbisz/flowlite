@@ -7,6 +7,7 @@ import io.flowlite.api.FlowEngine
 import io.flowlite.api.MermaidGenerator
 import io.flowlite.api.Stage
 import io.flowlite.api.StatePersister
+import io.flowlite.api.ProcessData
 import io.flowlite.test.OrderEvent.*
 import io.flowlite.test.OrderStage.*
 import io.kotest.core.spec.style.BehaviorSpec
@@ -202,13 +203,12 @@ fun createPizzaOrderFlow(): Flow<PizzaOrder> {
 
 /** Simple in-memory state persister for testing purposes */
 class InMemoryStatePersister<T : Any> : StatePersister<T> {
-    private val states = mutableMapOf<String, T>()
+    private val data = mutableMapOf<java.util.UUID, ProcessData<T>>()
 
-    override fun save(processId: String, state: T) {
-        states[processId] = state
+    override fun save(processData: ProcessData<T>): Boolean {
+        data[processData.flowInstanceId] = processData
+        return true
     }
 
-    override fun load(processId: String): T? {
-        return states[processId]
-    }
+    override fun load(flowInstanceId: java.util.UUID): ProcessData<T>? = data[flowInstanceId]
 }

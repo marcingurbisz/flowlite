@@ -1,5 +1,5 @@
 ## TODO
-* Introduce Status
+* optimistic locking like in walternate?
 * Implement engine using Azure Service Bus emulator
 * Send for review to guys
 * Full implementation of engine with working example

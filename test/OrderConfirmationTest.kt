@@ -1,10 +1,13 @@
 package io.flowlite.test
 
 import io.flowlite.api.*
+import io.flowlite.api.StageStatus
 import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.*
 import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import org.slf4j.LoggerFactory
 
 enum class OrderConfirmationStage : Stage {
     InitializingConfirmation,
@@ -34,14 +37,16 @@ data class OrderConfirmation(
     val confirmationTimestamp: String = "",
 )
 
+private val orderLogger = LoggerFactory.getLogger("OrderConfirmationActions")
+
 fun initializeOrderConfirmation(confirmation: OrderConfirmation): OrderConfirmation {
-    println("[Action] Initializing order confirmation for order ${confirmation.orderNumber}")
+    orderLogger.info("Initializing order confirmation for order ${confirmation.orderNumber}")
     val timestamp = System.currentTimeMillis().toString()
     return confirmation.copy(stage = InitializingConfirmation, confirmationTimestamp = timestamp)
 }
 
 fun removeFromConfirmationQueue(confirmation: OrderConfirmation): OrderConfirmation {
-    println("[Action] Removing order ${confirmation.orderNumber} from confirmation queue (digital processing)")
+    orderLogger.info("Removing order ${confirmation.orderNumber} from confirmation queue (digital processing)")
     return confirmation.copy(stage = RemovingFromConfirmationQueue, isRemovedFromQueue = true)
 }
 
@@ -51,8 +56,8 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
             ConfirmationType.DIGITAL -> "app notification/email"
             ConfirmationType.PHYSICAL -> "phone call"
         }
-    println(
-        "[Action] Informing customer ${confirmation.customerName} via $method that order ${confirmation.orderNumber} is being prepared"
+    orderLogger.info(
+        "Informing customer ${confirmation.customerName} via $method that order ${confirmation.orderNumber} is being prepared"
     )
     return confirmation.copy(stage = InformingCustomer, isCustomerInformed = true)
 }
@@ -121,6 +126,58 @@ class OrderConfirmationTest : BehaviorSpec({
                 diagram shouldContain "InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()"
                 diagram shouldContain "RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()"
                 diagram shouldContain "InformingCustomer: InformingCustomer informCustomer()"
+            }
+        }
+    }
+})
+
+class OrderConfirmationEngineTest : BehaviorSpec({
+    given("order confirmation flow") {
+        val engine = FlowEngine()
+        val persister = InMemoryStatePersister<OrderConfirmation>()
+        engine.registerFlow("order-confirmation", createOrderConfirmationFlow(), persister)
+
+        `when`("processing digital confirmation path") {
+            val processId = engine.startProcess(
+                flowId = "order-confirmation",
+                initialState = OrderConfirmation(
+                    processId = "p-1",
+                    stage = OrderConfirmationStage.WaitingForConfirmation,
+                    orderNumber = "ORD-1",
+                    confirmationType = ConfirmationType.DIGITAL,
+                    customerName = "Alice",
+                ),
+            )
+
+            then("it waits for confirmation event") {
+                engine.getStatus("order-confirmation", processId) shouldBe
+                    (OrderConfirmationStage.WaitingForConfirmation to StageStatus.PENDING)
+            }
+
+            then("it completes after digital confirmation event") {
+                engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedDigitally)
+                engine.getStatus("order-confirmation", processId) shouldBe
+                    (OrderConfirmationStage.InformingCustomer to StageStatus.COMPLETED)
+            }
+        }
+
+        `when`("processing physical confirmation path") {
+            val processId = engine.startProcess(
+                flowId = "order-confirmation",
+                initialState = OrderConfirmation(
+                    processId = "p-2",
+                    stage = OrderConfirmationStage.WaitingForConfirmation,
+                    orderNumber = "ORD-2",
+                    confirmationType = ConfirmationType.PHYSICAL,
+                    customerName = "Bob",
+                ),
+            )
+
+            engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedPhysically)
+
+            then("it informs customer and completes") {
+                engine.getStatus("order-confirmation", processId) shouldBe
+                    (OrderConfirmationStage.InformingCustomer to StageStatus.COMPLETED)
             }
         }
     }

@@ -1,13 +1,13 @@
 package io.flowlite.test
 
 import io.flowlite.api.*
-import io.flowlite.api.Event
-import io.flowlite.api.Flow
-import io.flowlite.api.FlowBuilder
-import io.flowlite.api.Stage
+import io.flowlite.api.FlowEngine
+import io.flowlite.api.StageStatus
 import io.flowlite.test.EmployeeEvent.*
 import io.flowlite.test.EmployeeStage.*
 import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.shouldBe
+import org.slf4j.LoggerFactory
 
 class EmployeeOnboardingFlowTest :
     BehaviorSpec({
@@ -16,10 +16,6 @@ class EmployeeOnboardingFlowTest :
                 val flow = createEmployeeOnboardingFlow()
                 val generator = MermaidGenerator()
                 val diagram = generator.generateDiagram("employee-onboarding-flow", flow)
-
-                println("\n=== EMPLOYEE ONBOARDING FLOW DIAGRAM ===")
-                println(diagram)
-                println("=== END DIAGRAM ===\n")
 
                 then("should generate diagram successfully") {
                     // Just verify that diagram was generated (not empty)
@@ -74,39 +70,40 @@ data class EmployeeOnboarding(
 // --- Action Functions ---
 
 fun createUserInSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Creating user account in system")
+    onboardingLogger.info("Creating user account in system")
     return employee
 }
 
 fun activateEmployee(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Activating employee account")
+    onboardingLogger.info("Activating employee account")
     return employee
 }
 
 fun updateSecurityClearanceLevels(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Updating security clearance levels")
+    onboardingLogger.info("Updating security clearance levels")
     return employee
 }
 
 fun setDepartmentAccess(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Setting department access permissions")
+    onboardingLogger.info("Setting department access permissions")
     return employee
 }
 
 fun generateEmployeeDocuments(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Generating employee documents")
+    onboardingLogger.info("Generating employee documents")
     return employee
 }
 
 fun sendContractForSigning(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Sending contract for signing")
+    onboardingLogger.info("Sending contract for signing")
     return employee
 }
 
 fun updateStatusInHRSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Updating status in HR system")
+    onboardingLogger.info("Updating status in HR system")
     return employee
 }
+private val onboardingLogger = LoggerFactory.getLogger("EmployeeOnboardingActions")
 
 fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
     val flow = // FLOW-DEFINITION-START
@@ -172,3 +169,37 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
     // FLOW-DEFINITION-END
     return flow
 }
+
+class EmployeeOnboardingEngineTest : BehaviorSpec({
+    given("employee onboarding flow - manual path") {
+        val engine = FlowEngine()
+        val persister = InMemoryStatePersister<EmployeeOnboarding>()
+        engine.registerFlow("employee-onboarding", createEmployeeOnboardingFlow(), persister)
+
+        val processId = engine.startProcess(
+            flowId = "employee-onboarding",
+            initialState = EmployeeOnboarding(
+                processId = "emp-1",
+                isOnboardingAutomated = false,
+                isExecutiveRole = false,
+                isSecurityClearanceRequired = false,
+                isFullOnboardingRequired = false,
+            ),
+        )
+
+        then("it starts at waiting for contract signature") {
+            engine.getStatus("employee-onboarding", processId) shouldBe
+                (EmployeeStage.WaitingForContractSigned to StageStatus.PENDING)
+        }
+
+        `when`("contract is signed and onboarding completes") {
+            engine.sendEvent("employee-onboarding", processId, EmployeeEvent.ContractSigned)
+            engine.sendEvent("employee-onboarding", processId, EmployeeEvent.OnboardingComplete)
+
+            then("it finishes in HR system update stage") {
+                engine.getStatus("employee-onboarding", processId) shouldBe
+                    (EmployeeStage.UpdateStatusInHRSystem to StageStatus.COMPLETED)
+            }
+        }
+    }
+})

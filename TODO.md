@@ -1,5 +1,5 @@
 ## TODO
-* Persistence
+* Persistence (in progress)
 * Tick using dbscheduler
 * Tick using Azure Service Bus emulator
 * Send for review to guys

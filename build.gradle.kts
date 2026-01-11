@@ -43,6 +43,8 @@ dependencies {
     testImplementation("io.kotest:kotest-assertions-core:5.8.0")
     testImplementation("io.kotest:kotest-framework-datatest:5.8.0")
     testImplementation("io.mockk:mockk:1.13.10")
+    testImplementation("org.springframework.data:spring-data-jdbc:3.3.5")
+    testImplementation("com.h2database:h2:2.2.224")
 }
 
 tasks.test {

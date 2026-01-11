@@ -55,6 +55,15 @@ interface StatePersister<T : Any> {
     fun load(flowInstanceId: UUID): ProcessData<T>?
 }
 
+/**
+ * Pluggable store for pending events. Default implementation is in-memory; applications can provide
+ * persistent implementations (e.g., Spring Data JDBC) without changing the engine.
+ */
+interface EventStore {
+    fun append(flowId: String, flowInstanceId: UUID, event: Event)
+    fun poll(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): Event?
+}
+
 data class Flow<T : Any>(
     val initialStage: Stage?,
     val initialCondition: ConditionHandler<T>?,
@@ -275,12 +284,9 @@ class EventBuilder<T : Any>(
 
 }
 
-class FlowEngine {
+class FlowEngine(private val eventStore: EventStore = InMemoryEventStore()) {
     private val flows = mutableMapOf<String, Flow<Any>>()
     private val persisters = mutableMapOf<String, StatePersister<Any>>()
-
-    // Shared pending events store (no payload), keyed by flow id and instance id
-    private val pendingEvents = mutableMapOf<Pair<String, UUID>, MutableList<Event>>()
 
     fun <T : Any> registerFlow(
         flowId: String,
@@ -313,8 +319,7 @@ class FlowEngine {
     }
 
     fun sendEvent(flowId: String, flowInstanceId: UUID, event: Event) {
-        val queue = pendingEvents.getOrPut(flowId to flowInstanceId) { mutableListOf() }
-        queue.add(event)
+        eventStore.append(flowId, flowInstanceId, event)
         processTick(flowId, flowInstanceId)
     }
 
@@ -427,10 +432,7 @@ class FlowEngine {
         persister: StatePersister<Any>,
         flowInstanceId: UUID,
     ): Boolean {
-        val queue = pendingEvents[flowId to flowInstanceId] ?: return false
-        val matching = def.eventHandlers.keys.firstOrNull { e -> queue.contains(e) } ?: return false
-        // consume first occurrence
-        queue.remove(matching)
+        val matching = eventStore.poll(flowId, flowInstanceId, def.eventHandlers.keys) ?: return false
         val handler = def.eventHandlers[matching] ?: return false
         val targetStage = handler.targetStage ?: handler.targetCondition?.let { ch ->
             resolveConditionInitialStage(ch, pd.state)
@@ -522,5 +524,20 @@ class FlowEngine {
 
     companion object {
         private val logger = LoggerFactory.getLogger(FlowEngine::class.java)
+    }
+}
+
+class InMemoryEventStore : EventStore {
+    private val pendingEvents = mutableMapOf<Pair<String, UUID>, MutableList<Event>>()
+
+    override fun append(flowId: String, flowInstanceId: UUID, event: Event) {
+        pendingEvents.getOrPut(flowId to flowInstanceId) { mutableListOf() }.add(event)
+    }
+
+    override fun poll(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): Event? {
+        val queue = pendingEvents[flowId to flowInstanceId] ?: return null
+        val idx = queue.indexOfFirst { candidates.contains(it) }
+        if (idx == -1) return null
+        return queue.removeAt(idx)
     }
 }

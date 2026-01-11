@@ -19,12 +19,6 @@ data class FlowSpec(
 
 private val documentedFlows = listOf(
     FlowSpec(
-        id = "pizza-order",
-        title = "Pizza Order",
-        source = Path.of("test/pizzaOrderFlowTest.kt"),
-        factory = ::createPizzaOrderFlow
-    ),
-    FlowSpec(
         id = "employee-onboarding",
         title = "Employee Onboarding",
         source = Path.of("test/employeeOnboardingFlowTest.kt"),

@@ -204,7 +204,12 @@ class StageBuilder<T : Any>(
         return flowBuilder.internalStage(stage, action)
     }
 
-    fun waitFor(event: Event): EventBuilder<T> = EventBuilder(this, event)
+    fun waitFor(event: Event): EventBuilder<T> {
+        if (stageDefinition.action != null) {
+            throw FlowDefinitionException("Stage ${stageDefinition.stage} cannot have both an action and event handlers")
+        }
+        return EventBuilder(this, event)
+    }
 
     fun condition(
         predicate: (item: T) -> Boolean,
@@ -266,24 +271,17 @@ class EventBuilder<T : Any>(
 class FlowEngine {
     private val flows = mutableMapOf<String, Flow<Any>>()
     private val persisters = mutableMapOf<String, StatePersister<Any>>()
-    private val stateClasses = mutableMapOf<String, KClass<*>>()
 
-    // Instance index: which flow a given instance belongs to
-    // TODO-agent: This cannot stay like this because it will not survive restart. Maybe we can add flow id into instance id? Or add a table with mapping between id and flow id? Any other way to find out which flow and persister to use?
-    private val instanceToFlow = mutableMapOf<UUID, String>()
-
-    // Shared pending events store (no payload)
-    private val pendingEvents = mutableMapOf<UUID, MutableList<Event>>()
+    // Shared pending events store (no payload), keyed by flow id and instance id
+    private val pendingEvents = mutableMapOf<Pair<String, UUID>, MutableList<Event>>()
 
     fun <T : Any> registerFlow(
         flowId: String,
-        stateClass: KClass<T>,
         flow: Flow<T>,
         statePersister: StatePersister<T>,
     ) {
         flows[flowId] = flow as Flow<Any>
         persisters[flowId] = statePersister as StatePersister<Any>
-        stateClasses[flowId] = stateClass
     }
 
     fun <T : Any> startProcess(flowId: String, initialState: T): UUID {
@@ -302,27 +300,22 @@ class FlowEngine {
             stageStatus = StageStatus.PENDING,
         )
         persister.save(pd as ProcessData<Any>)
-        instanceToFlow[flowInstanceId] = flowId
         // Enqueue initial tick (synchronous processing in MVP)
         processTick(flowId, flowInstanceId)
         return flowInstanceId
     }
 
-    fun sendEvent(flowInstanceId: UUID, event: Event) {
-        val queue = pendingEvents.getOrPut(flowInstanceId) { mutableListOf() }
+    fun sendEvent(flowId: String, flowInstanceId: UUID, event: Event) {
+        val queue = pendingEvents.getOrPut(flowId to flowInstanceId) { mutableListOf() }
         queue.add(event)
-        // Try to consume with a tick
-        val flowId = instanceToFlow[flowInstanceId] ?: return
         processTick(flowId, flowInstanceId)
     }
 
-    fun retry(flowInstanceId: UUID) {
-        val flowId = instanceToFlow[flowInstanceId] ?: return
+    fun retry(flowId: String, flowInstanceId: UUID) {
         processTick(flowId, flowInstanceId)
     }
 
-    fun getStatus(flowInstanceId: UUID): Pair<Stage, StageStatus>? {
-        val flowId = instanceToFlow[flowInstanceId] ?: return null
+    fun getStatus(flowId: String, flowInstanceId: UUID): Pair<Stage, StageStatus>? {
         val persister = persisters[flowId] ?: return null
         val pd = persister.load(flowInstanceId) ?: return null
         return pd.stage to pd.stageStatus
@@ -348,89 +341,89 @@ class FlowEngine {
         val flow = flows[flowId] ?: return
         val persister = persisters[flowId] ?: return
 
-        processTickTyped(flow, persister, flowInstanceId)
+        processTickTyped(flowId, flow, persister, flowInstanceId)
     }
 
-    private tailrec fun processTickTyped(flow: Flow<Any>, persister: StatePersister<Any>, flowInstanceId: UUID) {
+    private tailrec fun processTickTyped(flowId: String, flow: Flow<Any>, persister: StatePersister<Any>, flowInstanceId: UUID) {
         val pd = persister.load(flowInstanceId) ?: return
 
         when (pd.stageStatus) {
-            //TODO-agent: Add logs for each branch
-            StageStatus.ERROR -> return // wait for manual retry
-            StageStatus.RUNNING -> return // action in progress (or crashed); noop on tick
-            StageStatus.COMPLETED -> return // terminal
+            StageStatus.ERROR -> {
+                log("$flowId/$flowInstanceId is in ERROR at stage ${pd.stage}; awaiting retry")
+                return
+            }
+            StageStatus.RUNNING -> {
+                log("$flowId/$flowInstanceId currently RUNNING at stage ${pd.stage}; skipping tick")
+                return
+            }
+            StageStatus.COMPLETED -> {
+                log("$flowId/$flowInstanceId already COMPLETED")
+                return
+            }
             StageStatus.PENDING -> {
+                log("Tick $flowId/$flowInstanceId at stage ${pd.stage}")
                 val def = flow.stages[pd.stage]
                     ?: throw FlowDefinitionException("No definition for stage ${pd.stage}")
 
-                // First, if waiting-for-events, try consume
                 if (def.eventHandlers.isNotEmpty()) {
-                    val consumed = tryConsumeEventAndAdvance(def, pd, persister, flowInstanceId)
-                    if (consumed) {
-                        // After advancing due to event, continue processing
-                        processTickTyped(flow, persister, flowInstanceId)
-                        return
-                    }
-                    //TODO-agent: It looks that allowing for stage to have both action and event assigned complicates design a lot. Please add constrain that event handler and action is not possible at the same time. Please remove "Pizza order" flow - "Employee onboarding" and "Order confirmation" is enough for now
-                    // No event: if there is an action, and we haven't executed it yet for this stage, run it once
                     if (def.action != null) {
-                        if (!runActionAndPersistNext(def, pd, persister)) return
-                        // Do NOT recurse here: remaining in same stage waiting for events. Further progress will be
-                        // triggered by a future tick when an external event is sent.
+                        throw FlowDefinitionException("Stage ${def.stage} cannot declare both action and event handlers")
+                    }
+                    val consumed = tryConsumeEventAndAdvance(flowId, def, pd, persister, flowInstanceId)
+                    if (consumed) {
+                        log("Event consumed for ${pd.stage}; advancing")
+                        processTickTyped(flowId, flow, persister, flowInstanceId)
                     }
                     return
                 }
 
-                // If there is a condition transition
-                def.conditionHandler?.let { cond ->
-                    // Optional action before branching
-                    if (def.action != null) {
-                        if (!runActionAndPersistNext(def, pd, persister)) return
+                if (def.action != null) {
+                    val updated = runActionAndPersistNext(def, pd, persister, markTerminal = def.isTerminal()) ?: return
+                    if (updated.stageStatus == StageStatus.COMPLETED) {
+                        log("Stage ${def.stage} completed after action")
+                        return
                     }
+                    if (updated.stage != pd.stage) {
+                        log("Action advanced ${pd.stage} -> ${updated.stage}")
+                        processTickTyped(flowId, flow, persister, flowInstanceId)
+                    }
+                    return
+                }
+
+                def.conditionHandler?.let { cond ->
                     val target = resolveConditionInitialStage(cond, pd.state)
                         ?: throw FlowDefinitionException("Condition did not resolve to a stage from ${pd.stage}")
                     val next = pd.copy(stage = target, stageStatus = StageStatus.PENDING)
                     if (!persister.save(next)) return
-                    processTickTyped(flow, persister, flowInstanceId)
+                    log("Condition transition ${pd.stage} -> $target")
+                    processTickTyped(flowId, flow, persister, flowInstanceId)
                     return
                 }
 
-                // Direct next stage
                 def.nextStage?.let { ns ->
-                    // Optional action before moving
-                    if (def.action != null) {
-                        if (!runActionAndPersistNext(def, pd, persister)) return
-                        processTickTyped(flow, persister, flowInstanceId)
-                        return
-                    }
                     val next = pd.copy(stage = ns, stageStatus = StageStatus.PENDING)
                     if (!persister.save(next)) return
-                    processTickTyped(flow, persister, flowInstanceId)
+                    log("Automatic transition ${pd.stage} -> $ns")
+                    processTickTyped(flowId, flow, persister, flowInstanceId)
                     return
                 }
 
-                // No transitions -> terminal stage
-                if (def.action != null) {
-                    // Run the terminal action then mark completed
-                    //TODO-agent: now we have runActionAndPersistNext in each if above. Maybe better to invoke it once upfront at the beginning of handling PENDING?
-                    if (!runActionAndPersistNext(def, pd, persister, markTerminal = true)) return
-                    return
-                } else {
-                    val completed = pd.copy(stageStatus = StageStatus.COMPLETED)
-                    persister.save(completed)
-                    return
-                }
+                val completed = pd.copy(stageStatus = StageStatus.COMPLETED)
+                persister.save(completed)
+                log("Stage ${pd.stage} marked COMPLETED")
+                return
             }
         }
     }
 
     private fun tryConsumeEventAndAdvance(
+        flowId: String,
         def: StageDefinition<Any>,
         pd: ProcessData<Any>,
         persister: StatePersister<Any>,
         flowInstanceId: UUID,
     ): Boolean {
-        val queue = pendingEvents[flowInstanceId] ?: return false
+        val queue = pendingEvents[flowId to flowInstanceId] ?: return false
         val matching = def.eventHandlers.keys.firstOrNull { e -> queue.contains(e) } ?: return false
         // consume first occurrence
         queue.remove(matching)
@@ -450,27 +443,26 @@ class FlowEngine {
         def: StageDefinition<Any>,
         pd: ProcessData<Any>,
         persister: StatePersister<Any>,
-        directNext: Stage? = null,
         markTerminal: Boolean = false,
-    ): Boolean {
+    ): ProcessData<Any>? {
         // Flip to RUNNING
         val running = pd.copy(stageStatus = StageStatus.RUNNING)
-        if (!persister.save(running)) return false
+        if (!persister.save(running)) return null
 
         val action = def.action
-            ?: return advanceAfterAction(null, def, pd, persister, directNext, markTerminal)
+            ?: return advanceAfterAction(null, def, pd, persister, markTerminal)
 
         val result: Any?
         try {
             result = action(pd.state)
         } catch (ex: Throwable) {
-            //TODO-agent: Log exception
+            log("Action on stage ${def.stage} failed: ${ex.message}")
             val errored = pd.copy(stageStatus = StageStatus.ERROR)
             persister.save(errored)
-            return false
+            return null
         }
 
-        return advanceAfterAction(result, def, pd, persister, directNext, markTerminal)
+        return advanceAfterAction(result, def, pd, persister, markTerminal)
     }
 
     private fun advanceAfterAction(
@@ -478,13 +470,11 @@ class FlowEngine {
         def: StageDefinition<Any>,
         pd: ProcessData<Any>,
         persister: StatePersister<Any>,
-        directNext: Stage?,
         markTerminal: Boolean,
-    ): Boolean {
+    ): ProcessData<Any>? {
         // Determine next stage
         val nextStage: Stage? = when {
             markTerminal -> null
-            directNext != null -> directNext
             def.conditionHandler != null -> {
                 val target = resolveConditionInitialStage(def.conditionHandler as ConditionHandler<Any>, (result ?: pd.state))
                     ?: throw FlowDefinitionException("Condition did not resolve to a stage from ${pd.stage}")
@@ -499,30 +489,30 @@ class FlowEngine {
         return if (markTerminal) {
             val newState = (result ?: pd.state)
             val completed = pd.copy(state = newState, stageStatus = StageStatus.COMPLETED)
-            persister.save(completed)
+            if (persister.save(completed)) completed else null
         } else if (nextStage != null) {
             val newState = (result ?: pd.state)
             val next = pd.copy(state = newState, stage = nextStage, stageStatus = StageStatus.PENDING)
             // If result == null (stage-only), on conflict we should retry the save once with reloaded state
             val saved = persister.save(next)
             if (!saved && result == null) {
-                val fresh = persister.load(pd.flowInstanceId) ?: return false
+                val fresh = persister.load(pd.flowInstanceId) ?: return null
                 val retried = fresh.copy(stage = nextStage, stageStatus = StageStatus.PENDING)
-                return persister.save(retried)
+                return if (persister.save(retried)) retried else null
             }
-            saved
+            if (saved) next else null
         } else {
-            //TODO: Probably we can remove it if we remove possibility to have action and event handler on the same stage
-            // Remain in same stage waiting for event
+            // Remain in same stage
             val newState = (result ?: pd.state)
             val waiting = pd.copy(state = newState, stageStatus = StageStatus.PENDING)
-            val saved = persister.save(waiting)
-            // After action in a waiting stage, try to consume if event already present
-            if (saved) {
-                val consumed = tryConsumeEventAndAdvance(def, waiting, persister, pd.flowInstanceId)
-                if (consumed) return true
-            }
-            saved
+            if (persister.save(waiting)) waiting else null
         }
+    }
+
+    private fun StageDefinition<*>.isTerminal(): Boolean =
+        nextStage == null && conditionHandler == null && eventHandlers.isEmpty()
+
+    private fun log(message: String) {
+        println("[FlowEngine] $message")
     }
 }

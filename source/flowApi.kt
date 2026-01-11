@@ -1,7 +1,7 @@
 package io.flowlite.api
 
 import java.util.UUID
-import kotlin.reflect.KClass
+import org.slf4j.LoggerFactory
 
 /**
  * Represents a stage within a workflow. Implementations should be enums to provide a finite set of possible stages.
@@ -138,7 +138,19 @@ class FlowBuilder<T : Any> {
      * Builds and returns an immutable flow.
      */
     fun build(): Flow<T> {
+        validateDefinitions()
         return Flow(initialStage, initialCondition, stages.toMap())
+    }
+
+    private fun validateDefinitions() {
+        stages.values.forEach { def ->
+            if (def.action != null && def.eventHandlers.isNotEmpty()) {
+                throw FlowDefinitionException("Stage ${def.stage} cannot declare both an action and event handlers")
+            }
+            if (def.eventHandlers.isNotEmpty() && (def.nextStage != null || def.conditionHandler != null)) {
+                throw FlowDefinitionException("Stage ${def.stage} cannot mix event handlers with direct or conditional transitions")
+            }
+        }
     }
 
 }
@@ -204,12 +216,7 @@ class StageBuilder<T : Any>(
         return flowBuilder.internalStage(stage, action)
     }
 
-    fun waitFor(event: Event): EventBuilder<T> {
-        if (stageDefinition.action != null) {
-            throw FlowDefinitionException("Stage ${stageDefinition.stage} cannot have both an action and event handlers")
-        }
-        return EventBuilder(this, event)
-    }
+    fun waitFor(event: Event): EventBuilder<T> = EventBuilder(this, event)
 
     fun condition(
         predicate: (item: T) -> Boolean,
@@ -366,9 +373,6 @@ class FlowEngine {
                     ?: throw FlowDefinitionException("No definition for stage ${pd.stage}")
 
                 if (def.eventHandlers.isNotEmpty()) {
-                    if (def.action != null) {
-                        throw FlowDefinitionException("Stage ${def.stage} cannot declare both action and event handlers")
-                    }
                     val consumed = tryConsumeEventAndAdvance(flowId, def, pd, persister, flowInstanceId)
                     if (consumed) {
                         log("Event consumed for ${pd.stage}; advancing")
@@ -513,6 +517,10 @@ class FlowEngine {
         nextStage == null && conditionHandler == null && eventHandlers.isEmpty()
 
     private fun log(message: String) {
-        println("[FlowEngine] $message")
+        logger.info(message)
+    }
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(FlowEngine::class.java)
     }
 }

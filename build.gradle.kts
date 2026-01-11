@@ -35,6 +35,8 @@ dependencies {
     // Kotlin standard library
     implementation(kotlin("stdlib"))
     implementation(kotlin("reflect"))
+    implementation("org.slf4j:slf4j-api:2.0.13")
+    runtimeOnly("ch.qos.logback:logback-classic:1.5.6")
 
     // Testing
     testImplementation("io.kotest:kotest-runner-junit5:5.8.0")

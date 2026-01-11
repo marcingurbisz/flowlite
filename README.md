@@ -403,7 +403,7 @@ Identifiers and terminology:
 
 ### Windows Setup
 
-If you're cloning this repository on Windows, symbolic links (like `CLAUDE.md -> README.md`) require special Git configuration:
+If you're cloning this repository on Windows, symbolic links (like `AGENTS.md -> README.md`) require special Git configuration:
 
 **Option 1: Enable symlinks globally (recommended)**
 ```bash
@@ -418,7 +418,7 @@ git clone -c core.symlinks=true <repository-url>
 
 **Requirements:** Git for Windows 2.10.2+, NTFS file system, and either Developer Mode enabled or Administrator privileges.
 
-If symbolic links don't work, `CLAUDE.md` will appear as a text file containing "README.md" - in this case, just refer to README.md directly.
+If symbolic links don't work, `AGENTS.md` will appear as a text file containing "README.md" - in this case, just refer to README.md directly.
 
 ### Build and Test Commands
 - `./gradlew build` - Build the entire project

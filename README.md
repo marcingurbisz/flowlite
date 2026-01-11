@@ -37,10 +37,10 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
 Traditional BPM platforms (e.g. Camunda) are powerful but also heavyweight for code-centric teams.
 
 FlowLite at a glance:
-- **Type-safe fluent API** – Kotlin-first (enums + functions)
+- **Type-safe fluent API**
 - **Visuals from code** – Mermaid diagrams generated automatically
 - **Natural syntax** – Reads close to business intent
-- **Lightweight** – Minimal surface area, no BPMN modeling overhead
+- **Lightweight**
 
 ## Example flow
 
@@ -90,6 +90,7 @@ stateDiagram-v2
     - `RUNNING` – Action is currently executing (set before invocation for crash detection).
     - `COMPLETED` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `PENDING` rather than persisting completion of the previous stage.
     - `ERROR` – Action failed; requires manual retry.
+- Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and process specific data  
 - Single-token model: only one active stage at any moment (no parallelism within one flow).
 - Engine drives flow progression via internal Tick messages
 - Code-first definitions -> diagrams are derived artifacts.
@@ -127,7 +128,7 @@ Event waiting semantics (`waitFor`):
    ```
 ### Join Operations
 
-Reference existing stages from other branches
+Reference already defined stages using `join()`:
    ```kotlin
    flow.waitFor(PaymentCompleted).join(ProcessingOrder)
    ```
@@ -362,24 +363,23 @@ stateDiagram-v2
 
 ### Runtime & Execution Model
 
-1. Starting a flow instance persists an initial domain row (your table, e.g. `ORDER_CONFIRMATION`) with first stage `PENDING` and enqueues a Tick. You can also pre-create the row earlier with your business data and later start processing by calling the overload that accepts a provided id.
+1. Starting a flow instance persists an initial domain row and enqueues a Tick. Domain row includes initial stage and stage status `PENDING'. It's also possible to pre-create the row earlier with your business data and later start processing by providing id.
 2. Tick processing loop:
-     - Load process state (stage + status) via its `StatePersister`.
+     - Load process state (stage + status) via `StatePersister`.
      - If status `ERROR` → stop (await retry).
      - If status `RUNNING` → no-op; another Tick will follow after the action completes.
-     - If stage has an action and status `PENDING`: set `RUNNING`, persist; execute action outside the transaction; on success advance to next stage with `PENDING` (or mark terminal `COMPLETED`) and enqueue another Tick; on failure set `ERROR`.
-     - If stage waits for events: query shared `pending_events` for one matching event for this process; if found, consume it and advance to the configured next stage with `PENDING` then enqueue another Tick.
-3. Terminal completion: final stage becomes `COMPLETED`; no further ticks are enqueued.
-4. External events: `sendEvent(flowInstanceId, eventType)` inserts a row into `pending_events` and always enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible. No special-casing or synchronous advancement on the send path.
-5. Duplicate ticks or events are harmless (idempotent progression via optimistic locking and event consumption checks).
+     - If stage has an action and status `PENDING`: set `RUNNING`, persist; execute action outside the transaction; on success advance to next stage with `PENDING` and enqueue another Tick (or mark `COMPLETED` if final stage; no further ticks are enqueued); on failure set `ERROR`.
+     - If stage waits for events: query shared `pending_events` for matching event for this process; if found, consume it and advance to the configured next stage with `PENDING` then enqueue another Tick.
+3. External events: `sendEvent(flowInstanceId, eventType)` inserts a row into `pending_events` and always enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible. No special-casing or synchronous advancement on the send path.
+4. Duplicate ticks or events are harmless (idempotent progression via optimistic locking and event consumption checks).
 
 ### Transaction Boundaries
 
-- Event submission (sendEvent): a single transaction that inserts into `pending_events`; no stage changes occur here.
-- Advancing on event: consume matching pending event and move the stage pointer to the configured next stage with `PENDING` in the same transaction; no action is executed inside this transaction.
-- Action execution: set `RUNNING` and persist; execute action outside of any open DB transaction; then persist state changes and move to the next stage (`PENDING`) or mark terminal `COMPLETED` in a new transaction.
+- Event submission (sendEvent): a single transaction that inserts into `pending_events`; enqueue a Tick; no stage changes occur here.
+- Advancing on event: consume matching pending event within the tick handling and move the stage pointer to the configured next stage with `PENDING` in the same transaction; no action is executed inside this transaction.
+- Action execution: set `RUNNING` and persist; execute action outside any transaction; then persist state changes and move to the next stage (`PENDING`) or mark terminal `COMPLETED` in a new transaction.
 
-These boundaries keep side-effects out of long-lived transactions and make retries/idempotency straightforward.
+These boundaries keep side effects out of long-lived transactions and make retries/idempotency straightforward.
 
 ### Persistence Approach
 
@@ -388,11 +388,11 @@ FlowLite does not impose a generic `process_instance` table. Each domain owns it
 - `process_id` (UUID optionally PK)
 - `stage` (VARCHAR)
 - `stage_status` (VARCHAR)
-- (Optionally a `version` column if your `StatePersister` uses optimistic locking internally)
+- (Optionally a `version` column if your `StatePersister` uses it for optimistic locking internally)
 - Domain attributes (e.g. customer data)
 - `created_at`, `updated_at`(optionally)
 
-`pending_events` is a shared table:
+`pending_events` is a FlowLite table:
 - `id` (PK)
 - `process_id`
 - `event_type`
@@ -408,7 +408,7 @@ The engine depends on a domain-specific `StatePersister<T>` (mandatory) to:
 - `save(processData)` → create or update atomically (includes stage/status changes and any domain modifications produced by actions)
 
 Optimistic locking is an internal concern of the persister. Recommended contract:
-- `save` returns `true` on success; returns `false` if an optimistic conflict is detected and the write was not applied;
+- `save` returns `true` on success; returns `false` if an optimistic lock conflict is detected and write is not applied;
 - throws on other errors (the engine will mark the stage `ERROR`).
 
 Engine behavior with action results:
@@ -438,8 +438,8 @@ Identifiers and terminology:
 
 ### Deferred / Future Enhancements
 
-- Distinguish business vs technical errors with tailored retry policies
 - Cockpit
+- Distinguish business vs technical errors with tailored retry policies
 - Parallelism
 - Metrics, tracing, structured audit history
 

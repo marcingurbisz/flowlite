@@ -64,6 +64,10 @@ interface EventStore {
     fun poll(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): Event?
 }
 
+interface TickScheduler {
+    fun schedule(flowId: String, flowInstanceId: UUID, dispatch: () -> Unit)
+}
+
 data class Flow<T : Any>(
     val initialStage: Stage?,
     val initialCondition: ConditionHandler<T>?,
@@ -284,7 +288,10 @@ class EventBuilder<T : Any>(
 
 }
 
-class FlowEngine(private val eventStore: EventStore = InMemoryEventStore()) {
+class FlowEngine(
+    private val eventStore: EventStore,
+    private val tickScheduler: TickScheduler,
+) {
     private val flows = mutableMapOf<String, Flow<Any>>()
     private val persisters = mutableMapOf<String, StatePersister<Any>>()
 
@@ -313,18 +320,17 @@ class FlowEngine(private val eventStore: EventStore = InMemoryEventStore()) {
             stageStatus = StageStatus.PENDING,
         )
         persister.save(pd as ProcessData<Any>)
-        // Enqueue initial tick (synchronous processing in MVP)
-        processTick(flowId, flowInstanceId)
+        enqueueTick(flowId, flowInstanceId)
         return flowInstanceId
     }
 
     fun sendEvent(flowId: String, flowInstanceId: UUID, event: Event) {
         eventStore.append(flowId, flowInstanceId, event)
-        processTick(flowId, flowInstanceId)
+        enqueueTick(flowId, flowInstanceId)
     }
 
     fun retry(flowId: String, flowInstanceId: UUID) {
-        processTick(flowId, flowInstanceId)
+        enqueueTick(flowId, flowInstanceId)
     }
 
     fun getStatus(flowId: String, flowInstanceId: UUID): Pair<Stage, StageStatus>? {
@@ -347,6 +353,10 @@ class FlowEngine(private val eventStore: EventStore = InMemoryEventStore()) {
         val stage = if (branchTrue) condition.trueStage else condition.falseStage
         val nested = if (branchTrue) condition.trueCondition else condition.falseCondition
         return stage ?: nested?.let { resolveConditionInitialStage(it, state) }
+    }
+
+    private fun enqueueTick(flowId: String, flowInstanceId: UUID) {
+        tickScheduler.schedule(flowId, flowInstanceId) { processTick(flowId, flowInstanceId) }
     }
 
     private fun processTick(flowId: String, flowInstanceId: UUID) {
@@ -524,20 +534,5 @@ class FlowEngine(private val eventStore: EventStore = InMemoryEventStore()) {
 
     companion object {
         private val logger = LoggerFactory.getLogger(FlowEngine::class.java)
-    }
-}
-
-class InMemoryEventStore : EventStore {
-    private val pendingEvents = mutableMapOf<Pair<String, UUID>, MutableList<Event>>()
-
-    override fun append(flowId: String, flowInstanceId: UUID, event: Event) {
-        pendingEvents.getOrPut(flowId to flowInstanceId) { mutableListOf() }.add(event)
-    }
-
-    override fun poll(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): Event? {
-        val queue = pendingEvents[flowId to flowInstanceId] ?: return null
-        val idx = queue.indexOfFirst { candidates.contains(it) }
-        if (idx == -1) return null
-        return queue.removeAt(idx)
     }
 }

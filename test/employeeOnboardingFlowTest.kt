@@ -1,8 +1,6 @@
 package io.flowlite.test
 
 import io.flowlite.api.*
-import io.flowlite.api.FlowEngine
-import io.flowlite.api.StageStatus
 import io.flowlite.test.EmployeeEvent.*
 import io.flowlite.test.EmployeeStage.*
 import io.kotest.core.spec.style.BehaviorSpec
@@ -172,8 +170,11 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
 
 class EmployeeOnboardingEngineTest : BehaviorSpec({
     given("employee onboarding flow - manual path") {
-        val engine = FlowEngine()
-        val persister = InMemoryStatePersister<EmployeeOnboarding>()
+        val persistence = TestPersistence()
+        val eventStore = persistence.eventStore()
+        val tickScheduler = persistence.tickScheduler()
+        val engine = FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler)
+        val persister = persistence.onboardingPersister()
         engine.registerFlow("employee-onboarding", createEmployeeOnboardingFlow(), persister)
 
         val processId = engine.startProcess(
@@ -188,6 +189,7 @@ class EmployeeOnboardingEngineTest : BehaviorSpec({
         )
 
         then("it starts at waiting for contract signature") {
+            tickScheduler.drain()
             engine.getStatus("employee-onboarding", processId) shouldBe
                 (EmployeeStage.WaitingForContractSigned to StageStatus.PENDING)
         }
@@ -195,6 +197,7 @@ class EmployeeOnboardingEngineTest : BehaviorSpec({
         `when`("contract is signed and onboarding completes") {
             engine.sendEvent("employee-onboarding", processId, EmployeeEvent.ContractSigned)
             engine.sendEvent("employee-onboarding", processId, EmployeeEvent.OnboardingComplete)
+            tickScheduler.drain()
 
             then("it finishes in HR system update stage") {
                 engine.getStatus("employee-onboarding", processId) shouldBe

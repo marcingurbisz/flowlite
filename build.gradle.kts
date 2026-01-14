@@ -44,7 +44,10 @@ dependencies {
     testImplementation("io.kotest:kotest-framework-datatest:5.8.0")
     testImplementation("io.mockk:mockk:1.13.10")
     testImplementation("org.springframework.data:spring-data-jdbc:3.3.5")
+    testImplementation("org.springframework.boot:spring-boot-starter-test:3.3.5")
+    testImplementation("org.springframework.boot:spring-boot-starter-jdbc:3.3.5")
     testImplementation("com.h2database:h2:2.2.224")
+    testImplementation("com.github.kagkarlsson:db-scheduler:16.7.0")
 }
 
 tasks.test {

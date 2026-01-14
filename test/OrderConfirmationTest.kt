@@ -1,13 +1,13 @@
 package io.flowlite.test
 
 import io.flowlite.api.*
-import io.flowlite.api.StageStatus
 import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.*
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.slf4j.LoggerFactory
+import java.util.UUID
 
 enum class OrderConfirmationStage : Stage {
     InitializingConfirmation,
@@ -133,11 +133,14 @@ class OrderConfirmationTest : BehaviorSpec({
 
 class OrderConfirmationEngineTest : BehaviorSpec({
     given("order confirmation flow") {
-        val engine = FlowEngine()
-        val persister = InMemoryStatePersister<OrderConfirmation>()
+        val persistence = TestPersistence()
+        val eventStore = persistence.eventStore()
+        val tickScheduler = persistence.tickScheduler()
+        val engine = FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler)
+        val persister = persistence.orderPersister()
         engine.registerFlow("order-confirmation", createOrderConfirmationFlow(), persister)
 
-        `when`("processing digital confirmation path") {
+        `when`("processing digital confirmation path (engine generates id)") {
             val processId = engine.startProcess(
                 flowId = "order-confirmation",
                 initialState = OrderConfirmation(
@@ -150,22 +153,26 @@ class OrderConfirmationEngineTest : BehaviorSpec({
             )
 
             then("it waits for confirmation event") {
+                tickScheduler.drain()
                 engine.getStatus("order-confirmation", processId) shouldBe
                     (OrderConfirmationStage.WaitingForConfirmation to StageStatus.PENDING)
             }
 
             then("it completes after digital confirmation event") {
                 engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedDigitally)
+                tickScheduler.drain()
                 engine.getStatus("order-confirmation", processId) shouldBe
                     (OrderConfirmationStage.InformingCustomer to StageStatus.COMPLETED)
             }
         }
 
-        `when`("processing physical confirmation path") {
-            val processId = engine.startProcess(
+        `when`("processing physical confirmation path (caller-supplied id)") {
+            val processId = UUID.randomUUID()
+            engine.startProcess(
                 flowId = "order-confirmation",
+                flowInstanceId = processId,
                 initialState = OrderConfirmation(
-                    processId = "p-2",
+                    processId = processId.toString(),
                     stage = OrderConfirmationStage.WaitingForConfirmation,
                     orderNumber = "ORD-2",
                     confirmationType = ConfirmationType.PHYSICAL,
@@ -174,6 +181,7 @@ class OrderConfirmationEngineTest : BehaviorSpec({
             )
 
             engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedPhysically)
+            tickScheduler.drain()
 
             then("it informs customer and completes") {
                 engine.getStatus("order-confirmation", processId) shouldBe

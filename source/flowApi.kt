@@ -40,6 +40,14 @@ data class ProcessData<T : Any>(
 )
 
 /**
+ * Result of persisting process data.
+ */
+sealed interface SaveResult<out T : Any> {
+    data class Saved<T : Any>(val data: ProcessData<T>) : SaveResult<T>
+    data object Conflict : SaveResult<Nothing>
+}
+
+/**
  * Interface for persisting the state of a workflow instance.
  *
  * @param T The type of the state object.
@@ -47,9 +55,9 @@ data class ProcessData<T : Any>(
 interface StatePersister<T : Any> {
     /**
      * Create or update the domain row and engine columns atomically.
-     * Return true on success, false on optimistic conflict (no write applied).
+     * Return Saved with refreshed data, or Conflict when optimistic lock fails.
      */
-    fun save(processData: ProcessData<T>): Boolean
+    fun save(processData: ProcessData<T>): SaveResult<T>
 
     /** Load current process data or null if not found. */
     fun load(flowInstanceId: UUID): ProcessData<T>?
@@ -315,8 +323,10 @@ class FlowEngine(
             stage = initialStage,
             stageStatus = StageStatus.PENDING,
         )
-        persister.save(pd as ProcessData<Any>)
-        enqueueTick(flowId, flowInstanceId)
+        when (persister.save(pd as ProcessData<Any>)) {
+            is SaveResult.Saved -> enqueueTick(flowId, flowInstanceId)
+            SaveResult.Conflict -> throw IllegalStateException("Failed to start process $flowId/$flowInstanceId due to optimistic conflict")
+        }
         return flowInstanceId
     }
 
@@ -419,7 +429,8 @@ class FlowEngine(
                     val target = resolveConditionInitialStage(cond, pd.state)
                         ?: throw FlowDefinitionException("Condition did not resolve to a stage from ${pd.stage}")
                     val next = pd.copy(stage = target, stageStatus = StageStatus.PENDING)
-                    if (!persister.save(next)) return
+                    val saved = persister.save(next)
+                    if (saved is SaveResult.Conflict) return
                     log("Condition transition ${pd.stage} -> $target")
                     processTickTyped(flowId, flow, persister, flowInstanceId)
                     return
@@ -427,7 +438,8 @@ class FlowEngine(
 
                 def.nextStage?.let { ns ->
                     val next = pd.copy(stage = ns, stageStatus = StageStatus.PENDING)
-                    if (!persister.save(next)) return
+                    val saved = persister.save(next)
+                    if (saved is SaveResult.Conflict) return
                     log("Automatic transition ${pd.stage} -> $ns")
                     processTickTyped(flowId, flow, persister, flowInstanceId)
                     return
@@ -455,7 +467,7 @@ class FlowEngine(
         }
         ?: throw FlowDefinitionException("Event handler did not resolve to a stage from ${pd.stage}")
         val next = pd.copy(stage = targetStage, stageStatus = StageStatus.PENDING)
-        return persister.save(next)
+        return persister.save(next) is SaveResult.Saved
     }
 
     /**
@@ -469,22 +481,25 @@ class FlowEngine(
     ): ProcessData<Any>? {
         // Flip to RUNNING
         val running = pd.copy(stageStatus = StageStatus.RUNNING)
-        if (!persister.save(running)) return null
+        val current = when (val saved = persister.save(running)) {
+            SaveResult.Conflict -> return null
+            is SaveResult.Saved -> saved.data
+        }
 
         val action = def.action
-            ?: return advanceAfterAction(null, def, pd, persister, markTerminal)
+            ?: return advanceAfterAction(null, def, current, persister, markTerminal)
 
         val result: Any?
         try {
-            result = action(pd.state)
+            result = action(current.state)
         } catch (ex: Throwable) {
             log("Action on stage ${def.stage} failed: ${ex.message}")
-            val errored = pd.copy(stageStatus = StageStatus.ERROR)
+            val errored = current.copy(stageStatus = StageStatus.ERROR)
             persister.save(errored)
             return null
         }
 
-        return advanceAfterAction(result, def, pd, persister, markTerminal)
+        return advanceAfterAction(result, def, current, persister, markTerminal)
     }
 
     private fun advanceAfterAction(
@@ -511,23 +526,35 @@ class FlowEngine(
         return if (markTerminal) {
             val newState = (result ?: pd.state)
             val completed = pd.copy(state = newState, stageStatus = StageStatus.COMPLETED)
-            if (persister.save(completed)) completed else null
+            when (val saved = persister.save(completed)) {
+                is SaveResult.Saved -> saved.data
+                SaveResult.Conflict -> null
+            }
         } else if (nextStage != null) {
             val newState = (result ?: pd.state)
             val next = pd.copy(state = newState, stage = nextStage, stageStatus = StageStatus.PENDING)
             // If result == null (stage-only), on conflict we should retry the save once with reloaded state
             val saved = persister.save(next)
-            if (!saved && result == null) {
+            if (saved is SaveResult.Conflict && result == null) {
                 val fresh = persister.load(pd.flowInstanceId) ?: return null
                 val retried = fresh.copy(stage = nextStage, stageStatus = StageStatus.PENDING)
-                return if (persister.save(retried)) retried else null
+                return when (val retriedSaved = persister.save(retried)) {
+                    is SaveResult.Saved -> retriedSaved.data
+                    SaveResult.Conflict -> null
+                }
             }
-            if (saved) next else null
+            when (saved) {
+                is SaveResult.Saved -> saved.data
+                SaveResult.Conflict -> null
+            }
         } else {
             // Remain in same stage
             val newState = (result ?: pd.state)
             val waiting = pd.copy(state = newState, stageStatus = StageStatus.PENDING)
-            if (persister.save(waiting)) waiting else null
+            when (val saved = persister.save(waiting)) {
+                is SaveResult.Saved -> saved.data
+                SaveResult.Conflict -> null
+            }
         }
     }
 

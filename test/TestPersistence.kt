@@ -5,30 +5,30 @@ import com.github.kagkarlsson.scheduler.SchedulerBuilder
 import com.github.kagkarlsson.scheduler.task.Task
 import com.github.kagkarlsson.scheduler.task.helper.OneTimeTask
 import com.github.kagkarlsson.scheduler.task.helper.Tasks
-import io.flowlite.api.Event
 import io.flowlite.api.EventStore
-import io.flowlite.api.ProcessData
-import io.flowlite.api.Stage
-import io.flowlite.api.StageStatus
 import io.flowlite.api.StatePersister
 import io.flowlite.api.TickScheduler
 import java.time.Duration
 import java.util.UUID
 import javax.sql.DataSource
-import org.springframework.boot.builder.SpringApplicationBuilder
+import org.springframework.beans.factory.BeanRegistrarDsl
+import org.springframework.beans.factory.support.BeanRegistryAdapter
+import org.springframework.boot.runApplication
+import org.springframework.context.support.GenericApplicationContext
+import org.springframework.context.ApplicationContextInitializer
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 
-/** Test helper spinning up a Spring Boot context with H2 + Spring Data JDBC repositories. */
 class TestPersistence {
-    private val context = SpringApplicationBuilder(TestApplication::class.java)
-        .properties(
-            mapOf(
-                "spring.main.web-application-type" to "none",
-                "spring.datasource.initialization-mode" to "never",
-                "spring.sql.init.mode" to "never",
-            ),
+    private val context = runApplication<TestApplication>(
+        "--spring.main.web-application-type=none",
+    ) {
+        addInitializers(
+            ApplicationContextInitializer<GenericApplicationContext> { gac ->
+                BeanRegistryAdapter(gac, gac, gac.environment, BeanRegistrarDsl::class.java)
+                    .register(testRegistrar())
+            },
         )
-        .run()
+    }
 
     val dataSource: DataSource = context.getBean(DataSource::class.java)
     private val jdbc: NamedParameterJdbcTemplate = context.getBean(NamedParameterJdbcTemplate::class.java)
@@ -51,10 +51,11 @@ class TestPersistence {
     private fun createTables() {
         jdbc.jdbcTemplate.execute(
             """
-            create table if not exists "order_confirmation" (
-                "id" uuid primary key,
+            create table if not exists order_confirmation (
+                id uuid default random_uuid() primary key,
+                version bigint not null default 0,
                 stage varchar(128) not null,
-                stage_status varchar(32) not null,
+                stage_status varchar(32) not null default 'PENDING',
                 order_number varchar(128) not null,
                 confirmation_type varchar(32) not null,
                 customer_name varchar(128) not null,
@@ -67,10 +68,11 @@ class TestPersistence {
 
         jdbc.jdbcTemplate.execute(
             """
-            create table if not exists "employee_onboarding" (
-                "id" uuid primary key,
+            create table if not exists employee_onboarding (
+                id uuid default random_uuid() primary key,
+                version bigint not null default 0,
                 stage varchar(128),
-                stage_status varchar(32) not null,
+                stage_status varchar(32) not null default 'PENDING',
                 is_onboarding_automated boolean not null,
                 is_contract_signed boolean not null,
                 is_executive_role boolean not null,
@@ -91,8 +93,8 @@ class TestPersistence {
 
         jdbc.jdbcTemplate.execute(
             """
-            create table if not exists "pending_events" (
-                id identity primary key,
+            create table if not exists pending_event (
+                id uuid default random_uuid() primary key,
                 flow_id varchar(128) not null,
                 flow_instance_id uuid not null,
                 event_type varchar(256) not null,
@@ -165,14 +167,6 @@ class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler {
         val data = "$flowId|$flowInstanceId"
         val instanceId = "$flowId|$flowInstanceId|${UUID.randomUUID()}"
         scheduler.schedule(task.schedulableInstance(instanceId, data))
-    }
-
-    fun drain(timeout: Duration = Duration.ofSeconds(1)) {
-        val deadline = System.nanoTime() + timeout.toNanos()
-        while (System.nanoTime() < deadline) {
-            if (dispatches.values.all { it.isEmpty() }) break
-            Thread.sleep(10)
-        }
     }
 
     fun shutdown() {

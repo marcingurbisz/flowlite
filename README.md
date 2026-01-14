@@ -340,14 +340,15 @@ The engine depends on a domain-specific `StatePersister<T>` (mandatory) to:
 - `save(processData)` → create or update atomically (includes stage/status changes and any domain modifications produced by actions)
 
 Optimistic locking is an internal concern of the persister. Recommended contract:
-- `save` returns `true` on success; returns `false` if an optimistic lock conflict is detected and write is not applied;
+- `save` returns `SaveResult.Saved` with refreshed data on success;
+- returns `SaveResult.Conflict` if an optimistic lock conflict is detected and write is not applied;
 - throws on other errors (the engine will mark the stage `ERROR`).
 
 Engine behavior with action results:
-- If the action returns `null` (stage-only advance), and `save` returns `false` due to a race, the engine will repeat save.
-- If the action returns a non-null state and `save` fails with an optimistic conflict or throws, the engine treats it like an error: mark stage `ERROR` and stop until manual retry.
+- If the action returns `null` (stage-only advance), and `save` returns `SaveResult.Conflict` due to a race, the engine will repeat save.
+- If the action returns a non-null state and `save` returns `SaveResult.Conflict` or throws, the engine treats it like an error: mark stage `ERROR` and stop until manual retry.
 
-The engine treats `false` as a benign no-op (common with duplicate ticks) and does not retry automatically.
+The engine treats `SaveResult.Conflict` as a benign no-op (common with duplicate ticks) and does not retry automatically.
 
 ### Engine API
 

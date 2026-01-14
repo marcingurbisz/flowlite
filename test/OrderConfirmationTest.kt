@@ -4,8 +4,11 @@ import io.flowlite.api.*
 import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.*
 import io.kotest.core.spec.style.BehaviorSpec
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import org.springframework.dao.OptimisticLockingFailureException
+import org.springframework.data.annotation.Id
+import org.springframework.data.annotation.Version
+import org.springframework.data.repository.CrudRepository
 import org.slf4j.LoggerFactory
 import java.util.UUID
 
@@ -27,8 +30,12 @@ enum class ConfirmationType {
 }
 
 data class OrderConfirmation(
-    val processId: String = "",
+    @Id
+    val id: UUID? = null,
+    @Version
+    val version: Long = 0,
     val stage: OrderConfirmationStage,
+    val stageStatus: StageStatus = StageStatus.PENDING,
     val orderNumber: String,
     val confirmationType: ConfirmationType,
     val customerName: String,
@@ -36,6 +43,44 @@ data class OrderConfirmation(
     val isCustomerInformed: Boolean = false,
     val confirmationTimestamp: String = "",
 )
+
+interface OrderConfirmationRepository : CrudRepository<OrderConfirmation, UUID>
+
+class SpringDataOrderConfirmationPersister(
+    private val repo: OrderConfirmationRepository,
+) : StatePersister<OrderConfirmation> {
+    override fun save(processData: ProcessData<OrderConfirmation>): SaveResult<OrderConfirmation> {
+        val stage = processData.stage as? OrderConfirmationStage
+            ?: error("Unexpected stage ${processData.stage}")
+        val entity = processData.state.copy(
+            id = processData.flowInstanceId,
+            stage = stage,
+            stageStatus = processData.stageStatus,
+        )
+        val saved = try {
+            repo.save(entity)
+        } catch (ex: OptimisticLockingFailureException) {
+            return SaveResult.Conflict
+        }
+        return SaveResult.Saved(
+            processData.copy(
+                state = saved,
+                stage = saved.stage,
+                stageStatus = saved.stageStatus,
+            ),
+        )
+    }
+
+    override fun load(flowInstanceId: UUID): ProcessData<OrderConfirmation>? {
+        val entity = repo.findById(flowInstanceId).orElse(null) ?: return null
+        return ProcessData(
+            flowInstanceId = flowInstanceId,
+            state = entity,
+            stage = entity.stage,
+            stageStatus = entity.stageStatus,
+        )
+    }
+}
 
 private val orderLogger = LoggerFactory.getLogger("OrderConfirmationActions")
 
@@ -135,8 +180,7 @@ class OrderConfirmationEngineTest : BehaviorSpec({
     given("order confirmation flow") {
         val persistence = TestPersistence()
         val eventStore = persistence.eventStore()
-        val tickScheduler = persistence.tickScheduler()
-        val engine = FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler)
+        val engine = FlowEngine(eventStore = eventStore, tickScheduler = persistence.tickScheduler())
         val persister = persistence.orderPersister()
         engine.registerFlow("order-confirmation", createOrderConfirmationFlow(), persister)
 
@@ -144,8 +188,7 @@ class OrderConfirmationEngineTest : BehaviorSpec({
             val processId = engine.startProcess(
                 flowId = "order-confirmation",
                 initialState = OrderConfirmation(
-                    processId = "p-1",
-                    stage = OrderConfirmationStage.WaitingForConfirmation,
+                    stage = InitializingConfirmation,
                     orderNumber = "ORD-1",
                     confirmationType = ConfirmationType.DIGITAL,
                     customerName = "Alice",
@@ -153,39 +196,51 @@ class OrderConfirmationEngineTest : BehaviorSpec({
             )
 
             then("it waits for confirmation event") {
-                tickScheduler.drain()
-                engine.getStatus("order-confirmation", processId) shouldBe
-                    (OrderConfirmationStage.WaitingForConfirmation to StageStatus.PENDING)
+                awaitStatus(
+                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    expected = WaitingForConfirmation to StageStatus.PENDING,
+                )
             }
 
             then("it completes after digital confirmation event") {
                 engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedDigitally)
-                tickScheduler.drain()
-                engine.getStatus("order-confirmation", processId) shouldBe
-                    (OrderConfirmationStage.InformingCustomer to StageStatus.COMPLETED)
+                awaitStatus(
+                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    expected = InformingCustomer to StageStatus.COMPLETED,
+                )
             }
         }
 
         `when`("processing physical confirmation path (caller-supplied id)") {
             val processId = UUID.randomUUID()
-            engine.startProcess(
-                flowId = "order-confirmation",
-                flowInstanceId = processId,
-                initialState = OrderConfirmation(
-                    processId = processId.toString(),
-                    stage = OrderConfirmationStage.WaitingForConfirmation,
-                    orderNumber = "ORD-2",
-                    confirmationType = ConfirmationType.PHYSICAL,
-                    customerName = "Bob",
+            val prePersisted = OrderConfirmation(
+                id = processId,
+                stage = InitializingConfirmation,
+                orderNumber = "ORD-2",
+                confirmationType = ConfirmationType.PHYSICAL,
+                customerName = "Bob",
+            )
+            persister.save(
+                ProcessData(
+                    flowInstanceId = processId,
+                    state = prePersisted,
+                    stage = InitializingConfirmation,
+                    stageStatus = StageStatus.PENDING,
                 ),
             )
 
-            engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedPhysically)
-            tickScheduler.drain()
+            engine.startProcess(
+                flowId = "order-confirmation",
+                flowInstanceId = processId,
+            )
+
+            engine.sendEvent("order-confirmation", processId, ConfirmedPhysically)
 
             then("it informs customer and completes") {
-                engine.getStatus("order-confirmation", processId) shouldBe
-                    (OrderConfirmationStage.InformingCustomer to StageStatus.COMPLETED)
+                awaitStatus(
+                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    expected = InformingCustomer to StageStatus.COMPLETED,
+                )
             }
         }
     }

@@ -4,8 +4,12 @@ import io.flowlite.api.*
 import io.flowlite.test.EmployeeEvent.*
 import io.flowlite.test.EmployeeStage.*
 import io.kotest.core.spec.style.BehaviorSpec
-import io.kotest.matchers.shouldBe
+import org.springframework.dao.OptimisticLockingFailureException
+import org.springframework.data.annotation.Id
+import org.springframework.data.annotation.Version
+import org.springframework.data.repository.CrudRepository
 import org.slf4j.LoggerFactory
+import java.util.UUID
 
 class EmployeeOnboardingFlowTest :
     BehaviorSpec({
@@ -47,8 +51,12 @@ enum class EmployeeEvent : Event {
 }
 
 data class EmployeeOnboarding(
-    val processId: String = "",
+    @Id
+    val id: UUID? = null,
+    @Version
+    val version: Long = 0,
     val stage: EmployeeStage? = null,
+    val stageStatus: StageStatus = StageStatus.PENDING,
     val isOnboardingAutomated: Boolean = false,
     val isContractSigned: Boolean = false,
     val isExecutiveRole: Boolean = false,
@@ -64,6 +72,45 @@ data class EmployeeOnboarding(
     val contractSentForSigning: Boolean = false,
     val statusUpdatedInHR: Boolean = false,
 )
+
+interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboarding, UUID>
+
+class SpringDataEmployeeOnboardingPersister(
+    private val repo: EmployeeOnboardingRepository,
+) : StatePersister<EmployeeOnboarding> {
+    override fun save(processData: ProcessData<EmployeeOnboarding>): SaveResult<EmployeeOnboarding> {
+        val stage = (processData.stage as? EmployeeStage) ?: EmployeeStage.WaitingForContractSigned
+        val entity = processData.state.copy(
+            id = processData.flowInstanceId,
+            stage = stage,
+            stageStatus = processData.stageStatus,
+        )
+        val saved = try {
+            repo.save(entity)
+        } catch (ex: OptimisticLockingFailureException) {
+            return SaveResult.Conflict
+        }
+        val savedStage = saved.stage ?: stage
+        return SaveResult.Saved(
+            processData.copy(
+                state = saved.copy(stage = savedStage),
+                stage = savedStage,
+                stageStatus = saved.stageStatus,
+            ),
+        )
+    }
+
+    override fun load(flowInstanceId: UUID): ProcessData<EmployeeOnboarding>? {
+        val entity = repo.findById(flowInstanceId).orElse(null) ?: return null
+        val stage = entity.stage ?: EmployeeStage.WaitingForContractSigned
+        return ProcessData(
+            flowInstanceId = flowInstanceId,
+            state = entity.copy(stage = stage),
+            stage = stage,
+            stageStatus = entity.stageStatus,
+        )
+    }
+}
 
 // --- Action Functions ---
 
@@ -172,15 +219,14 @@ class EmployeeOnboardingEngineTest : BehaviorSpec({
     given("employee onboarding flow - manual path") {
         val persistence = TestPersistence()
         val eventStore = persistence.eventStore()
-        val tickScheduler = persistence.tickScheduler()
-        val engine = FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler)
+        val engine = FlowEngine(eventStore = eventStore, tickScheduler = persistence.tickScheduler())
         val persister = persistence.onboardingPersister()
         engine.registerFlow("employee-onboarding", createEmployeeOnboardingFlow(), persister)
+
 
         val processId = engine.startProcess(
             flowId = "employee-onboarding",
             initialState = EmployeeOnboarding(
-                processId = "emp-1",
                 isOnboardingAutomated = false,
                 isExecutiveRole = false,
                 isSecurityClearanceRequired = false,
@@ -189,19 +235,21 @@ class EmployeeOnboardingEngineTest : BehaviorSpec({
         )
 
         then("it starts at waiting for contract signature") {
-            tickScheduler.drain()
-            engine.getStatus("employee-onboarding", processId) shouldBe
-                (EmployeeStage.WaitingForContractSigned to StageStatus.PENDING)
+            awaitStatus(
+                fetch = { engine.getStatus("employee-onboarding", processId) },
+                expected = WaitingForContractSigned to StageStatus.PENDING,
+            )
         }
 
         `when`("contract is signed and onboarding completes") {
             engine.sendEvent("employee-onboarding", processId, EmployeeEvent.ContractSigned)
             engine.sendEvent("employee-onboarding", processId, EmployeeEvent.OnboardingComplete)
-            tickScheduler.drain()
 
             then("it finishes in HR system update stage") {
-                engine.getStatus("employee-onboarding", processId) shouldBe
-                    (EmployeeStage.UpdateStatusInHRSystem to StageStatus.COMPLETED)
+                awaitStatus(
+                    fetch = { engine.getStatus("employee-onboarding", processId) },
+                    expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
+                )
             }
         }
     }

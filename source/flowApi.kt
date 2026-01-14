@@ -306,10 +306,6 @@ class FlowEngine(
 
     fun <T : Any> startProcess(flowId: String, initialState: T): UUID {
         val flowInstanceId = UUID.randomUUID()
-        return startProcess(flowId, flowInstanceId, initialState)
-    }
-
-    fun <T : Any> startProcess(flowId: String, flowInstanceId: UUID, initialState: T): UUID {
         val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val initialStage = resolveInitialStage(flow as Flow<T>, initialState)
@@ -320,6 +316,16 @@ class FlowEngine(
             stageStatus = StageStatus.PENDING,
         )
         persister.save(pd as ProcessData<Any>)
+        enqueueTick(flowId, flowInstanceId)
+        return flowInstanceId
+    }
+
+    fun startProcess(flowId: String, flowInstanceId: UUID): UUID {
+        requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
+        val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
+        val current = persister.load(flowInstanceId)
+            ?: throw IllegalArgumentException("Process '$flowInstanceId' for flow '$flowId' not found")
+        if (current.stageStatus == StageStatus.COMPLETED) return flowInstanceId
         enqueueTick(flowId, flowInstanceId)
         return flowInstanceId
     }

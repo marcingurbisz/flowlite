@@ -3,175 +3,68 @@ package io.flowlite.test
 import io.flowlite.api.Event
 import io.flowlite.api.EventStore
 import io.flowlite.api.ProcessData
-import io.flowlite.api.Stage
-import io.flowlite.api.StageStatus
 import io.flowlite.api.StatePersister
 import java.util.UUID
-import org.springframework.data.annotation.Id
-import org.springframework.data.annotation.Transient
-import org.springframework.data.domain.Persistable
-import org.springframework.data.relational.core.mapping.Column
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate
 import org.springframework.data.relational.core.mapping.Table
 import org.springframework.data.repository.CrudRepository
 
 // --- Process persistence sample ---
 
-@Table("order_confirmation")
-data class OrderConfirmationRow(
-    @Id
-    @Column("id")
-    val aggregateId: UUID,
-    val stage: String,
-    val stageStatus: String,
-    val orderNumber: String,
-    val confirmationType: String,
-    val customerName: String,
-    val isRemovedFromQueue: Boolean,
-    val isCustomerInformed: Boolean,
-    val confirmationTimestamp: String,
-) : Persistable<UUID> {
-    @Transient
-    private var isNewAggregate: Boolean = false
+interface OrderConfirmationRepository : CrudRepository<OrderConfirmation, UUID>
 
-    fun withNewAggregate(flag: Boolean): OrderConfirmationRow = apply { this.isNewAggregate = flag }
-
-    override fun getId(): UUID = aggregateId
-    override fun isNew(): Boolean = isNewAggregate
-}
-
-interface OrderConfirmationRepository : CrudRepository<OrderConfirmationRow, UUID>
-
-@Table("employee_onboarding")
-data class EmployeeOnboardingRow(
-    @Id
-    @Column("id")
-    val aggregateId: UUID,
-    val stage: String?,
-    val stageStatus: String,
-    val isOnboardingAutomated: Boolean,
-    val isContractSigned: Boolean,
-    val isExecutiveRole: Boolean,
-    val isSecurityClearanceRequired: Boolean,
-    val isFullOnboardingRequired: Boolean,
-    val isManagerOrDirectorRole: Boolean,
-    val isRemoteEmployee: Boolean,
-    val userCreatedInSystem: Boolean,
-    val employeeActivated: Boolean,
-    val securityClearanceUpdated: Boolean,
-    val departmentAccessSet: Boolean,
-    val documentsGenerated: Boolean,
-    val contractSentForSigning: Boolean,
-    val statusUpdatedInHr: Boolean,
-) : Persistable<UUID> {
-    @Transient
-    private var isNewAggregate: Boolean = false
-
-    fun withNewAggregate(flag: Boolean): EmployeeOnboardingRow = apply { this.isNewAggregate = flag }
-
-    override fun getId(): UUID = aggregateId
-    override fun isNew(): Boolean = isNewAggregate
-}
-
-interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboardingRow, UUID>
+interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboarding, UUID>
 
 class SpringDataOrderConfirmationPersister(
     private val repo: OrderConfirmationRepository,
+    private val template: JdbcAggregateTemplate,
 ) : StatePersister<OrderConfirmation> {
     override fun save(processData: ProcessData<OrderConfirmation>): Boolean {
-        val state = processData.state
-        val exists = repo.existsById(processData.flowInstanceId)
-        val row = OrderConfirmationRow(
-            aggregateId = processData.flowInstanceId,
-            stage = processData.stage.toString(),
-            stageStatus = processData.stageStatus.name,
-            orderNumber = state.orderNumber,
-            confirmationType = state.confirmationType.name,
-            customerName = state.customerName,
-            isRemovedFromQueue = state.isRemovedFromQueue,
-            isCustomerInformed = state.isCustomerInformed,
-            confirmationTimestamp = state.confirmationTimestamp,
-        ).withNewAggregate(!exists)
-        repo.save(row)
+        val stage = processData.stage as? OrderConfirmationStage
+            ?: error("Unexpected stage ${processData.stage}")
+        val entity = processData.state.copy(
+            id = processData.flowInstanceId,
+            stage = stage,
+            stageStatus = processData.stageStatus,
+        )
+        if (repo.existsById(processData.flowInstanceId)) repo.save(entity) else template.insert(entity)
         return true
     }
 
     override fun load(flowInstanceId: UUID): ProcessData<OrderConfirmation>? {
-        val row = repo.findById(flowInstanceId).orElse(null) ?: return null
-        val state = OrderConfirmation(
-            processId = flowInstanceId.toString(),
-            stage = OrderConfirmationStage.valueOf(row.stage),
-            orderNumber = row.orderNumber,
-            confirmationType = ConfirmationType.valueOf(row.confirmationType),
-            customerName = row.customerName,
-            isRemovedFromQueue = row.isRemovedFromQueue,
-            isCustomerInformed = row.isCustomerInformed,
-            confirmationTimestamp = row.confirmationTimestamp,
-        )
+        val entity = repo.findById(flowInstanceId).orElse(null) ?: return null
         return ProcessData(
             flowInstanceId = flowInstanceId,
-            state = state,
-            stage = OrderConfirmationStage.valueOf(row.stage) as Stage,
-            stageStatus = StageStatus.valueOf(row.stageStatus),
+            state = entity,
+            stage = entity.stage,
+            stageStatus = entity.stageStatus,
         )
     }
 }
 
 class SpringDataEmployeeOnboardingPersister(
     private val repo: EmployeeOnboardingRepository,
+    private val template: JdbcAggregateTemplate,
 ) : StatePersister<EmployeeOnboarding> {
     override fun save(processData: ProcessData<EmployeeOnboarding>): Boolean {
-        val s = processData.state
-        val exists = repo.existsById(processData.flowInstanceId)
-        repo.save(
-            EmployeeOnboardingRow(
-                aggregateId = processData.flowInstanceId,
-                stage = processData.stage?.toString(),
-                stageStatus = processData.stageStatus.name,
-                isOnboardingAutomated = s.isOnboardingAutomated,
-                isContractSigned = s.isContractSigned,
-                isExecutiveRole = s.isExecutiveRole,
-                isSecurityClearanceRequired = s.isSecurityClearanceRequired,
-                isFullOnboardingRequired = s.isFullOnboardingRequired,
-                isManagerOrDirectorRole = s.isManagerOrDirectorRole,
-                isRemoteEmployee = s.isRemoteEmployee,
-                userCreatedInSystem = s.userCreatedInSystem,
-                employeeActivated = s.employeeActivated,
-                securityClearanceUpdated = s.securityClearanceUpdated,
-                departmentAccessSet = s.departmentAccessSet,
-                documentsGenerated = s.documentsGenerated,
-                contractSentForSigning = s.contractSentForSigning,
-                statusUpdatedInHr = s.statusUpdatedInHR,
-            ).withNewAggregate(!exists),
+        val stage = (processData.stage as? EmployeeStage) ?: EmployeeStage.WaitingForContractSigned
+        val entity = processData.state.copy(
+            id = processData.flowInstanceId,
+            stage = stage,
+            stageStatus = processData.stageStatus,
         )
+        if (repo.existsById(processData.flowInstanceId)) repo.save(entity) else template.insert(entity)
         return true
     }
 
     override fun load(flowInstanceId: UUID): ProcessData<EmployeeOnboarding>? {
-        val row = repo.findById(flowInstanceId).orElse(null) ?: return null
-        val stage = row.stage?.let { EmployeeStage.valueOf(it) }
-        val state = EmployeeOnboarding(
-            processId = flowInstanceId.toString(),
-            stage = stage,
-            isOnboardingAutomated = row.isOnboardingAutomated,
-            isContractSigned = row.isContractSigned,
-            isExecutiveRole = row.isExecutiveRole,
-            isSecurityClearanceRequired = row.isSecurityClearanceRequired,
-            isFullOnboardingRequired = row.isFullOnboardingRequired,
-            isManagerOrDirectorRole = row.isManagerOrDirectorRole,
-            isRemoteEmployee = row.isRemoteEmployee,
-            userCreatedInSystem = row.userCreatedInSystem,
-            employeeActivated = row.employeeActivated,
-            securityClearanceUpdated = row.securityClearanceUpdated,
-            departmentAccessSet = row.departmentAccessSet,
-            documentsGenerated = row.documentsGenerated,
-            contractSentForSigning = row.contractSentForSigning,
-            statusUpdatedInHR = row.statusUpdatedInHr,
-        )
+        val entity = repo.findById(flowInstanceId).orElse(null) ?: return null
+        val stage = entity.stage ?: EmployeeStage.WaitingForContractSigned
         return ProcessData(
             flowInstanceId = flowInstanceId,
-            state = state,
-            stage = (stage ?: EmployeeStage.WaitingForContractSigned) as Stage,
-            stageStatus = StageStatus.valueOf(row.stageStatus),
+            state = entity.copy(stage = stage),
+            stage = stage,
+            stageStatus = entity.stageStatus,
         )
     }
 }
@@ -179,16 +72,22 @@ class SpringDataEmployeeOnboardingPersister(
 // --- Event store sample ---
 
 @Table("pending_events")
-data class PendingEventRow(
-    @Id val id: Long? = null,
+data class PendingEvent(
+    @org.springframework.data.annotation.Id
+    @org.springframework.data.relational.core.mapping.Column("id")
+    val id: UUID? = null,
+    @org.springframework.data.relational.core.mapping.Column("flow_id")
     val flowId: String,
+    @org.springframework.data.relational.core.mapping.Column("flow_instance_id")
     val flowInstanceId: UUID,
+    @org.springframework.data.relational.core.mapping.Column("event_type")
     val eventType: String,
+    @org.springframework.data.relational.core.mapping.Column("event_value")
     val eventValue: String,
 )
 
-interface PendingEventRepository : CrudRepository<PendingEventRow, Long> {
-    fun findByFlowIdAndFlowInstanceId(flowId: String, flowInstanceId: UUID): List<PendingEventRow>
+interface PendingEventRepository : CrudRepository<PendingEvent, UUID> {
+    fun findByFlowIdAndFlowInstanceId(flowId: String, flowInstanceId: UUID): List<PendingEvent>
 }
 
 class SpringDataEventStore(
@@ -198,12 +97,13 @@ class SpringDataEventStore(
         val type = event::class.qualifiedName ?: event::class.java.name
         val value = (event as? Enum<*>)?.name ?: event.toString()
         repo.save(
-            PendingEventRow(
+            PendingEvent(
+                id = null,
                 flowId = flowId,
                 flowInstanceId = flowInstanceId,
                 eventType = type,
                 eventValue = value,
-            )
+            ),
         )
     }
 

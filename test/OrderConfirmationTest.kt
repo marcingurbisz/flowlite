@@ -17,8 +17,8 @@ class OrderConfirmationTest : BehaviorSpec({
     given("an order confirmation flow") {
         val persistence = TestPersistence()
         createOrderTables(persistence.dataSource)
-        createEventTables(persistence.dataSource)
-        createSchedulerTables(persistence.dataSource)
+        createOrderEventTables(persistence.dataSource)
+        createOrderSchedulerTables(persistence.dataSource)
 
         val flow = createOrderConfirmationFlow()
         val generator = MermaidGenerator()
@@ -264,7 +264,7 @@ private fun createOrderTables(dataSource: DataSource) {
     )
 }
 
-private fun createEventTables(dataSource: DataSource) {
+private fun createOrderEventTables(dataSource: DataSource) {
     val jdbc = NamedParameterJdbcTemplate(dataSource)
     jdbc.jdbcTemplate.execute(
         """
@@ -279,7 +279,7 @@ private fun createEventTables(dataSource: DataSource) {
     )
 }
 
-private fun createSchedulerTables(dataSource: DataSource) {
+private fun createOrderSchedulerTables(dataSource: DataSource) {
     val jdbc = NamedParameterJdbcTemplate(dataSource)
     jdbc.jdbcTemplate.execute(
         """

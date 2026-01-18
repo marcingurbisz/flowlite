@@ -17,8 +17,8 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
     given("an employee onboarding flow") {
         val persistence = TestPersistence()
         createEmployeeTables(persistence.dataSource)
-        createEventTables(persistence.dataSource)
-        createSchedulerTables(persistence.dataSource)
+        createEmployeeEventTables(persistence.dataSource)
+        createEmployeeSchedulerTables(persistence.dataSource)
 
         When("generating a mermaid diagram") {
             val flow = createEmployeeOnboardingFlow()
@@ -285,7 +285,7 @@ private fun createEmployeeTables(dataSource: DataSource) {
     )
 }
 
-private fun createEventTables(dataSource: DataSource) {
+private fun createEmployeeEventTables(dataSource: DataSource) {
     val jdbc = NamedParameterJdbcTemplate(dataSource)
     jdbc.jdbcTemplate.execute(
         """
@@ -300,7 +300,7 @@ private fun createEventTables(dataSource: DataSource) {
     )
 }
 
-private fun createSchedulerTables(dataSource: DataSource) {
+private fun createEmployeeSchedulerTables(dataSource: DataSource) {
     val jdbc = NamedParameterJdbcTemplate(dataSource)
     jdbc.jdbcTemplate.execute(
         """

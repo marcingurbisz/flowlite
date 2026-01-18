@@ -2,6 +2,7 @@ package io.flowlite.test
 
 import io.flowlite.api.Event
 import io.flowlite.api.EventStore
+import io.flowlite.api.StoredEvent
 import org.springframework.data.annotation.Id
 import java.util.UUID
 import org.springframework.data.repository.CrudRepository
@@ -18,13 +19,6 @@ data class PendingEvent(
 
 interface PendingEventRepository : CrudRepository<PendingEvent, UUID> {
     fun findByFlowIdAndFlowInstanceId(flowId: String, flowInstanceId: UUID): List<PendingEvent>
-    fun deleteByIdAndFlowIdAndFlowInstanceIdAndEventTypeAndEventValue(
-        id: UUID,
-        flowId: String,
-        flowInstanceId: UUID,
-        eventType: String,
-        eventValue: String,
-    ): Long
 }
 
 class SpringDataEventStore(
@@ -44,7 +38,7 @@ class SpringDataEventStore(
         )
     }
 
-    override fun poll(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): Event? {
+    override fun peek(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): StoredEvent? {
         if (candidates.isEmpty()) return null
         val rows = repo.findByFlowIdAndFlowInstanceId(flowId, flowInstanceId)
         val candidateLookup = candidates.associateBy {
@@ -52,21 +46,17 @@ class SpringDataEventStore(
             val value = (it as? Enum<*>)?.name ?: it.toString()
             type to value
         }
-        for (row in rows) {
-            val key = row.eventType to row.eventValue
-            val candidate = candidateLookup[key] ?: continue
-            val id = row.id ?: continue
-            val deleted = repo.deleteByIdAndFlowIdAndFlowInstanceIdAndEventTypeAndEventValue(
-                id = id,
-                flowId = flowId,
-                flowInstanceId = flowInstanceId,
-                eventType = row.eventType,
-                eventValue = row.eventValue,
-            )
-            if (deleted == 1L) {
-                return candidate
-            }
-        }
-        return null
+        val match = rows.firstOrNull { row -> candidateLookup.containsKey(row.eventType to row.eventValue) }
+            ?: return null
+        val id = match.id ?: return null
+        val event = candidateLookup[match.eventType to match.eventValue] ?: return null
+        return StoredEvent(id = id, event = event)
+    }
+
+    override fun delete(flowId: String, flowInstanceId: UUID, eventId: UUID): Boolean {
+        val row = repo.findById(eventId).orElse(null) ?: return false
+        if (row.flowId != flowId || row.flowInstanceId != flowInstanceId) return false
+        repo.deleteById(eventId)
+        return true
     }
 }

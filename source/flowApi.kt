@@ -69,11 +69,18 @@ interface StatePersister<T : Any> {
  */
 interface EventStore {
     fun append(flowId: String, flowInstanceId: UUID, event: Event)
-    fun poll(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): Event?
+    fun peek(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): StoredEvent?
+    fun delete(flowId: String, flowInstanceId: UUID, eventId: UUID): Boolean
 }
 
+data class StoredEvent(
+    val id: UUID,
+    val event: Event,
+)
+
 interface TickScheduler {
-    fun schedule(flowId: String, flowInstanceId: UUID, dispatch: () -> Unit)
+    fun setTickHandler(handler: (String, UUID) -> Unit)
+    fun scheduleTick(flowId: String, flowInstanceId: UUID)
 }
 
 data class Flow<T : Any>(
@@ -300,6 +307,9 @@ class FlowEngine(
     private val eventStore: EventStore,
     private val tickScheduler: TickScheduler,
 ) {
+    init {
+        tickScheduler.setTickHandler(::processTick)
+    }
     private val flows = mutableMapOf<String, Flow<Any>>()
     private val persisters = mutableMapOf<String, StatePersister<Any>>()
 
@@ -372,7 +382,7 @@ class FlowEngine(
     }
 
     private fun enqueueTick(flowId: String, flowInstanceId: UUID) {
-        tickScheduler.schedule(flowId, flowInstanceId) { processTick(flowId, flowInstanceId) }
+        tickScheduler.scheduleTick(flowId, flowInstanceId)
     }
 
     private fun processTick(flowId: String, flowInstanceId: UUID) {
@@ -460,14 +470,18 @@ class FlowEngine(
         persister: StatePersister<Any>,
         flowInstanceId: UUID,
     ): Boolean {
-        val matching = eventStore.poll(flowId, flowInstanceId, def.eventHandlers.keys) ?: return false
-        val handler = def.eventHandlers[matching] ?: return false
+        val stored = eventStore.peek(flowId, flowInstanceId, def.eventHandlers.keys) ?: return false
+        val handler = def.eventHandlers[stored.event] ?: return false
         val targetStage = handler.targetStage ?: handler.targetCondition?.let { ch ->
             resolveConditionInitialStage(ch, pd.state)
         }
         ?: throw FlowDefinitionException("Event handler did not resolve to a stage from ${pd.stage}")
         val next = pd.copy(stage = targetStage, stageStatus = StageStatus.PENDING)
-        return persister.save(next) is SaveResult.Saved
+        val saved = persister.save(next) is SaveResult.Saved
+        if (saved) {
+            eventStore.delete(flowId, flowInstanceId, stored.id)
+        }
+        return saved
     }
 
     /**

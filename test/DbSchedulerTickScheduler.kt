@@ -10,7 +10,7 @@ import java.time.Duration
 import java.util.UUID
 import javax.sql.DataSource
 
-class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler {
+class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler, AutoCloseable {
     private val taskName = "flowlite-tick"
     private var tickHandler: ((String, UUID) -> Unit)? = null
 
@@ -31,6 +31,7 @@ class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler {
         .build()
 
     init {
+        createScheduledTasksTable(dataSource)
         scheduler.start()
     }
 
@@ -44,7 +45,7 @@ class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler {
         scheduler.schedule(task.schedulableInstance(instanceId, data))
     }
 
-    fun shutdown() {
+    override fun close() {
         scheduler.stop()
     }
 }

@@ -50,13 +50,17 @@ class TestPersistence {
     private val orderRepo = context.getBean(OrderConfirmationRepository::class.java)
     private val onboardingRepo = context.getBean(EmployeeOnboardingRepository::class.java)
     private val eventRepo = context.getBean(PendingEventRepository::class.java)
+    private val scheduler = DbSchedulerTickScheduler(dataSource)
 
     fun orderPersister(): StatePersister<OrderConfirmation> = SpringDataOrderConfirmationPersister(orderRepo)
     fun onboardingPersister(): StatePersister<EmployeeOnboarding> = SpringDataEmployeeOnboardingPersister(onboardingRepo)
     fun eventStore(): EventStore = SpringDataEventStore(eventRepo)
-    fun tickScheduler(): DbSchedulerTickScheduler = DbSchedulerTickScheduler(dataSource)
+    fun tickScheduler(): DbSchedulerTickScheduler = scheduler
 
-    fun close() = context.close()
+    fun close() {
+        scheduler.close()
+        context.close()
+    }
 }
 
 class SnakeCaseNamingStrategy : NamingStrategy {

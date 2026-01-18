@@ -70,7 +70,7 @@ interface StatePersister<T : Any> {
 interface EventStore {
     fun append(flowId: String, flowInstanceId: UUID, event: Event)
     fun peek(flowId: String, flowInstanceId: UUID, candidates: Collection<Event>): StoredEvent?
-    fun delete(flowId: String, flowInstanceId: UUID, eventId: UUID): Boolean
+    fun delete(eventId: UUID): Boolean
 }
 
 data class StoredEvent(
@@ -479,7 +479,7 @@ class FlowEngine(
         val next = pd.copy(stage = targetStage, stageStatus = StageStatus.PENDING)
         val saved = persister.save(next) is SaveResult.Saved
         if (saved) {
-            eventStore.delete(flowId, flowInstanceId, stored.id)
+            eventStore.delete(stored.id)
         }
         return saved
     }

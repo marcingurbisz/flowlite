@@ -53,10 +53,9 @@ class SpringDataEventStore(
         return StoredEvent(id = id, event = event)
     }
 
-    override fun delete(flowId: String, flowInstanceId: UUID, eventId: UUID): Boolean {
+    override fun delete(eventId: UUID): Boolean {
         val row = repo.findById(eventId).orElse(null) ?: return false
-        if (row.flowId != flowId || row.flowInstanceId != flowInstanceId) return false
-        repo.deleteById(eventId)
+        repo.deleteById(row.id!!)
         return true
     }
 }

@@ -30,8 +30,7 @@ class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler, AutoClos
         .enableImmediateExecution()
         .build()
 
-    init {
-        createScheduledTasksTable(dataSource)
+    fun start() {
         scheduler.start()
     }
 

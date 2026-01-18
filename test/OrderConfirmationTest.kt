@@ -1,6 +1,8 @@
 package io.flowlite.test
 
 import io.flowlite.api.*
+import io.flowlite.test.OrderConfirmationEvent.ConfirmedDigitally
+import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.*
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain
@@ -8,18 +10,16 @@ import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.Version
 import org.springframework.data.repository.CrudRepository
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.slf4j.LoggerFactory
 import java.util.UUID
-import javax.sql.DataSource
 
 class OrderConfirmationTest : BehaviorSpec({
-    given("an order confirmation flow") {
-        val persistence = TestPersistence()
-        createOrderTables(persistence.dataSource)
-        createOrderEventTables(persistence.dataSource)
-        createScheduledTasksTable(persistence.dataSource)
+    extension(TestApplicationExtension)
 
+    val engine = TestApplicationExtension.engine
+    val persister = TestApplicationExtension.orderPersister
+
+    given("an order confirmation flow") {
         val flow = createOrderConfirmationFlow()
         val generator = MermaidGenerator()
 
@@ -65,11 +65,6 @@ class OrderConfirmationTest : BehaviorSpec({
             }
         }
 
-        val eventStore = persistence.eventStore()
-        val engine = FlowEngine(eventStore = eventStore, tickScheduler = persistence.tickScheduler())
-        val persister = persistence.orderPersister()
-        engine.registerFlow("order-confirmation", createOrderConfirmationFlow(), persister)
-
         `when`("processing digital confirmation path (engine generates id)") {
             val processId = engine.startProcess(
                 flowId = "order-confirmation",
@@ -89,7 +84,7 @@ class OrderConfirmationTest : BehaviorSpec({
             }
 
             then("it completes after digital confirmation event") {
-                engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedDigitally)
+                engine.sendEvent("order-confirmation", processId, ConfirmedDigitally)
                 awaitStatus(
                     fetch = { engine.getStatus("order-confirmation", processId) },
                     expected = InformingCustomer to StageStatus.COMPLETED,
@@ -120,7 +115,7 @@ class OrderConfirmationTest : BehaviorSpec({
                 flowInstanceId = processId,
             )
 
-            engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedPhysically)
+            engine.sendEvent("order-confirmation", processId, ConfirmedPhysically)
 
             then("it informs customer and completes") {
                 awaitStatus(
@@ -233,48 +228,12 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {
-            waitFor(OrderConfirmationEvent.ConfirmedDigitally)
+            waitFor(ConfirmedDigitally)
                 .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 .stage(InformingCustomer, ::informCustomer)
-            waitFor(OrderConfirmationEvent.ConfirmedPhysically).join(InformingCustomer)
+            waitFor(ConfirmedPhysically).join(InformingCustomer)
         }
         .end()
         .build()
 }
 // FLOW-DEFINITION-END
-
-
-private fun createOrderTables(dataSource: DataSource) {
-    val jdbc = NamedParameterJdbcTemplate(dataSource)
-    jdbc.jdbcTemplate.execute(
-        """
-        create table if not exists order_confirmation (
-            id uuid default random_uuid() primary key,
-            version bigint not null default 0,
-            stage varchar(128) not null,
-            stage_status varchar(32) not null default 'PENDING',
-            order_number varchar(128) not null,
-            confirmation_type varchar(32) not null,
-            customer_name varchar(128) not null,
-            is_removed_from_queue boolean not null,
-            is_customer_informed boolean not null,
-            confirmation_timestamp varchar(64) not null
-        );
-        """.trimIndent(),
-    )
-}
-
-private fun createOrderEventTables(dataSource: DataSource) {
-    val jdbc = NamedParameterJdbcTemplate(dataSource)
-    jdbc.jdbcTemplate.execute(
-        """
-        create table if not exists pending_event (
-            id uuid default random_uuid() primary key,
-            flow_id varchar(128) not null,
-            flow_instance_id uuid not null,
-            event_type varchar(256) not null,
-            event_value varchar(256) not null
-        );
-        """.trimIndent(),
-    )
-}

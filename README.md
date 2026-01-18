@@ -295,7 +295,7 @@ stateDiagram-v2
 
 ### Runtime & Execution Model
 
-1. Starting a flow instance persists an initial domain row and enqueues a Tick. Domain row includes initial stage and stage status `PENDING'. It's also possible to pre-create the row earlier with your business data and later start processing by providing id.
+1. Starting a flow instance persists an initial domain row and enqueues a Tick. Domain row includes initial stage and stage status `PENDING`. It's also possible to pre-create the row earlier with your business data and later start processing by providing id.
 2. Tick processing loop:
      - Load process state (stage + status) via `StatePersister`.
      - If status `ERROR` → stop (await retry).
@@ -324,7 +324,7 @@ FlowLite does not impose a generic `process_instance` table. Each domain owns it
 - Domain attributes (e.g. customer data)
 - `created_at`, `updated_at`(optionally)
 
-`pending_events` is a FlowLite table:
+`pending_events` is client-managed persistence used by your `EventStore` implementation:
 - `id` (PK)
 - `process_id`
 - `event_type`

@@ -1,7 +1,6 @@
 package io.flowlite.test
 
 import io.flowlite.api.*
-import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.*
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain
@@ -9,8 +8,129 @@ import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.Version
 import org.springframework.data.repository.CrudRepository
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.slf4j.LoggerFactory
 import java.util.UUID
+import javax.sql.DataSource
+
+class OrderConfirmationTest : BehaviorSpec({
+    given("an order confirmation flow") {
+        val persistence = TestPersistence()
+        createOrderTables(persistence.dataSource)
+        createEventTables(persistence.dataSource)
+        createSchedulerTables(persistence.dataSource)
+
+        val flow = createOrderConfirmationFlow()
+        val generator = MermaidGenerator()
+
+        `when`("generating a mermaid diagram") {
+            val diagram = generator.generateDiagram("order-confirmation", flow)
+
+            println("\n=== ORDER CONFIRMATION FLOW DIAGRAM ===")
+            println(diagram)
+            println("=== END DIAGRAM ===\n")
+
+            then("should be a valid state diagram") {
+                diagram shouldContain "stateDiagram-v2"
+                diagram shouldContain "[*] --> InitializingConfirmation"
+            }
+
+            then("should contain all stages") {
+                diagram shouldContain "InitializingConfirmation"
+                diagram shouldContain "WaitingForConfirmation"
+                diagram shouldContain "RemovingFromConfirmationQueue"
+                diagram shouldContain "InformingCustomer"
+            }
+
+            then("should show automatic progressions") {
+                diagram shouldContain "InitializingConfirmation --> WaitingForConfirmation"
+                diagram shouldContain "RemovingFromConfirmationQueue --> InformingCustomer"
+            }
+
+            then("should contain event transitions") {
+                diagram shouldContain "onEvent ConfirmedDigitally"
+                diagram shouldContain "onEvent ConfirmedPhysically"
+                diagram shouldContain "WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally"
+                diagram shouldContain "WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically"
+            }
+
+            then("should have terminal state") {
+                diagram shouldContain "InformingCustomer --> [*]"
+            }
+
+            then("should include method names in stage descriptions") {
+                diagram shouldContain "InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()"
+                diagram shouldContain "RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()"
+                diagram shouldContain "InformingCustomer: InformingCustomer informCustomer()"
+            }
+        }
+
+        val eventStore = persistence.eventStore()
+        val engine = FlowEngine(eventStore = eventStore, tickScheduler = persistence.tickScheduler())
+        val persister = persistence.orderPersister()
+        engine.registerFlow("order-confirmation", createOrderConfirmationFlow(), persister)
+
+        `when`("processing digital confirmation path (engine generates id)") {
+            val processId = engine.startProcess(
+                flowId = "order-confirmation",
+                initialState = OrderConfirmation(
+                    stage = InitializingConfirmation,
+                    orderNumber = "ORD-1",
+                    confirmationType = ConfirmationType.DIGITAL,
+                    customerName = "Alice",
+                ),
+            )
+
+            then("it waits for confirmation event") {
+                awaitStatus(
+                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    expected = WaitingForConfirmation to StageStatus.PENDING,
+                )
+            }
+
+            then("it completes after digital confirmation event") {
+                engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedDigitally)
+                awaitStatus(
+                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    expected = InformingCustomer to StageStatus.COMPLETED,
+                )
+            }
+        }
+
+        `when`("processing physical confirmation path (caller-supplied id)") {
+            val processId = UUID.randomUUID()
+            val prePersisted = OrderConfirmation(
+                id = processId,
+                stage = InitializingConfirmation,
+                orderNumber = "ORD-2",
+                confirmationType = ConfirmationType.PHYSICAL,
+                customerName = "Bob",
+            )
+            persister.save(
+                ProcessData(
+                    flowInstanceId = processId,
+                    state = prePersisted,
+                    stage = InitializingConfirmation,
+                    stageStatus = StageStatus.PENDING,
+                ),
+            )
+
+            engine.startProcess(
+                flowId = "order-confirmation",
+                flowInstanceId = processId,
+            )
+
+            engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedPhysically)
+
+            then("it informs customer and completes") {
+                awaitStatus(
+                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    expected = InformingCustomer to StageStatus.COMPLETED,
+                )
+            }
+        }
+    }
+})
 
 enum class OrderConfirmationStage : Stage {
     InitializingConfirmation,
@@ -116,132 +236,75 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
             waitFor(OrderConfirmationEvent.ConfirmedDigitally)
                 .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 .stage(InformingCustomer, ::informCustomer)
-            waitFor(ConfirmedPhysically).join(InformingCustomer)
+            waitFor(OrderConfirmationEvent.ConfirmedPhysically).join(InformingCustomer)
         }
         .end()
         .build()
 }
 // FLOW-DEFINITION-END
 
-/**
- * Tests for the order confirmation flow definition and diagram generation.
- */
-class OrderConfirmationTest : BehaviorSpec({
 
-    given("an order confirmation flow") {
-        val flow = createOrderConfirmationFlow()
-        val generator = MermaidGenerator()
+private fun createOrderTables(dataSource: DataSource) {
+    val jdbc = NamedParameterJdbcTemplate(dataSource)
+    jdbc.jdbcTemplate.execute(
+        """
+        create table if not exists order_confirmation (
+            id uuid default random_uuid() primary key,
+            version bigint not null default 0,
+            stage varchar(128) not null,
+            stage_status varchar(32) not null default 'PENDING',
+            order_number varchar(128) not null,
+            confirmation_type varchar(32) not null,
+            customer_name varchar(128) not null,
+            is_removed_from_queue boolean not null,
+            is_customer_informed boolean not null,
+            confirmation_timestamp varchar(64) not null
+        );
+        """.trimIndent(),
+    )
+}
 
-        `when`("generating a mermaid diagram") {
-            val diagram = generator.generateDiagram("order-confirmation", flow)
-            
-            println("\n=== ORDER CONFIRMATION FLOW DIAGRAM ===")
-            println(diagram)
-            println("=== END DIAGRAM ===\n")
+private fun createEventTables(dataSource: DataSource) {
+    val jdbc = NamedParameterJdbcTemplate(dataSource)
+    jdbc.jdbcTemplate.execute(
+        """
+        create table if not exists pending_event (
+            id uuid default random_uuid() primary key,
+            flow_id varchar(128) not null,
+            flow_instance_id uuid not null,
+            event_type varchar(256) not null,
+            event_value varchar(256) not null
+        );
+        """.trimIndent(),
+    )
+}
 
-            then("should be a valid state diagram") {
-                diagram shouldContain "stateDiagram-v2"
-                diagram shouldContain "[*] --> InitializingConfirmation"
-            }
+private fun createSchedulerTables(dataSource: DataSource) {
+    val jdbc = NamedParameterJdbcTemplate(dataSource)
+    jdbc.jdbcTemplate.execute(
+        """
+        create table if not exists scheduled_tasks (
+            task_name varchar(100) not null,
+            task_instance varchar(100) not null,
+            task_data blob,
+            execution_time timestamp not null,
+            picked boolean not null,
+            picked_by varchar(50),
+            last_success timestamp,
+            last_failure timestamp,
+            consecutive_failures int,
+            last_heartbeat timestamp,
+            version bigint not null,
+            created_at timestamp default current_timestamp not null,
+            last_updated_at timestamp default current_timestamp not null,
+            primary key (task_name, task_instance)
+        );
+        """.trimIndent(),
+    )
 
-            then("should contain all stages") {
-                diagram shouldContain "InitializingConfirmation"
-                diagram shouldContain "WaitingForConfirmation"
-                diagram shouldContain "RemovingFromConfirmationQueue"
-                diagram shouldContain "InformingCustomer"
-            }
-
-            then("should show automatic progressions") {
-                diagram shouldContain "InitializingConfirmation --> WaitingForConfirmation"
-                diagram shouldContain "RemovingFromConfirmationQueue --> InformingCustomer"
-            }
-
-            then("should contain event transitions") {
-                diagram shouldContain "onEvent ConfirmedDigitally"
-                diagram shouldContain "onEvent ConfirmedPhysically"
-                diagram shouldContain "WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally"
-                diagram shouldContain "WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically"
-            }
-
-            then("should have terminal state") {
-                diagram shouldContain "InformingCustomer --> [*]"
-            }
-
-            then("should include method names in stage descriptions") {
-                diagram shouldContain "InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()"
-                diagram shouldContain "RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()"
-                diagram shouldContain "InformingCustomer: InformingCustomer informCustomer()"
-            }
-        }
-    }
-})
-
-class OrderConfirmationEngineTest : BehaviorSpec({
-    given("order confirmation flow") {
-        val persistence = TestPersistence()
-        val eventStore = persistence.eventStore()
-        val engine = FlowEngine(eventStore = eventStore, tickScheduler = persistence.tickScheduler())
-        val persister = persistence.orderPersister()
-        engine.registerFlow("order-confirmation", createOrderConfirmationFlow(), persister)
-
-        `when`("processing digital confirmation path (engine generates id)") {
-            val processId = engine.startProcess(
-                flowId = "order-confirmation",
-                initialState = OrderConfirmation(
-                    stage = InitializingConfirmation,
-                    orderNumber = "ORD-1",
-                    confirmationType = ConfirmationType.DIGITAL,
-                    customerName = "Alice",
-                ),
-            )
-
-            then("it waits for confirmation event") {
-                awaitStatus(
-                    fetch = { engine.getStatus("order-confirmation", processId) },
-                    expected = WaitingForConfirmation to StageStatus.PENDING,
-                )
-            }
-
-            then("it completes after digital confirmation event") {
-                engine.sendEvent("order-confirmation", processId, OrderConfirmationEvent.ConfirmedDigitally)
-                awaitStatus(
-                    fetch = { engine.getStatus("order-confirmation", processId) },
-                    expected = InformingCustomer to StageStatus.COMPLETED,
-                )
-            }
-        }
-
-        `when`("processing physical confirmation path (caller-supplied id)") {
-            val processId = UUID.randomUUID()
-            val prePersisted = OrderConfirmation(
-                id = processId,
-                stage = InitializingConfirmation,
-                orderNumber = "ORD-2",
-                confirmationType = ConfirmationType.PHYSICAL,
-                customerName = "Bob",
-            )
-            persister.save(
-                ProcessData(
-                    flowInstanceId = processId,
-                    state = prePersisted,
-                    stage = InitializingConfirmation,
-                    stageStatus = StageStatus.PENDING,
-                ),
-            )
-
-            engine.startProcess(
-                flowId = "order-confirmation",
-                flowInstanceId = processId,
-            )
-
-            engine.sendEvent("order-confirmation", processId, ConfirmedPhysically)
-
-            then("it informs customer and completes") {
-                awaitStatus(
-                    fetch = { engine.getStatus("order-confirmation", processId) },
-                    expected = InformingCustomer to StageStatus.COMPLETED,
-                )
-            }
-        }
-    }
-})
+    jdbc.jdbcTemplate.execute(
+        """
+        create index if not exists idx_scheduled_tasks_execution_time on scheduled_tasks(execution_time);
+        """.trimIndent(),
+    )
+}

@@ -18,6 +18,13 @@ data class PendingEvent(
 
 interface PendingEventRepository : CrudRepository<PendingEvent, UUID> {
     fun findByFlowIdAndFlowInstanceId(flowId: String, flowInstanceId: UUID): List<PendingEvent>
+    fun deleteByIdAndFlowIdAndFlowInstanceIdAndEventTypeAndEventValue(
+        id: UUID,
+        flowId: String,
+        flowInstanceId: UUID,
+        eventType: String,
+        eventValue: String,
+    ): Long
 }
 
 class SpringDataEventStore(
@@ -45,9 +52,21 @@ class SpringDataEventStore(
             val value = (it as? Enum<*>)?.name ?: it.toString()
             type to value
         }
-        val match = rows.firstOrNull { row -> candidateLookup.containsKey(row.eventType to row.eventValue) }
-            ?: return null
-        match.id?.let { repo.deleteById(it) }
-        return candidateLookup[match.eventType to match.eventValue]
+        for (row in rows) {
+            val key = row.eventType to row.eventValue
+            val candidate = candidateLookup[key] ?: continue
+            val id = row.id ?: continue
+            val deleted = repo.deleteByIdAndFlowIdAndFlowInstanceIdAndEventTypeAndEventValue(
+                id = id,
+                flowId = flowId,
+                flowInstanceId = flowInstanceId,
+                eventType = row.eventType,
+                eventValue = row.eventValue,
+            )
+            if (deleted == 1L) {
+                return candidate
+            }
+        }
+        return null
     }
 }

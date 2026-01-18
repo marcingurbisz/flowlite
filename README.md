@@ -50,7 +50,7 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {
-            waitFor(OrderConfirmationEvent.ConfirmedDigitally)
+            waitFor(ConfirmedDigitally)
                 .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 .stage(InformingCustomer, ::informCustomer)
             waitFor(ConfirmedPhysically).join(InformingCustomer)
@@ -265,7 +265,7 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {
-            waitFor(OrderConfirmationEvent.ConfirmedDigitally)
+            waitFor(ConfirmedDigitally)
                 .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 .stage(InformingCustomer, ::informCustomer)
             waitFor(ConfirmedPhysically).join(InformingCustomer)

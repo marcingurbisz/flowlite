@@ -351,6 +351,8 @@ class FlowEngine(
     }
 
     fun sendEvent(flowId: String, flowInstanceId: UUID, event: Event) {
+        requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
+        requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         eventStore.append(flowId, flowInstanceId, event)
         enqueueTick(flowId, flowInstanceId)
     }

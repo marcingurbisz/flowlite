@@ -358,7 +358,12 @@ class FlowEngine(
     }
 
     fun retry(flowId: String, flowInstanceId: UUID) {
-        enqueueTick(flowId, flowInstanceId)
+        val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
+        val current = persister.load(flowInstanceId)
+            ?: throw IllegalArgumentException("Process '$flowInstanceId' for flow '$flowId' not found")
+        if (current.stageStatus == StageStatus.ERROR) {
+            enqueueTick(flowId, flowInstanceId)
+        }
     }
 
     fun getStatus(flowId: String, flowInstanceId: UUID): Pair<Stage, StageStatus>? {

@@ -11,6 +11,8 @@ import org.springframework.data.repository.CrudRepository
 import org.slf4j.LoggerFactory
 import java.util.UUID
 
+const val EMPLOYEE_ONBOARDING_FLOW_ID = "employee-onboarding"
+
 class EmployeeOnboardingFlowTest : BehaviorSpec({
     extension(TestApplicationExtension)
 
@@ -31,7 +33,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
     given("employee onboarding flow - manual path") {
         val processId = engine.startProcess(
-            flowId = "employee-onboarding",
+            flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
             initialState = EmployeeOnboarding(
                 stage = WaitingForContractSigned,
                 isOnboardingAutomated = false,
@@ -43,18 +45,18 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
         then("it starts at waiting for contract signature") {
             awaitStatus(
-                fetch = { engine.getStatus("employee-onboarding", processId) },
+                fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, processId) },
                 expected = WaitingForContractSigned to StageStatus.PENDING,
             )
         }
 
         `when`("contract is signed and onboarding completes") {
-            engine.sendEvent("employee-onboarding", processId, ContractSigned)
-            engine.sendEvent("employee-onboarding", processId, OnboardingComplete)
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, processId, ContractSigned)
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, processId, OnboardingComplete)
 
             then("it finishes in HR system update stage") {
                 awaitStatus(
-                    fetch = { engine.getStatus("employee-onboarding", processId) },
+                    fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, processId) },
                     expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
                 )
             }

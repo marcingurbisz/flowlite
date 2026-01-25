@@ -13,6 +13,8 @@ import org.springframework.data.repository.CrudRepository
 import org.slf4j.LoggerFactory
 import java.util.UUID
 
+const val ORDER_CONFIRMATION_FLOW_ID = "order-confirmation"
+
 class OrderConfirmationTest : BehaviorSpec({
     extension(TestApplicationExtension)
 
@@ -24,7 +26,7 @@ class OrderConfirmationTest : BehaviorSpec({
         val generator = MermaidGenerator()
 
         `when`("generating a mermaid diagram") {
-            val diagram = generator.generateDiagram("order-confirmation", flow)
+            val diagram = generator.generateDiagram(ORDER_CONFIRMATION_FLOW_ID, flow)
 
             println("\n=== ORDER CONFIRMATION FLOW DIAGRAM ===")
             println(diagram)
@@ -67,7 +69,7 @@ class OrderConfirmationTest : BehaviorSpec({
 
         `when`("processing digital confirmation path (engine generates id)") {
             val processId = engine.startProcess(
-                flowId = "order-confirmation",
+                flowId = ORDER_CONFIRMATION_FLOW_ID,
                 initialState = OrderConfirmation(
                     stage = InitializingConfirmation,
                     orderNumber = "ORD-1",
@@ -78,15 +80,15 @@ class OrderConfirmationTest : BehaviorSpec({
 
             then("it waits for confirmation event") {
                 awaitStatus(
-                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, processId) },
                     expected = WaitingForConfirmation to StageStatus.PENDING,
                 )
             }
 
             then("it completes after digital confirmation event") {
-                engine.sendEvent("order-confirmation", processId, ConfirmedDigitally)
+                engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, processId, ConfirmedDigitally)
                 awaitStatus(
-                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, processId) },
                     expected = InformingCustomer to StageStatus.COMPLETED,
                 )
             }
@@ -111,15 +113,15 @@ class OrderConfirmationTest : BehaviorSpec({
             )
 
             engine.startProcess(
-                flowId = "order-confirmation",
+                flowId = ORDER_CONFIRMATION_FLOW_ID,
                 flowInstanceId = processId,
             )
 
-            engine.sendEvent("order-confirmation", processId, ConfirmedPhysically)
+            engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, processId, ConfirmedPhysically)
 
             then("it informs customer and completes") {
                 awaitStatus(
-                    fetch = { engine.getStatus("order-confirmation", processId) },
+                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, processId) },
                     expected = InformingCustomer to StageStatus.COMPLETED,
                 )
             }

@@ -20,8 +20,6 @@ open class TestApplication
 
 object Beans {
     fun registrar(): BeanRegistrar = BeanRegistrarDsl {
-    val ORDER_CONFIRMATION_FLOW_ID = "order-confirmation"
-    val EMPLOYEE_ONBOARDING_FLOW_ID = "employee-onboarding"
         registerBean<NamingStrategy> {
             SnakeCaseNamingStrategy()
         }

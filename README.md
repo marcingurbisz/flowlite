@@ -315,23 +315,21 @@ These boundaries keep side effects out of long-lived transactions and make retri
 
 ### Persistence Approach
 
-FlowLite does not impose a generic `process_instance` table. Each domain owns its table (e.g. `ORDER_CONFIRMATION`) containing business columns plus engine columns:
+Each process provides its owns its own persistence for business columns plus engine columns:
 
 - `process_id` (UUID optionally PK)
 - `stage` (VARCHAR)
 - `stage_status` (VARCHAR)
 - (Optionally a `version` column if your `StatePersister` uses it for optimistic locking internally)
 - Domain attributes (e.g. customer data)
-- `created_at`, `updated_at`(optionally)
+- `created_at`, `updated_at` (optionally)
 
-`pending_events` is client-managed persistence used by your `EventStore` implementation:
-- `id` (PK)
-- `process_id`
-- `event_type`
-- `created_at`
-- `consumed_at` (nullable)
+TODO: link to example from tests
 
+Client using flowlite also needs to provide persistence for EventStore. 
 Events sent before the process reaches a waiting stage stay pending until eligible.
+
+TODO: link to examplare implementation of eventstore from tests.
 
 ### StatePersister Contract
 
@@ -354,7 +352,7 @@ The engine treats `SaveResult.Conflict` as a benign no-op (common with duplicate
 
 - `registerFlow(flowId, stateClass, flow, statePersister)`
 - `startProcess(flowId, initialState)` – creates new flow instance (engine generates `flowInstanceId`, a UUID) and enqueues a Tick
-- `startProcess(flowId, flowInstanceId, initialState)` – starts processing for an already persisted domain row using a caller-provided UUID
+- `startProcess(flowId, flowInstanceId)` – starts processing for an already persisted domain row using a caller-provided UUID
 - `sendEvent(flowId, flowInstanceId, event)` – records pending event + enqueues Tick
 - `retry(flowId, flowInstanceId)` – if current stage is `ERROR`, enqueues Tick
 - `getStatus(flowInstanceId)` – returns `{ stage, stageStatus }`

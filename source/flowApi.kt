@@ -396,10 +396,10 @@ class FlowEngine(
         val flow = flows[flowId] ?: return
         val persister = persisters[flowId] ?: return
 
-        processTickTyped(flowId, flow, persister, flowInstanceId)
+        processTick(flowId, flow, persister, flowInstanceId)
     }
 
-    private tailrec fun processTickTyped(flowId: String, flow: Flow<Any>, persister: StatePersister<Any>, flowInstanceId: UUID) {
+    private tailrec fun processTick(flowId: String, flow: Flow<Any>, persister: StatePersister<Any>, flowInstanceId: UUID) {
         val pd = persister.load(flowInstanceId) ?: return
 
         when (pd.stageStatus) {
@@ -424,7 +424,7 @@ class FlowEngine(
                     val consumed = tryConsumeEventAndAdvance(flowId, def, pd, persister, flowInstanceId)
                     if (consumed) {
                         log("Event consumed for ${pd.stage}; advancing")
-                        processTickTyped(flowId, flow, persister, flowInstanceId)
+                        processTick(flowId, flow, persister, flowInstanceId)
                     }
                     return
                 }
@@ -437,7 +437,7 @@ class FlowEngine(
                     }
                     if (updated.stage != pd.stage) {
                         log("Action advanced ${pd.stage} -> ${updated.stage}")
-                        processTickTyped(flowId, flow, persister, flowInstanceId)
+                        processTick(flowId, flow, persister, flowInstanceId)
                     }
                     return
                 }
@@ -449,7 +449,7 @@ class FlowEngine(
                     val saved = persister.save(next)
                     if (saved is SaveResult.Conflict) return
                     log("Condition transition ${pd.stage} -> $target")
-                    processTickTyped(flowId, flow, persister, flowInstanceId)
+                    processTick(flowId, flow, persister, flowInstanceId)
                     return
                 }
 
@@ -458,7 +458,7 @@ class FlowEngine(
                     val saved = persister.save(next)
                     if (saved is SaveResult.Conflict) return
                     log("Automatic transition ${pd.stage} -> $ns")
-                    processTickTyped(flowId, flow, persister, flowInstanceId)
+                    processTick(flowId, flow, persister, flowInstanceId)
                     return
                 }
 

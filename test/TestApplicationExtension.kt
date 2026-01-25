@@ -9,8 +9,6 @@ import org.springframework.context.ConfigurableApplicationContext
 object TestApplicationExtension : ProjectListener {
     @Volatile private var context: ConfigurableApplicationContext? = null
 
-    const val ORDER_CONFIRMATION_FLOW_ID = "order-confirmation"
-    const val EMPLOYEE_ONBOARDING_FLOW_ID = "employee-onboarding"
 
     private fun context(): ConfigurableApplicationContext {
         val existing = context

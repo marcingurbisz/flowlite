@@ -355,7 +355,7 @@ The engine treats `SaveResult.Conflict` as a benign no-op (common with duplicate
 - `registerFlow(flowId, stateClass, flow, statePersister)`
 - `startProcess(flowId, initialState)` – creates new flow instance (engine generates `flowInstanceId`, a UUID) and enqueues a Tick
 - `startProcess(flowId, flowInstanceId, initialState)` – starts processing for an already persisted domain row using a caller-provided UUID
-- `sendEvent(flowInstanceId, eventType)` – records pending event + enqueues Tick
+- `sendEvent(flowId, flowInstanceId, event)` – records pending event + enqueues Tick
 - `retry(flowId, flowInstanceId)` – if current stage is `ERROR`, enqueues Tick
 - `getStatus(flowInstanceId)` – returns `{ stage, stageStatus }`
 

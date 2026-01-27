@@ -16,9 +16,8 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
     - [Runtime & Execution Model](#runtime--execution-model)
     - [Transaction Boundaries](#transaction-boundaries)
     - [Persistence Approach](#persistence-approach)
-    - [StatePersister Contract](#statepersister-contract)
+    - [Contracts](#contracts)
     - [Engine API](#engine-api)
-    - [Idempotency & Crash Safety](#idempotency--crash-safety)
     - [Deferred / Future Enhancements](#deferred--future-enhancements)
   - [Flow Definition System](#flow-definition-system-sourceflowapikt)
   - [Core Interfaces](#core-interfaces)
@@ -89,12 +88,14 @@ stateDiagram-v2
     - `RUNNING` – Action is currently executing (set before invocation for crash detection).
     - `COMPLETED` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `PENDING` rather than persisting completion of the previous stage.
     - `ERROR` – Action failed; requires manual retry.
-- Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and process specific data  
+- **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
+    - A tick carries no business payload;
+    - Ticks are emitted on `startProcess`, `sendEvent`, and `retry`.
+- Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and process specific data
 - Single-token model: only one active stage at any moment (no parallelism within one flow).
-- Engine drives flow progression via internal Tick messages
 - Code-first definitions -> diagrams are derived artifacts.
 - Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
-- Error handling: any exception marks stage `ERROR`; manual `retry(flowInstanceId)` restarts from that stage.
+- Error handling: any exception marks stage `ERROR`; `retry` resets it back to `PENDING` and restarts from that stage.
 - Migration: If the flow changes, migrations of existing instances are the responsibility of the application that uses FlowLite. No flow versioning nor migration support is planned in FlowLite.
 
 ### Stage Transitions
@@ -115,14 +116,14 @@ FlowLite supports 2 types of stage transitions:
 
 Event waiting semantics (`waitFor`):
 - A stage that calls `waitFor(EventX)` will transition when `EventX` is received.
-- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered (buffered / mailbox semantics).
+- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered.
 
 ### Conditional Branching
    ```kotlin
    flow.condition(
        predicate = { it.paymentMethod == PaymentMethod.CASH },
-       onTrue = { /* cash flow */ },
-       onFalse = { /* online flow */ }
+       onTrue = { /* true flow */ },
+       onFalse = { /* false flow */ }
    )
    ```
 ### Join Operations
@@ -295,84 +296,85 @@ stateDiagram-v2
 
 ### Runtime & Execution Model
 
-1. Starting a flow instance persists an initial domain row and enqueues a Tick. Domain row includes initial stage and stage status `PENDING`. It's also possible to pre-create the row earlier with your business data and later start processing by providing id.
+1. Starting a flow instance persists a process, calculates initial stage and enqueues a Tick. It's also possible to pre-create the row earlier with your business data and later start processing by providing id.
 2. Tick processing loop:
      - Load process state (stage + status) via `StatePersister`.
      - If status `ERROR` → stop (await retry).
-     - If status `RUNNING` → no-op; another Tick will follow after the action completes.
-     - If stage has an action and status `PENDING`: set `RUNNING`, persist; execute action outside the transaction; on success advance to next stage with `PENDING` and enqueue another Tick (or mark `COMPLETED` if final stage; no further ticks are enqueued); on failure set `ERROR`.
-     - If stage waits for events: query shared `pending_events` for matching event for this process; if found, consume it and advance to the configured next stage with `PENDING` then enqueue another Tick.
-3. External events: `sendEvent(flowInstanceId, eventType)` inserts a row into `pending_events` and always enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible. No special-casing or synchronous advancement on the send path.
-4. Duplicate ticks or events are harmless (idempotent progression via optimistic locking and event consumption checks).
+     - If status `RUNNING` → abnormal situation - log error; stop loop.
+     - If stage has an action and status `PENDING`: set `RUNNING`, persist; execute action; 
+       - on success advance to next stage with `PENDING`; execute another loop iteration or mark `COMPLETED` if final stage.
+       - on failure set `ERROR` and stop the loop.
+     - If stage waits for events: query for matching event for this process; if found, consume it and advance to the configured next stage with `PENDING` then execute another loop iteration.
+3. External events: `sendEvent(flowInstanceId, eventType)` inserts a row into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
+
+Setting `RUNNING` before action execution allows detection of in-flight actions if the JVM or persistent store connection crashes.
+
+Duplicate ticks or events:
+TODO: Please list all the cases when duplicate tick or event can occur
 
 ### Transaction Boundaries
-
+TODO: Improve the test below.
+FlowLite is not using transactions internally since the assumption is that it may be used with different persistence implementations. You may use transactions when you call api methods and relay on transactional behaviour of your persistence implementation if you want however the whole processing loop inside FlowLite is transaction-less.
 - Event submission (sendEvent): a single transaction that inserts into `pending_events`; enqueue a Tick; no stage changes occur here.
-- Advancing on event: consume matching pending event within the tick handling and move the stage pointer to the configured next stage with `PENDING` in the same transaction; no action is executed inside this transaction.
-- Action execution: set `RUNNING` and persist; execute action outside any transaction; then persist state changes and move to the next stage (`PENDING`) or mark terminal `COMPLETED` in a new transaction.
-
-These boundaries keep side effects out of long-lived transactions and make retries/idempotency straightforward.
+- Advancing on event: consume matching pending event within the tick handling and move the stage pointer to the configured next stage with `PENDING` is transaction-less;
+- Action execution: set `RUNNING` and persist; execute action; persisting state changes and move to the next stage (`PENDING`) do not use transactions.
 
 ### Persistence Approach
 
-Each process provides its owns its own persistence for business columns plus engine columns:
+FlowLite is “application-owned” for persistence which means you need to provide persistence implementation.
+At minimum, an application needs two persistence components:
 
-- `process_id` (UUID optionally PK)
-- `stage` (VARCHAR)
-- `stage_status` (VARCHAR)
-- (Optionally a `version` column if your `StatePersister` uses it for optimistic locking internally)
-- Domain attributes (e.g. customer data)
-- `created_at`, `updated_at` (optionally)
+1. **Process state persistence** (`StatePersister<T>`)
+    - Stores domain state **and** engine state for a single flow instance.
+    - Required engine fields:
+      - `id` (UUID, flow instance id)
+      - `stage` (string/enum name)
+      - `stage_status` (`PENDING` | `RUNNING` | `ERROR` | `COMPLETED`)
+      - optionally `version` (for optimistic locking)
+    - Plus your domain fields (customer data, order data, etc).
 
-TODO: link to example from tests
+2. **Pending events persistence** (`EventStore`)
+    - Stores events submitted via `sendEvent` until the flow reaches a stage that can consume them.
+    - This is what enables “mailbox semantics”: events can arrive early and will be applied later.
 
-Client using flowlite also needs to provide persistence for EventStore. 
-Events sent before the process reaches a waiting stage stay pending until eligible.
+In tests, examples of these integrations live in:
+- `StatePersister`: `SpringDataOrderConfirmationPersister`, `SpringDataEmployeeOnboardingPersister`
+- `EventStore`: `SpringDataEventStore`
 
-TODO: link to examplare implementation of eventstore from tests.
+Practical schema guidance for JDBC implementations:
+- Model process state as a single row per flow instance.
+- Keep `stage` and `stage_status` in the same row as the business state so stage transitions and business updates are atomic.
+- Use optimistic locking if process state may be modified "outside" the process execution; Retry save (merge and retry) on optimistic logging exception 
 
-### StatePersister Contract
+### Contracts
 
 The engine depends on a domain-specific `StatePersister<T>` (mandatory) to:
-- `load(flowInstanceId)` → current state (including `stage` and `stage_status`)
-- `save(processData)` → create or update atomically (includes stage/status changes and any domain modifications produced by actions)
-
-Optimistic locking is an internal concern of the persister. Recommended contract:
-- `save` returns `SaveResult.Saved` with refreshed data on success;
-- returns `SaveResult.Conflict` if an optimistic lock conflict is detected and write is not applied;
+- `load(flowInstanceId)` → current state (including process fields)
+- `save(processData)` → create or update atomically (includes stage/status changes and any domain modifications produced by actions); returns refreshed data on success.
 - throws on other errors (the engine will mark the stage `ERROR`).
 
-Engine behavior with action results:
-- If the action returns `null` (stage-only advance), and `save` returns `SaveResult.Conflict` due to a race, the engine will repeat save.
-- If the action returns a non-null state and `save` returns `SaveResult.Conflict` or throws, the engine treats it like an error: mark stage `ERROR` and stop until manual retry.
-
-The engine treats `SaveResult.Conflict` as a benign no-op (common with duplicate ticks) and does not retry automatically.
+Action results:
+- If the action returns `null` its stage-only advance, no need to update other process data.
 
 ### Engine API
 
-- `registerFlow(flowId, stateClass, flow, statePersister)`
-- `startProcess(flowId, initialState)` – creates new flow instance (engine generates `flowInstanceId`, a UUID) and enqueues a Tick
-- `startProcess(flowId, flowInstanceId)` – starts processing for an already persisted domain row using a caller-provided UUID
-- `sendEvent(flowId, flowInstanceId, event)` – records pending event + enqueues Tick
-- `retry(flowId, flowInstanceId)` – if current stage is `ERROR`, enqueues Tick
-- `getStatus(flowInstanceId)` – returns `{ stage, stageStatus }`
+The canonical reference for the API is the code in `source/flowApi.kt`.
+This README keeps a short, “semantic” list to explain intent, but the signatures may evolve.
 
-Identifiers and terminology:
-- Flow: a registered in-memory definition, identified by `flowId` (string).
-- Flow instance: a running instance of a flow, identified by `flowInstanceId` (UUID). You may generate this id externally and pass it to the engine.
-
-### Idempotency & Crash Safety
-
-- Setting `RUNNING` before action execution allows detection of in-flight actions if the JVM crashes (future recovery could re-evaluate such processes).
-- Duplicate ticks after advancement see updated stage/status and exit early.
-- Multiple identical events accumulate; only the first usable one is consumed; others remain (can be cleaned later if desired).
+- `registerFlow(flowId, flow, statePersister)`
+- `startProcess(flowId, initialState)` – persists initial state and enqueues a Tick
+- `startProcess(flowId, flowInstanceId)` – starts processing for an already persisted row
+- `sendEvent(flowId, flowInstanceId, event)` – appends a pending event and enqueues a Tick
+- `retry(flowId, flowInstanceId)` – if current stage status is `ERROR`, resets it to `PENDING` and enqueues a Tick
+- `getStatus(flowId, flowInstanceId)` – returns `(stage, stageStatus)`
 
 ### Deferred / Future Enhancements
 
 - Cockpit
+- structured audit history with error 
 - Distinguish business vs technical errors with tailored retry policies
 - Parallelism
-- Metrics, tracing, structured audit history
+- Metrics, tracing
 
 ### Flow Definition System (`source/flowApi.kt`)
 - `FlowBuilder<T>` - Fluent API for defining workflows

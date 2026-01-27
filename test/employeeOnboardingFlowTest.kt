@@ -4,7 +4,6 @@ import io.flowlite.api.*
 import io.flowlite.test.EmployeeEvent.*
 import io.flowlite.test.EmployeeStage.*
 import io.kotest.core.spec.style.BehaviorSpec
-import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.Version
 import org.springframework.data.repository.CrudRepository
@@ -114,7 +113,7 @@ interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboarding, UUID
 class SpringDataEmployeeOnboardingPersister(
     private val repo: EmployeeOnboardingRepository,
 ) : StatePersister<EmployeeOnboarding> {
-    override fun save(processData: ProcessData<EmployeeOnboarding>): SaveResult<EmployeeOnboarding> {
+    override fun save(processData: ProcessData<EmployeeOnboarding>): ProcessData<EmployeeOnboarding> {
         val stage = processData.stage as? EmployeeStage
             ?: error("Unexpected stage ${processData.stage}")
         val entity = processData.state.copy(
@@ -122,22 +121,17 @@ class SpringDataEmployeeOnboardingPersister(
             stage = stage,
             stageStatus = processData.stageStatus,
         )
-        val saved = try {
-            repo.save(entity)
-        } catch (ex: OptimisticLockingFailureException) {
-            return SaveResult.Conflict
-        }
-        return SaveResult.Saved(
-            processData.copy(
-                state = saved,
-                stage = saved.stage,
-                stageStatus = saved.stageStatus,
-            ),
+        val saved = repo.save(entity)
+        return processData.copy(
+            state = saved,
+            stage = saved.stage,
+            stageStatus = saved.stageStatus,
         )
     }
 
-    override fun load(flowInstanceId: UUID): ProcessData<EmployeeOnboarding>? {
-        val entity = repo.findById(flowInstanceId).orElse(null) ?: return null
+    override fun load(flowInstanceId: UUID): ProcessData<EmployeeOnboarding> {
+        val entity = repo.findById(flowInstanceId).orElse(null)
+            ?: error("Process '$flowInstanceId' not found")
         return ProcessData(
             flowInstanceId = flowInstanceId,
             state = entity,

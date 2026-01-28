@@ -51,7 +51,7 @@ interface StatePersister<T : Any> {
      */
     fun save(processData: ProcessData<T>): ProcessData<T>
 
-    /** Load current process data or null if not found. */
+    /** Load current process data; throws if the process does not exist. */
     fun load(flowInstanceId: UUID): ProcessData<T>
 }
 
@@ -163,12 +163,24 @@ class FlowBuilder<T : Any> {
     }
 
     private fun validateDefinitions() {
+        val eventToStage = mutableMapOf<Event, Stage>()
         stages.values.forEach { def ->
             if (def.action != null && def.eventHandlers.isNotEmpty()) {
                 throw FlowDefinitionException("Stage ${def.stage} cannot declare both an action and event handlers")
             }
             if (def.eventHandlers.isNotEmpty() && (def.nextStage != null || def.conditionHandler != null)) {
                 throw FlowDefinitionException("Stage ${def.stage} cannot mix event handlers with direct or conditional transitions")
+            }
+
+            def.eventHandlers.keys.forEach { event ->
+                val existing = eventToStage.putIfAbsent(event, def.stage)
+                if (existing != null && existing != def.stage) {
+                    throw FlowDefinitionException(
+                        "Event $event is used in multiple waitFor declarations ($existing and ${def.stage}). " +
+                            "Reusing the same event type in different parts of a flow is not supported; " +
+                            "model repeated occurrences as distinct event types or include event identity/deduplication in your EventStore."
+                    )
+                }
             }
         }
     }

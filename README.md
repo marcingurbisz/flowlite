@@ -12,11 +12,12 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
 - [More examples](#more-examples)
   - [Employee Onboarding](#employee-onboarding)
   - [Order Confirmation](#order-confirmation)
-- [Core Architecture](#core-architecture)
+- [Core Architecture](#architecture)
     - [Runtime & Execution Model](#runtime--execution-model)
     - [Transaction Boundaries](#transaction-boundaries)
     - [Persistence Approach](#persistence-approach)
     - [Contracts](#contracts)
+      - [Practical schema guidance (JDBC)](#practical-schema-guidance-jdbc)
     - [Engine API](#engine-api)
     - [Deferred / Future Enhancements](#deferred--future-enhancements)
   - [Flow Definition System](#flow-definition-system-sourceflowapikt)
@@ -137,7 +138,7 @@ Reference already defined stages using `join()`:
 
 - Signature: `(state: T) -> T?`
     - Return a new instance to persist domain changes and proceed.
-    - Return `null` to indicate no domain changes; the engine will reload fresh state and perform a stage/status-only update to advance.
+    - Return `null` to indicate no domain changes; the engine will still persist the stage/status transition and proceed.
 - Guidelines:
     - Keep actions small and focused.
   
@@ -292,11 +293,11 @@ stateDiagram-v2
 
 <!-- FlowDoc.end -->
 
-## Core Architecture
+## Architecture
 
 ### Runtime & Execution Model
 
-1. Starting a flow instance persists a process, calculates initial stage and enqueues a Tick. It's also possible to pre-create the row earlier with your business data and later start processing by providing id.
+1. Starting a flow instance persists a process, calculates initial stage and enqueues a Tick. It's also possible to pre-create the process earlier with your business data and later start processing by providing id.
 2. Tick processing loop:
      - Load process state (stage + status) via `StatePersister`.
      - If status `ERROR` → stop (await retry).
@@ -305,19 +306,18 @@ stateDiagram-v2
        - on success advance to next stage with `PENDING`; execute another loop iteration or mark `COMPLETED` if final stage.
        - on failure set `ERROR` and stop the loop.
      - If stage waits for events: query for matching event for this process; if found, consume it and advance to the configured next stage with `PENDING` then execute another loop iteration.
-3. External events: `sendEvent(flowInstanceId, eventType)` inserts a row into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
+3. External events: `sendEvent(flowInstanceId, eventType)` inserts a event into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
 
 Setting `RUNNING` before action execution allows detection of in-flight actions if the JVM or persistent store connection crashes.
 
-Duplicate ticks or events:
-TODO: Please list all the cases when duplicate tick or event can occur
-
 ### Transaction Boundaries
-TODO: Improve the test below.
-FlowLite is not using transactions internally since the assumption is that it may be used with different persistence implementations. You may use transactions when you call api methods and relay on transactional behaviour of your persistence implementation if you want however the whole processing loop inside FlowLite is transaction-less.
-- Event submission (sendEvent): a single transaction that inserts into `pending_events`; enqueue a Tick; no stage changes occur here.
-- Advancing on event: consume matching pending event within the tick handling and move the stage pointer to the configured next stage with `PENDING` is transaction-less;
-- Action execution: set `RUNNING` and persist; execute action; persisting state changes and move to the next stage (`PENDING`) do not use transactions.
+FlowLite does not start or manage transactions internally (to remain persistence-agnostic).
+
+Practical guidance (DB-backed implementations):
+- `startProcess`: persist the initial process row and enqueue a tick in the same transaction (or via an outbox) to avoid “process created but never scheduled”.
+- `sendEvent`: append the pending event and enqueue a tick in the same transaction (or via an outbox) to avoid “event stored but never scheduled”.
+- `retry`: update `stage_status` to `PENDING` and enqueue a tick in the same transaction (or via an outbox).
+- Tick handling (`processTick`): wrapping it into transaction is not recommended since this will create a big transaction spanning all transition and actions between start and first stage with event handler or terminal state.
 
 ### Persistence Approach
 
@@ -330,7 +330,7 @@ At minimum, an application needs two persistence components:
       - `id` (UUID, flow instance id)
       - `stage` (string/enum name)
       - `stage_status` (`PENDING` | `RUNNING` | `ERROR` | `COMPLETED`)
-      - optionally `version` (for optimistic locking)
+        - Engine fields are **owned by the engine** and must not be updated by external writers.
     - Plus your domain fields (customer data, order data, etc).
 
 2. **Pending events persistence** (`EventStore`)
@@ -341,20 +341,45 @@ In tests, examples of these integrations live in:
 - `StatePersister`: `SpringDataOrderConfirmationPersister`, `SpringDataEmployeeOnboardingPersister`
 - `EventStore`: `SpringDataEventStore`
 
-Practical schema guidance for JDBC implementations:
-- Model process state as a single row per flow instance.
-- Keep `stage` and `stage_status` in the same row as the business state so stage transitions and business updates are atomic.
-- Use optimistic locking if process state may be modified "outside" the process execution; Retry save (merge and retry) on optimistic logging exception 
-
 ### Contracts
 
-The engine depends on a domain-specific `StatePersister<T>` (mandatory) to:
-- `load(flowInstanceId)` → current state (including process fields)
+`StatePersister<T>`:
+- `load(flowInstanceId)` → current state (including process fields); throws if the process does not exist
 - `save(processData)` → create or update atomically (includes stage/status changes and any domain modifications produced by actions); returns refreshed data on success.
-- throws on other errors (the engine will mark the stage `ERROR`).
 
-Action results:
-- If the action returns `null` its stage-only advance, no need to update other process data.
+
+`(state: T) -> T?)` action persistence guidance:
+- If an action needs to persist business changes (i.e. has side effects on the process business data), it is recommended that the action persists those changes itself and then returns the updated state to the engine.
+- An action may also return updated state without saving and rely on the engine calling `StatePersister.save(...)` for persistence. In this case, the persister must handle concurrency correctly (optimistic locking / merge rules). See the concurrency notes below.
+- If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances
+
+`TickScheduler` contract:
+- `scheduleTick(flowId, flowInstanceId)` can be called multiple times; the scheduler may coalesce duplicate ticks.
+- The scheduler delivers ticks with at-least-once semantics; duplicates are allowed.
+- The scheduler must enforce **single-flight per flow instance**: it must not invoke the tick handler concurrently for the same `flowInstanceId`.
+- If the tick handler throws, the scheduler should log the error and stop.
+
+See `test/DbSchedulerTickScheduler.kt` for a minimal in-process example of enforcing single-flight per `flowInstanceId`.
+
+Concurrency scenarios (cheat sheet):
+
+| Scenario                                                        |                                             Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                |
+|-----------------------------------------------------------------|-----------------------------------------------------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| Two ticks processed concurrently for same instance              |          Only in case of wrong implementation of scheduler | Double action execution; double stage advance; inconsistent state                            | Enforce **single-flight** per `flowInstanceId` at scheduler level                                     |
+| Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one `waitFor(...)`), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth |
+| External writer updates the same row while engine is processing |                                   Yes (GUI, notifications) | Potential lost updates; optimistic lock conflicts                                            | Options in case of JDBC persistence: 1) use optimistic locking 2) move engine state to separate table |
+
+
+#### Practical schema guidance (JDBC)
+
+No external updates (only process updates the row):
+- No issues with keeping engine and business fields in one table (one row per flow instance).
+- Optimistic locking not necessary
+- Actions can return a new state `T` and the persister can save business + engine fields atomically.
+
+External updates exist (GUI / notifications / other services):
+- Option A: Single table; External writers update business fields and handle optimistic lock conflicts with proper merge; persister called by engine handles optimistic lock conflicts with proper merge.
+- Option B: Separate table for engine and business fields.
 
 ### Engine API
 

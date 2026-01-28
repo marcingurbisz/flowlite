@@ -1,7 +1,7 @@
 ## TODO
 Agent:
-* in what cases ticks will race? Please list all the cases when duplicate tick or event can occur
-* Check TODOs in README
+
+* The action function initializeOrderConfirmation on line 210 sets the stage field in the returned copy: confirmation.copy(stage = InitializingConfirmation, ...). However, the engine manages the stage field separately in ProcessData and updates it when advancing to the next stage. Action functions should only modify domain-specific fields and should not set the stage field, as this could lead to confusion about which component controls stage transitions.
 * Split flowApi.kt into api and implementation files
 * Replace list of methods and components with link to files containing them
 * add logs to api method invocation. Use kotlin logging everywhere.

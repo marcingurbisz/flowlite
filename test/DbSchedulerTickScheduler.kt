@@ -2,6 +2,8 @@ package io.flowlite.test
 
 import com.github.kagkarlsson.scheduler.Scheduler
 import com.github.kagkarlsson.scheduler.SchedulerBuilder
+import com.github.kagkarlsson.scheduler.SchedulerClient
+import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutingException
 import com.github.kagkarlsson.scheduler.task.Task
 import com.github.kagkarlsson.scheduler.task.helper.OneTimeTask
 import com.github.kagkarlsson.scheduler.task.helper.Tasks
@@ -26,7 +28,7 @@ class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler, AutoClos
 
     private val scheduler: Scheduler = SchedulerBuilder(dataSource, listOf<Task<*>>(task))
         .pollingInterval(Duration.ofMillis(10))
-        .threads(1)
+        .threads(4)
         .enableImmediateExecution()
         .build()
 
@@ -40,8 +42,35 @@ class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler, AutoClos
 
     override fun scheduleTick(flowId: String, flowInstanceId: UUID) {
         val data = "$flowId|$flowInstanceId"
-        val instanceId = "$flowId|$flowInstanceId|${UUID.randomUUID()}"
-        scheduler.schedule(task.schedulableInstance(instanceId, data))
+        // Single-flight across JVMs: coalesce all ticks for this instance into a single db-scheduler task instance.
+        // WHEN_EXISTS_RESCHEDULE ensures that if a tick is already scheduled, we bring execution_time forward.
+        val instanceId = "$flowId|$flowInstanceId"
+        val schedulable = task.schedulableInstance(instanceId, data)
+
+        // Important: db-scheduler explicitly forbids modifying a picked (currently executing) execution.
+        // If we just swallow that exception, we may lose a wakeup for an event that arrived after the
+        // running tick checked the mailbox and returned. To avoid "lost tick" in tests, we retry for
+        // a short bounded time until the execution finishes and the row becomes schedulable again.
+        val deadlineNanos = System.nanoTime() + Duration.ofMillis(750).toNanos()
+        var backoffMillis = 5L
+        while (true) {
+            try {
+                scheduler.schedule(schedulable, SchedulerClient.ScheduleOptions.WHEN_EXISTS_RESCHEDULE)
+                return
+            } catch (_: TaskInstanceCurrentlyExecutingException) {
+                if (System.nanoTime() >= deadlineNanos) return
+                try {
+                    Thread.sleep(backoffMillis)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return
+                }
+                if (backoffMillis < 50L) backoffMillis += 5L
+            } catch (_: Throwable) {
+                // best-effort
+                return
+            }
+        }
     }
 
     override fun close() {

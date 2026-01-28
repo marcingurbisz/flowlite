@@ -50,6 +50,10 @@ object Beans {
         }
 
         registerBean {
+            EmployeeOnboardingActions(bean<EmployeeOnboardingRepository>())
+        }
+
+        registerBean {
             SpringDataEmployeeOnboardingPersister(bean<EmployeeOnboardingRepository>())
         }
 
@@ -58,10 +62,11 @@ object Beans {
             val tickScheduler = bean<DbSchedulerTickScheduler>()
             val orderPersister = bean<SpringDataOrderConfirmationPersister>()
             val onboardingPersister = bean<SpringDataEmployeeOnboardingPersister>()
+            val onboardingActions = bean<EmployeeOnboardingActions>()
 
             FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler).also { engine ->
                 engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)
-                engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(), onboardingPersister)
+                engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(onboardingActions), onboardingPersister)
             }
         }
     }

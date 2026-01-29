@@ -33,7 +33,7 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
 
 ## Why FlowLite?
 
-Traditional BPM platforms (e.g. Camunda) are powerful but also heavyweight for code-centric teams.
+Traditional BPM platforms (e.g. Camunda) are powerful but heavyweight for code-centric teams.
 
 FlowLite at a glance:
 - **Type-safe fluent API**

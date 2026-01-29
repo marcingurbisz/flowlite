@@ -22,7 +22,7 @@ data class FlowLiteTick(
 
 interface FlowLiteTickRepository : CrudRepository<FlowLiteTick, UUID>
 
-class DbSchedulerTickScheduler(
+class DbTickScheduler(
     private val tickRepo: FlowLiteTickRepository,
 ) : TickScheduler, AutoCloseable {
 
@@ -94,6 +94,6 @@ class DbSchedulerTickScheduler(
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(DbSchedulerTickScheduler::class.java)
+        private val logger = LoggerFactory.getLogger(DbTickScheduler::class.java)
     }
 }

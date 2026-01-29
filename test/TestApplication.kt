@@ -40,8 +40,8 @@ object Beans {
             NamedParameterJdbcTemplate(bean<DataSource>())
         }
 
-        registerBean<DbSchedulerTickScheduler> {
-            DbSchedulerTickScheduler(bean<FlowLiteTickRepository>()).also { it.start() }
+        registerBean<DbTickScheduler> {
+            DbTickScheduler(bean<FlowLiteTickRepository>()).also { it.start() }
         }
 
         registerBean {
@@ -64,7 +64,7 @@ object Beans {
 
         registerBean<FlowEngine> {
             val eventStore = bean<SpringDataEventStore>()
-            val tickScheduler = bean<DbSchedulerTickScheduler>()
+            val tickScheduler = bean<DbTickScheduler>()
             val orderPersister = bean<SpringDataOrderConfirmationPersister>()
             val onboardingPersister = bean<SpringDataEmployeeOnboardingPersister>()
             val onboardingActions = bean<EmployeeOnboardingActions>()

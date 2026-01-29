@@ -47,7 +47,14 @@ data class ProcessData<T : Any>(
 interface StatePersister<T : Any> {
     /**
      * Create or update the domain row and engine columns atomically.
-     * Returns refreshed data on success.
+    *
+    * This method is called frequently for stage/status transitions.
+    * Implementations should make a best-effort attempt to persist the change, e.g.:
+    * - retry on optimistic-locking conflicts;
+    * - merge engine-owned fields (stage, stageStatus) with a freshly loaded domain snapshot,
+    *   to avoid losing concurrent updates made by external writers.
+    *
+    * Returns refreshed data on success.
      */
     fun save(processData: ProcessData<T>): ProcessData<T>
 
@@ -329,6 +336,7 @@ class FlowEngine(
     private val flows = mutableMapOf<String, Flow<Any>>()
     private val persisters = mutableMapOf<String, StatePersister<Any>>()
 
+    @Suppress("UNCHECKED_CAST")
     fun <T : Any> registerFlow(
         flowId: String,
         flow: Flow<T>,
@@ -339,6 +347,7 @@ class FlowEngine(
         persisters[flowId] = statePersister as StatePersister<Any>
     }
 
+    @Suppress("UNCHECKED_CAST")
     fun <T : Any> startProcess(flowId: String, initialState: T): UUID {
         val flowInstanceId = UUID.randomUUID()
         val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }

@@ -15,7 +15,7 @@ import org.springframework.data.repository.CrudRepository
 @Table("FLOWLITE_TICK")
 data class FlowLiteTick(
     @Id
-    val id: UUID? = null,
+    val id: UUID,
     val flowId: String,
     val flowInstanceId: UUID,
 )
@@ -51,6 +51,7 @@ class DbTickScheduler(
 
         tickRepo.save(
             FlowLiteTick(
+                id = UUID.randomUUID(),
                 flowId = flowId,
                 flowInstanceId = flowInstanceId,
             ),
@@ -66,7 +67,7 @@ class DbTickScheduler(
         val tick = iterator.next()
 
         try {
-            tickRepo.deleteById(requireNotNull(tick.id) { "Tick.id must not be null when loaded from repository" })
+            tickRepo.deleteById(tick.id)
         } catch (_: Exception) {
             return
         }

@@ -86,7 +86,7 @@ stateDiagram-v2
 - **Flow**: Immutable definition produced by `FlowBuilder<T>.build()` and held in-memory.
 - **StageStatus**: Lifecycle state of the single active stage:
     - `PENDING` – Active stage awaiting action execution or matching event.
-    - `RUNNING` – Action is currently executing (set before invocation for crash detection).
+    - `RUNNING` – Flow instance is currently being progressed by the engine (claimed via an atomic `PENDING -> RUNNING` transition in persistence). Remains `RUNNING` during the whole processing loop and is released back to `PENDING` when the instance needs to wait for an event.
     - `COMPLETED` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `PENDING` rather than persisting completion of the previous stage.
     - `ERROR` – Action failed; requires manual retry.
 - **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
@@ -164,14 +164,14 @@ Documentation refresh:
                 description = "isOnboardingAutomated",
                 onTrue = {
                     // Automated path
-                    stage(CreateUserInSystem, ::createUserInSystem)
+                    stage(CreateUserInSystem, actions::createUserInSystem)
                         .condition(
                             { it.isExecutiveRole || it.isSecurityClearanceRequired },
                             description = "isExecutiveRole || isSecurityClearanceRequired",
                             onFalse = {
-                                stage(ActivateStandardEmployee, ::activateEmployee)
-                                    .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
-                                    .stage(SendContractForSigning, ::sendContractForSigning)
+                                stage(ActivateStandardEmployee, actions::activateEmployee)
+                                    .stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
+                                    .stage(SendContractForSigning, actions::sendContractForSigning)
                                     .stage(WaitingForEmployeeDocumentsSigned)
                                     .waitFor(EmployeeDocumentsSigned)
                                     .stage(WaitingForContractSigned)
@@ -180,8 +180,8 @@ Documentation refresh:
                                         { it.isExecutiveRole || it.isSecurityClearanceRequired },
                                         description = "isExecutiveRole || isSecurityClearanceRequired",
                                         onTrue = {
-                                            stage(ActivateSpecializedEmployee, ::activateEmployee)
-                                                .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem)
+                                            stage(ActivateSpecializedEmployee, actions::activateEmployee)
+                                                .stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
                                         },
                                         onFalse = {
                                             stage(WaitingForOnboardingCompletion)
@@ -191,7 +191,7 @@ Documentation refresh:
                                     )
                             },
                             onTrue = {
-                                stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
                                     .condition(
                                         { it.isSecurityClearanceRequired },
                                         description = "isSecurityClearanceRequired",
@@ -200,7 +200,7 @@ Documentation refresh:
                                                 { it.isFullOnboardingRequired },
                                                 description = "isFullOnboardingRequired",
                                                 onTrue = {
-                                                    stage(SetDepartmentAccess, ::setDepartmentAccess)
+                                                    stage(SetDepartmentAccess, actions::setDepartmentAccess)
                                                         .join(GenerateEmployeeDocuments)
                                                 },
                                                 onFalse = { join(GenerateEmployeeDocuments) },
@@ -228,31 +228,31 @@ stateDiagram-v2
     state if_isexecutiverole_issecurityclearancerequired_2 <<choice>>
     [*] --> if_isonboardingautomated
     if_isonboardingautomated --> CreateUserInSystem: isOnboardingAutomated
-    CreateUserInSystem: CreateUserInSystem createUserInSystem()
+    CreateUserInSystem: CreateUserInSystem io.flowlite.test.EmployeeOnboardingActions.createUserInSystem()
     CreateUserInSystem --> if_isexecutiverole_issecurityclearancerequired
     if_isexecutiverole_issecurityclearancerequired --> UpdateSecurityClearanceLevels: isExecutiveRole || isSecurityClearanceRequired
-    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels updateSecurityClearanceLevels()
+    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels io.flowlite.test.EmployeeOnboardingActions.updateSecurityClearanceLevels()
     UpdateSecurityClearanceLevels --> if_issecurityclearancerequired
     if_issecurityclearancerequired --> if_isfullonboardingrequired: isSecurityClearanceRequired
     if_isfullonboardingrequired --> SetDepartmentAccess: isFullOnboardingRequired
-    SetDepartmentAccess: SetDepartmentAccess setDepartmentAccess()
+    SetDepartmentAccess: SetDepartmentAccess io.flowlite.test.EmployeeOnboardingActions.setDepartmentAccess()
     SetDepartmentAccess --> GenerateEmployeeDocuments
-    GenerateEmployeeDocuments: GenerateEmployeeDocuments generateEmployeeDocuments()
+    GenerateEmployeeDocuments: GenerateEmployeeDocuments io.flowlite.test.EmployeeOnboardingActions.generateEmployeeDocuments()
     GenerateEmployeeDocuments --> SendContractForSigning
-    SendContractForSigning: SendContractForSigning sendContractForSigning()
+    SendContractForSigning: SendContractForSigning io.flowlite.test.EmployeeOnboardingActions.sendContractForSigning()
     SendContractForSigning --> WaitingForEmployeeDocumentsSigned
     WaitingForEmployeeDocumentsSigned --> WaitingForContractSigned: onEvent EmployeeDocumentsSigned
     WaitingForContractSigned --> if_isexecutiverole_issecurityclearancerequired_2: onEvent ContractSigned
     if_isexecutiverole_issecurityclearancerequired_2 --> ActivateSpecializedEmployee: isExecutiveRole || isSecurityClearanceRequired
-    ActivateSpecializedEmployee: ActivateSpecializedEmployee activateEmployee()
+    ActivateSpecializedEmployee: ActivateSpecializedEmployee io.flowlite.test.EmployeeOnboardingActions.activateEmployee()
     ActivateSpecializedEmployee --> UpdateStatusInHRSystem
-    UpdateStatusInHRSystem: UpdateStatusInHRSystem updateStatusInHRSystem()
+    UpdateStatusInHRSystem: UpdateStatusInHRSystem io.flowlite.test.EmployeeOnboardingActions.updateStatusInHRSystem()
     if_isexecutiverole_issecurityclearancerequired_2 --> WaitingForOnboardingCompletion: NOT (isExecutiveRole || isSecurityClearanceRequired)
     WaitingForOnboardingCompletion --> UpdateStatusInHRSystem: onEvent OnboardingComplete
     if_isfullonboardingrequired --> GenerateEmployeeDocuments: NOT (isFullOnboardingRequired)
     if_issecurityclearancerequired --> WaitingForContractSigned: NOT (isSecurityClearanceRequired)
     if_isexecutiverole_issecurityclearancerequired --> ActivateStandardEmployee: NOT (isExecutiveRole || isSecurityClearanceRequired)
-    ActivateStandardEmployee: ActivateStandardEmployee activateEmployee()
+    ActivateStandardEmployee: ActivateStandardEmployee io.flowlite.test.EmployeeOnboardingActions.activateEmployee()
     ActivateStandardEmployee --> GenerateEmployeeDocuments
     if_isonboardingautomated --> WaitingForContractSigned: NOT (isOnboardingAutomated)
     UpdateStatusInHRSystem --> [*]
@@ -301,14 +301,16 @@ stateDiagram-v2
 2. Tick processing loop:
      - Load process state (stage + status) via `StatePersister`.
      - If status `ERROR` → stop (await retry).
-     - If status `RUNNING` → abnormal situation - log error; stop loop.
-     - If stage has an action and status `PENDING`: set `RUNNING`, persist; execute action; 
-       - on success advance to next stage with `PENDING`; execute another loop iteration or mark `COMPLETED` if final stage.
-       - on failure set `ERROR` and stop the loop.
-     - If stage waits for events: query for matching event for this process; if found, consume it and advance to the configured next stage with `PENDING` then execute another loop iteration.
+         - If status `RUNNING` → another worker currently owns the instance; stop and let the tick be redelivered later.
+         - If status `PENDING`: atomically claim the instance by transitioning `PENDING -> RUNNING` (optimistic CAS in persistence).
+         - While `RUNNING`, the engine will keep advancing through automatic transitions and actions.
+             - If the current stage waits for events and no matching event exists: release the claim by setting status back to `PENDING` and stop.
+             - If the current stage consumes an event: advance to the next stage and continue (staying `RUNNING`).
+             - If the current stage executes an action: run it and advance to the next stage and continue (staying `RUNNING`), or mark `COMPLETED` if terminal.
+             - On failure: set `ERROR` (best-effort) and stop.
 3. External events: `sendEvent(flowInstanceId, eventType)` inserts a event into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
 
-Setting `RUNNING` before action execution allows detection of in-flight actions if the JVM or persistent store connection crashes.
+`RUNNING` acts as a single-flight claim for tick processing. If a JVM crashes mid-loop, the instance may remain `RUNNING` until application-defined recovery resets it.
 
 ### Transaction Boundaries
 FlowLite does not start or manage transactions internally (to remain persistence-agnostic).
@@ -346,6 +348,11 @@ In tests, examples of these integrations live in:
 `StatePersister<T>`:
 - `load(flowInstanceId)` → current state (including process fields); throws if the process does not exist
 - `save(processData)` → create or update atomically (includes stage/status changes and any domain modifications produced by actions); returns refreshed data on success.
+- `tryTransitionStageStatus(flowInstanceId, expectedStage, expectedStatus, newStatus)` → best-effort single-flight claim for tick processing.
+    - Implementation options include:
+        - Atomic CAS update (e.g. SQL `UPDATE ... WHERE id AND stage AND stage_status`).
+        - `load` + check + `save` guarded by optimistic locking (`@Version`) and handling optimistic lock failures.
+        - Persist engine state (stage/status) separately from business state.
 
 
 `(state: T) -> T?)` action persistence guidance:
@@ -354,20 +361,20 @@ In tests, examples of these integrations live in:
 - If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances
 
 `TickScheduler` contract:
-- `scheduleTick(flowId, flowInstanceId)` can be called multiple times; the scheduler may coalesce duplicate ticks.
+- `scheduleTick(flowId, flowInstanceId)` can be called multiple times.
 - The scheduler delivers ticks with at-least-once semantics; duplicates are allowed.
-- The scheduler must enforce **single-flight per flow instance**: it must not invoke the tick handler concurrently for the same `flowInstanceId`.
-- If the tick handler throws, the scheduler should log the error and stop.
+- If the tick handler throws `TickRedeliveryRequestedException`, the scheduler should treat it as a normal retry signal (redeliver later).
+- If the tick handler throws any other exception, the scheduler should log the error and stop the current delivery attempt.
 
-See `test/DbSchedulerTickScheduler.kt` for a minimal in-process example of enforcing single-flight per `flowInstanceId`.
+See `test/DbSchedulerTickScheduler.kt` for a minimal in-process polling scheduler.
 
 Concurrency scenarios (cheat sheet):
 
-| Scenario                                                        |                                             Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                |
-|-----------------------------------------------------------------|-----------------------------------------------------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| Two ticks processed concurrently for same instance              |          Only in case of wrong implementation of scheduler | Double action execution; double stage advance; inconsistent state                            | Enforce **single-flight** per `flowInstanceId` at scheduler level                                     |
+| Scenario                                                        | Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                |
+|-----------------------------------------------------------------|--------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| Two ticks processed concurrently for same instance              | No (if correctly implemented) | Double action execution; double stage advance; inconsistent state                            | Use an atomic `PENDING -> RUNNING` claim (`tryTransitionStageStatus(...)`) in persistence              |
 | Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one `waitFor(...)`), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth |
-| External writer updates the same row while engine is processing |                                   Yes (GUI, notifications) | Potential lost updates; optimistic lock conflicts                                            | Options in case of JDBC persistence: 1) use optimistic locking 2) move engine state to separate table |
+| External writer updates the same row while engine is processing |                                   Yes (GUI, notifications) | Potential lost updates; optimistic lock conflicts                                            | Options in case of JDBC persistence: 1) use optimistic locking (with merge or retries) 2) move engine state to separate table |
 
 
 #### Practical schema guidance (JDBC)

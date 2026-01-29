@@ -87,6 +87,19 @@ private class ManualTickScheduler : TickScheduler {
 private class InMemoryStatePersister<T : Any> : StatePersister<T> {
     private val data = mutableMapOf<UUID, ProcessData<T>>()
 
+    override fun tryTransitionStageStatus(
+        flowInstanceId: UUID,
+        expectedStage: Stage,
+        expectedStageStatus: StageStatus,
+        newStageStatus: StageStatus,
+    ): Boolean {
+        val current = data[flowInstanceId] ?: return false
+        if (current.stage != expectedStage) return false
+        if (current.stageStatus != expectedStageStatus) return false
+        data[flowInstanceId] = current.copy(stageStatus = newStageStatus)
+        return true
+    }
+
     override fun save(processData: ProcessData<T>): ProcessData<T> {
         data[processData.flowInstanceId] = processData
         return processData

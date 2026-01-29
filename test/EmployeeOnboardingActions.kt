@@ -1,11 +1,10 @@
 package io.flowlite.test
 
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import org.slf4j.LoggerFactory
 
 class EmployeeOnboardingActions(
-    private val repo: EmployeeOnboardingRepository? = null,
+    private val repo: EmployeeOnboardingRepository,
 ) {
     fun createUserInSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
         onboardingLogger.info("Creating user account in system")
@@ -16,10 +15,7 @@ class EmployeeOnboardingActions(
             require(hooks.allowProceedToSave.await(2, TimeUnit.SECONDS)) { "Timed out waiting for allowProceedToSave" }
         }
 
-        // For diagram generation / README updater (no Spring context), we don't execute actions.
-        val repository = repo ?: return employee.copy(userCreatedInSystem = true)
-
-        val savedEntity = repository.saveWithOptimisticLockRetry(
+        val savedEntity = repo.saveWithOptimisticLockRetry(
             id = id,
             candidate = employee.copy(userCreatedInSystem = true),
         ) { latest ->
@@ -36,9 +32,8 @@ class EmployeeOnboardingActions(
 
     fun activateEmployee(employee: EmployeeOnboarding): EmployeeOnboarding {
         onboardingLogger.info("Activating employee account")
-        val repository = repo ?: return employee.copy(employeeActivated = true)
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
-        return repository.saveWithOptimisticLockRetry(
+        return repo.saveWithOptimisticLockRetry(
             id = id,
             candidate = employee.copy(employeeActivated = true),
         ) { latest ->
@@ -48,9 +43,8 @@ class EmployeeOnboardingActions(
 
     fun updateSecurityClearanceLevels(employee: EmployeeOnboarding): EmployeeOnboarding {
         onboardingLogger.info("Updating security clearance levels")
-        val repository = repo ?: return employee.copy(securityClearanceUpdated = true)
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
-        return repository.saveWithOptimisticLockRetry(
+        return repo.saveWithOptimisticLockRetry(
             id = id,
             candidate = employee.copy(securityClearanceUpdated = true),
         ) { latest ->
@@ -60,9 +54,8 @@ class EmployeeOnboardingActions(
 
     fun setDepartmentAccess(employee: EmployeeOnboarding): EmployeeOnboarding {
         onboardingLogger.info("Setting department access permissions")
-        val repository = repo ?: return employee.copy(departmentAccessSet = true)
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
-        return repository.saveWithOptimisticLockRetry(
+        return repo.saveWithOptimisticLockRetry(
             id = id,
             candidate = employee.copy(departmentAccessSet = true),
         ) { latest ->
@@ -72,9 +65,8 @@ class EmployeeOnboardingActions(
 
     fun generateEmployeeDocuments(employee: EmployeeOnboarding): EmployeeOnboarding {
         onboardingLogger.info("Generating employee documents")
-        val repository = repo ?: return employee.copy(documentsGenerated = true)
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
-        return repository.saveWithOptimisticLockRetry(
+        return repo.saveWithOptimisticLockRetry(
             id = id,
             candidate = employee.copy(documentsGenerated = true),
         ) { latest ->
@@ -84,9 +76,8 @@ class EmployeeOnboardingActions(
 
     fun sendContractForSigning(employee: EmployeeOnboarding): EmployeeOnboarding {
         onboardingLogger.info("Sending contract for signing")
-        val repository = repo ?: return employee.copy(contractSentForSigning = true)
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
-        return repository.saveWithOptimisticLockRetry(
+        return repo.saveWithOptimisticLockRetry(
             id = id,
             candidate = employee.copy(contractSentForSigning = true),
         ) { latest ->
@@ -96,9 +87,8 @@ class EmployeeOnboardingActions(
 
     fun updateStatusInHRSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
         onboardingLogger.info("Updating status in HR system")
-        val repository = repo ?: return employee.copy(statusUpdatedInHR = true)
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
-        return repository.saveWithOptimisticLockRetry(
+        return repo.saveWithOptimisticLockRetry(
             id = id,
             candidate = employee.copy(statusUpdatedInHR = true),
         ) { latest ->

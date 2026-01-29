@@ -29,11 +29,11 @@ object TestApplicationExtension : ProjectListener {
     val orderPersister: StatePersister<OrderConfirmation>
         get() = context().getBean<SpringDataOrderConfirmationPersister>()
 
-    val employeeOnboardingPersister: StatePersister<EmployeeOnboarding>
-        get() = context().getBean<SpringDataEmployeeOnboardingPersister>()
-
     val employeeOnboardingRepository: EmployeeOnboardingRepository
         get() = context().getBean<EmployeeOnboardingRepository>()
+
+    val employeeOnboardingActions: EmployeeOnboardingActions
+        get() = context().getBean<EmployeeOnboardingActions>()
 
     override suspend fun beforeProject() {
         context()

@@ -8,6 +8,7 @@ import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.Version
+import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.repository.CrudRepository
 import org.slf4j.LoggerFactory
 import java.util.UUID
@@ -165,6 +166,28 @@ interface OrderConfirmationRepository : CrudRepository<OrderConfirmation, UUID>
 class SpringDataOrderConfirmationPersister(
     private val repo: OrderConfirmationRepository,
 ) : StatePersister<OrderConfirmation> {
+    override fun tryTransitionStageStatus(
+        flowInstanceId: UUID,
+        expectedStage: Stage,
+        expectedStageStatus: StageStatus,
+        newStageStatus: StageStatus,
+    ): Boolean {
+        val current = load(flowInstanceId)
+        if (current.stage != expectedStage) return false
+        if (current.stageStatus != expectedStageStatus) return false
+
+        return try {
+            repo.save(
+                current.state.copy(
+                    stageStatus = newStageStatus,
+                ),
+            )
+            true
+        } catch (_: OptimisticLockingFailureException) {
+            false
+        }
+    }
+
     override fun save(processData: ProcessData<OrderConfirmation>): ProcessData<OrderConfirmation> {
         val stage = processData.stage as? OrderConfirmationStage
             ?: error("Unexpected stage ${processData.stage}")

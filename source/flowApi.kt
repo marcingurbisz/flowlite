@@ -53,7 +53,19 @@ interface StatePersister<T : Any> {
 
     /** Load current process data; throws if the process does not exist. */
     fun load(flowInstanceId: UUID): ProcessData<T>
+
+    /**
+     * Must be implemented as an atomic CAS update.
+     */
+    fun tryTransitionStageStatus(
+        flowInstanceId: UUID,
+        expectedStage: Stage,
+        expectedStageStatus: StageStatus,
+        newStageStatus: StageStatus,
+    ): Boolean
 }
+
+class TickRedeliveryRequestedException(message: String) : RuntimeException(message)
 
 /**
  * Pluggable store for pending events. Default implementation is in-memory; applications can provide
@@ -399,88 +411,113 @@ class FlowEngine(
         val flow = flows[flowId] ?: return
         val persister = persisters[flowId] ?: return
 
-        val pd = persister.load(flowInstanceId)
-        processTickLoop(flowId, flow, persister, pd)
+        val loaded = persister.load(flowInstanceId)
+        when (loaded.stageStatus) {
+            StageStatus.ERROR -> {
+                log("$flowId/$flowInstanceId is in ERROR at stage ${loaded.stage}; awaiting retry")
+                return
+            }
+            StageStatus.COMPLETED -> {
+                log("$flowId/$flowInstanceId already COMPLETED")
+                return
+            }
+            StageStatus.RUNNING -> {
+                // Leave the tick for later delivery (do not treat as an error).
+                throw TickRedeliveryRequestedException("$flowId/$flowInstanceId is RUNNING")
+            }
+            StageStatus.PENDING -> {
+                val claimed = persister.tryTransitionStageStatus(
+                    flowInstanceId = flowInstanceId,
+                    expectedStage = loaded.stage,
+                    expectedStageStatus = StageStatus.PENDING,
+                    newStageStatus = StageStatus.RUNNING,
+                )
+                if (!claimed) {
+                    // Someone else advanced/claimed; tick is a duplicate.
+                    return
+                }
+                val running = persister.load(flowInstanceId)
+                processTickLoop(flowId, flow, persister, running)
+            }
+        }
     }
 
     private fun processTickLoop(flowId: String, flow: Flow<Any>, persister: StatePersister<Any>, initial: ProcessData<Any>) {
+        require(initial.stageStatus == StageStatus.RUNNING) {
+            "processTickLoop expects RUNNING but was ${initial.stageStatus}"
+        }
+
         var pd = initial
         val flowInstanceId = pd.flowInstanceId
+
         while (true) {
-            when (pd.stageStatus) {
-                StageStatus.ERROR -> {
-                    log("$flowId/$flowInstanceId is in ERROR at stage ${pd.stage}; awaiting retry")
-                    return
-                }
-                StageStatus.RUNNING -> {
-                    log("$flowId/$flowInstanceId currently RUNNING at stage ${pd.stage}; skipping processing loop")
-                    return
-                }
-                StageStatus.COMPLETED -> {
-                    log("$flowId/$flowInstanceId already COMPLETED")
-                    return
-                }
-                StageStatus.PENDING -> {
-                    log("Processing loop for $flowId/$flowInstanceId at stage ${pd.stage}")
-                    val def = flow.stages[pd.stage]
-                        ?: throw FlowDefinitionException("No definition for stage ${pd.stage}")
+            log("Processing loop for $flowId/$flowInstanceId at stage ${pd.stage}")
+            val def = flow.stages[pd.stage]
+                ?: throw FlowDefinitionException("No definition for stage ${pd.stage}")
 
-                    try {
-                        if (def.eventHandlers.isNotEmpty()) {
-                            val next = tryConsumeEventAndAdvance(flowId, def, pd, persister, flowInstanceId)
-                            if (next != null) {
-                                log("Event consumed for ${pd.stage}; advancing")
-                                pd = next
-                                continue
-                            }
-                            return
-                        }
-
-                        if (def.action != null) {
-                            val updated = runActionAndPersistNext(def, pd, persister)
-                            if (updated.stageStatus == StageStatus.COMPLETED) {
-                                log("Stage ${def.stage} completed after action")
-                                return
-                            }
-                            if (updated.stage != pd.stage) {
-                                log("Action advanced ${pd.stage} -> ${updated.stage}")
-                                pd = updated
-                                continue
-                            }
-                            return
-                        }
-
-                        def.conditionHandler?.let { cond ->
-                            val from = pd.stage
-                            val target = resolveConditionInitialStage(cond, pd.state)
-                                ?: throw FlowDefinitionException("Condition did not resolve to a stage from ${pd.stage}")
-                            val next = pd.copy(stage = target, stageStatus = StageStatus.PENDING)
-                            pd = persister.save(next)
-                            log("Condition transition $from -> $target")
-                            continue
-                        }
-
-                        def.nextStage?.let { ns ->
-                            val from = pd.stage
-                            val next = pd.copy(stage = ns, stageStatus = StageStatus.PENDING)
-                            pd = persister.save(next)
-                            log("Automatic transition $from -> $ns")
-                            continue
-                        }
-
-                        if (def.isTerminal()) {
-                            val completed = pd.copy(stageStatus = StageStatus.COMPLETED)
-                            persister.save(completed)
-                            log("Stage ${pd.stage} marked COMPLETED")
-                            return
-                        }
-
-                        error("Stage ${pd.stage} has no transitions but is not terminal")
-                    } catch (ex: Throwable) {
-                        handleFailure(flowId, flowInstanceId, pd, persister, ex)
-                        throw ex
+            try {
+                if (def.eventHandlers.isNotEmpty()) {
+                    val next = tryConsumeEventAndAdvance(flowId, def, pd, persister, flowInstanceId)
+                    if (next != null) {
+                        log("Event consumed for ${pd.stage}; advancing")
+                        pd = next
+                        continue
                     }
+                    // No matching event; release the RUNNING claim.
+                    persister.save(pd.copy(stageStatus = StageStatus.PENDING))
+                    return
                 }
+
+                if (def.action != null) {
+                    val result = def.action(pd.state)
+                    val newState = result ?: pd.state
+
+                    if (def.isTerminal()) {
+                        persister.save(pd.copy(state = newState, stageStatus = StageStatus.COMPLETED))
+                        log("Stage ${def.stage} completed after action")
+                        return
+                    }
+
+                    val nextStage: Stage = def.conditionHandler
+                        ?.let { cond ->
+                            resolveConditionInitialStage(cond, newState)
+                                ?: throw FlowDefinitionException("Condition did not resolve to a stage from ${pd.stage}")
+                        }
+                        ?: def.nextStage
+                        ?: error("Non-terminal stage ${pd.stage} has an action but no nextStage/condition")
+
+                    val from = pd.stage
+                    pd = persister.save(pd.copy(state = newState, stage = nextStage))
+                    log("Action advanced $from -> $nextStage")
+                    continue
+                }
+
+                def.conditionHandler?.let { cond ->
+                    val from = pd.stage
+                    val target = resolveConditionInitialStage(cond, pd.state)
+                        ?: throw FlowDefinitionException("Condition did not resolve to a stage from ${pd.stage}")
+                    pd = persister.save(pd.copy(stage = target))
+                    log("Condition transition $from -> $target")
+                    continue
+                }
+
+                def.nextStage?.let { ns ->
+                    val from = pd.stage
+                    pd = persister.save(pd.copy(stage = ns))
+                    log("Automatic transition $from -> $ns")
+                    continue
+                }
+
+                if (def.isTerminal()) {
+                    persister.save(pd.copy(stageStatus = StageStatus.COMPLETED))
+                    log("Stage ${pd.stage} marked COMPLETED")
+                    return
+                }
+
+                error("Stage ${pd.stage} has no transitions but is not terminal")
+            } catch (ex: Throwable) {
+                handleFailure(flowId, flowInstanceId, pd, persister, ex)
+                throw ex
             }
         }
     }
@@ -498,43 +535,10 @@ class FlowEngine(
             resolveConditionInitialStage(ch, pd.state)
         }
         ?: throw FlowDefinitionException("Event handler did not resolve to a stage from ${pd.stage}")
-        val next = pd.copy(stage = targetStage, stageStatus = StageStatus.PENDING)
+        val next = pd.copy(stage = targetStage)
         val saved = persister.save(next)
         eventStore.delete(stored.id)
         return saved
-    }
-
-    /**
-     * Execute action with RUNNING flip and persist the outcome.
-     */
-    private fun runActionAndPersistNext(
-        def: StageDefinition<Any>,
-        pd: ProcessData<Any>,
-        persister: StatePersister<Any>,
-    ): ProcessData<Any> {
-        val action = requireNotNull(def.action) { "runActionAndPersistNext called without an action" }
-
-        val running = pd.copy(stageStatus = StageStatus.RUNNING)
-        val current = persister.save(running)
-
-        val result = action(current.state)
-        val newState = result ?: current.state
-
-        if (def.isTerminal()) {
-            val completed = current.copy(state = newState, stageStatus = StageStatus.COMPLETED)
-            return persister.save(completed)
-        }
-
-        val nextStage: Stage = def.conditionHandler
-            ?.let { cond ->
-                resolveConditionInitialStage(cond, newState)
-                    ?: throw FlowDefinitionException("Condition did not resolve to a stage from ${pd.stage}")
-            }
-            ?: def.nextStage
-            ?: error("Non-terminal stage ${pd.stage} has an action but no nextStage/condition")
-
-        val next = current.copy(state = newState, stage = nextStage, stageStatus = StageStatus.PENDING)
-        return persister.save(next)
     }
 
     private fun handleFailure(

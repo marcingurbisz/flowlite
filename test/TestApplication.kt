@@ -12,7 +12,7 @@ import org.springframework.context.support.GenericApplicationContext
 import org.springframework.data.relational.core.mapping.NamingStrategy
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
-import org.springframework.jdbc.datasource.SingleConnectionDataSource
+import org.springframework.jdbc.datasource.DriverManagerDataSource
 import javax.sql.DataSource
 
 @SpringBootApplication
@@ -25,20 +25,23 @@ object Beans {
         }
 
         registerBean<DataSource> {
-            val ds = SingleConnectionDataSource(
-                "jdbc:h2:mem:${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
-                true,
-            )
+            val dbName = UUID.randomUUID()
+            val url = "jdbc:h2:mem:$dbName;DB_CLOSE_DELAY=-1"
+            val ds = DriverManagerDataSource(url)
             val jdbc = NamedParameterJdbcTemplate(ds)
             createOrderConfirmationTable(jdbc)
             createEmployeeOnboardingTable(jdbc)
             createPendingEventTable(jdbc)
-            createScheduledTasksTable(jdbc)
+            createTickTable(jdbc)
             ds
         }
 
+        registerBean {
+            NamedParameterJdbcTemplate(bean<DataSource>())
+        }
+
         registerBean<DbSchedulerTickScheduler> {
-            DbSchedulerTickScheduler(bean()).also { it.start() }
+            DbSchedulerTickScheduler(bean<FlowLiteTickRepository>()).also { it.start() }
         }
 
         registerBean {
@@ -54,7 +57,9 @@ object Beans {
         }
 
         registerBean {
-            SpringDataEmployeeOnboardingPersister(bean<EmployeeOnboardingRepository>())
+            SpringDataEmployeeOnboardingPersister(
+                repo = bean<EmployeeOnboardingRepository>(),
+            )
         }
 
         registerBean<FlowEngine> {
@@ -103,31 +108,21 @@ private fun String.toSnakeCase(): String {
         .replace(Regex("_h_r\\b"), "_hr")
 }
 
-private fun createScheduledTasksTable(jdbc: NamedParameterJdbcTemplate) {
+private fun createTickTable(jdbc: NamedParameterJdbcTemplate) {
     jdbc.jdbcTemplate.execute(
         """
-        create table if not exists scheduled_tasks (
-            task_name varchar(100) not null,
-            task_instance varchar(100) not null,
-            task_data blob,
-            execution_time timestamp not null,
-            picked boolean not null,
-            picked_by varchar(50),
-            last_success timestamp,
-            last_failure timestamp,
-            consecutive_failures int,
-            last_heartbeat timestamp,
-            version bigint not null,
-            created_at timestamp default current_timestamp not null,
-            last_updated_at timestamp default current_timestamp not null,
-            primary key (task_name, task_instance)
+        create table if not exists flowlite_tick (
+            id uuid default random_uuid() not null,
+            flow_id varchar(128) not null,
+            flow_instance_id uuid not null,
+            primary key (id)
         );
         """.trimIndent(),
     )
 
     jdbc.jdbcTemplate.execute(
         """
-        create index if not exists idx_scheduled_tasks_execution_time on scheduled_tasks(execution_time);
+        create index if not exists idx_flowlite_tick_process on flowlite_tick(flow_id, flow_instance_id);
         """.trimIndent(),
     )
 }

@@ -4,6 +4,7 @@ import io.flowlite.api.*
 import io.flowlite.test.EmployeeEvent.*
 import io.flowlite.test.EmployeeStage.*
 import io.kotest.core.spec.style.BehaviorSpec
+import org.springframework.dao.OptimisticLockingFailureException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.springframework.data.annotation.Id
@@ -18,11 +19,10 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
     val engine = TestApplicationExtension.engine
     val repo = TestApplicationExtension.employeeOnboardingRepository
-    val persister = TestApplicationExtension.employeeOnboardingPersister
 
     given("an employee onboarding flow") {
         `when`("generating a mermaid diagram") {
-            val flow = createEmployeeOnboardingFlow()
+            val flow = createEmployeeOnboardingFlow(TestApplicationExtension.employeeOnboardingActions)
             val generator = MermaidGenerator()
             val diagram = generator.generateDiagram("employee-onboarding-flow", flow)
 
@@ -237,35 +237,41 @@ interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboarding, UUID
 class SpringDataEmployeeOnboardingPersister(
     private val repo: EmployeeOnboardingRepository,
 ) : StatePersister<EmployeeOnboarding> {
+    override fun tryTransitionStageStatus(
+        flowInstanceId: UUID,
+        expectedStage: Stage,
+        expectedStageStatus: StageStatus,
+        newStageStatus: StageStatus,
+    ): Boolean {
+        val current = load(flowInstanceId)
+        if (current.stage != expectedStage) return false
+        if (current.stageStatus != expectedStageStatus) return false
+
+        return try {
+            repo.save(
+                current.state.copy(
+                    stageStatus = newStageStatus,
+                ),
+            )
+            true
+        } catch (_: OptimisticLockingFailureException) {
+            false
+        }
+    }
+
     override fun save(processData: ProcessData<EmployeeOnboarding>): ProcessData<EmployeeOnboarding> {
         val stage = processData.stage as? EmployeeStage
             ?: error("Unexpected stage ${processData.stage}")
 
-        fun toEntity(state: EmployeeOnboarding) = state.copy(
+        val saved = repo.saveWithOptimisticLockRetry(
             id = processData.flowInstanceId,
-            stage = stage,
-            stageStatus = processData.stageStatus,
-        )
-
-        val existing = repo.findById(processData.flowInstanceId).orElse(null)
-        val saved = if (existing == null) {
-            // Initial create: persist full business state + engine fields.
-            repo.save(toEntity(processData.state))
-        } else {
-            // Update: engine owns only stage + stageStatus; keep all business fields from the latest row.
-            val candidate = existing.copy(stage = stage, stageStatus = processData.stageStatus)
-            repo.saveWithOptimisticLockRetry(
+            candidate = processData.state.copy(
                 id = processData.flowInstanceId,
-                candidate = candidate,
-            ) { latest ->
-                latest.copy(stage = stage, stageStatus = processData.stageStatus)
-            }
-        }
-        return processData.copy(
-            state = saved,
-            stage = saved.stage,
-            stageStatus = saved.stageStatus,
-        )
+                stage = stage,
+                stageStatus = processData.stageStatus,
+            )
+        ) { latest -> latest.copy(stage = stage, stageStatus = processData.stageStatus) }
+        return processData.copy(state = saved)
     }
 
     override fun load(flowInstanceId: UUID): ProcessData<EmployeeOnboarding> {
@@ -279,9 +285,6 @@ class SpringDataEmployeeOnboardingPersister(
         )
     }
 }
-
-fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> =
-    createEmployeeOnboardingFlow(EmployeeOnboardingActions())
 
 fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<EmployeeOnboarding> {
     val flow = // FLOW-DEFINITION-START

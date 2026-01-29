@@ -1,39 +1,47 @@
 package io.flowlite.test
 
-import com.github.kagkarlsson.scheduler.Scheduler
-import com.github.kagkarlsson.scheduler.SchedulerBuilder
-import com.github.kagkarlsson.scheduler.SchedulerClient
-import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutingException
-import com.github.kagkarlsson.scheduler.task.Task
-import com.github.kagkarlsson.scheduler.task.helper.OneTimeTask
-import com.github.kagkarlsson.scheduler.task.helper.Tasks
 import io.flowlite.api.TickScheduler
-import java.time.Duration
+import io.flowlite.api.TickRedeliveryRequestedException
 import java.util.UUID
-import javax.sql.DataSource
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import org.slf4j.LoggerFactory
+import org.springframework.data.annotation.Id
+import org.springframework.data.relational.core.mapping.Table
+import org.springframework.data.repository.CrudRepository
 
-class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler, AutoCloseable {
-    private val taskName = "flowlite-tick"
+@Table("FLOWLITE_TICK")
+data class FlowLiteTick(
+    @Id
+    val id: UUID? = null,
+    val flowId: String,
+    val flowInstanceId: UUID,
+)
+
+interface FlowLiteTickRepository : CrudRepository<FlowLiteTick, UUID>
+
+class DbSchedulerTickScheduler(
+    private val tickRepo: FlowLiteTickRepository,
+) : TickScheduler, AutoCloseable {
+
     private var tickHandler: ((String, UUID) -> Unit)? = null
+    private val started = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
 
-    private val task: OneTimeTask<String> = Tasks.oneTime(taskName, String::class.java)
-        .execute { instance, _ ->
-            val handler = tickHandler ?: return@execute
-            val parts = instance.data.split("|", limit = 2)
-            if (parts.size != 2) return@execute
-            val flowId = parts[0]
-            val flowInstanceId = UUID.fromString(parts[1])
-            handler(flowId, flowInstanceId)
-        }
-
-    private val scheduler: Scheduler = SchedulerBuilder(dataSource, listOf<Task<*>>(task))
-        .pollingInterval(Duration.ofMillis(10))
-        .threads(4)
-        .enableImmediateExecution()
-        .build()
+    private val executor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(
+        Thread.ofVirtual().name("flowlite-tick-worker-", 0).factory(),
+    )
 
     fun start() {
-        scheduler.start()
+        if (!started.compareAndSet(false, true)) return
+        executor.scheduleWithFixedDelay(
+            { pollOnce() },
+            0,
+            10,
+            TimeUnit.MILLISECONDS,
+        )
     }
 
     override fun setTickHandler(handler: (String, UUID) -> Unit) {
@@ -41,39 +49,51 @@ class DbSchedulerTickScheduler(dataSource: DataSource) : TickScheduler, AutoClos
     }
 
     override fun scheduleTick(flowId: String, flowInstanceId: UUID) {
-        val data = "$flowId|$flowInstanceId"
-        // Single-flight across JVMs: coalesce all ticks for this instance into a single db-scheduler task instance.
-        // WHEN_EXISTS_RESCHEDULE ensures that if a tick is already scheduled, we bring execution_time forward.
-        val instanceId = "$flowId|$flowInstanceId"
-        val schedulable = task.schedulableInstance(instanceId, data)
+        if (closed.get()) return
 
-        // Important: db-scheduler explicitly forbids modifying a picked (currently executing) execution.
-        // If we just swallow that exception, we may lose a wakeup for an event that arrived after the
-        // running tick checked the mailbox and returned. To avoid "lost tick" in tests, we retry for
-        // a short bounded time until the execution finishes and the row becomes schedulable again.
-        val deadlineNanos = System.nanoTime() + Duration.ofMillis(750).toNanos()
-        var backoffMillis = 5L
-        while (true) {
-            try {
-                scheduler.schedule(schedulable, SchedulerClient.ScheduleOptions.WHEN_EXISTS_RESCHEDULE)
-                return
-            } catch (_: TaskInstanceCurrentlyExecutingException) {
-                if (System.nanoTime() >= deadlineNanos) return
-                try {
-                    Thread.sleep(backoffMillis)
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    return
+        tickRepo.save(
+            FlowLiteTick(
+                flowId = flowId,
+                flowInstanceId = flowInstanceId,
+            ),
+        )
+    }
+
+    private fun pollOnce() {
+        val handler = tickHandler ?: return
+        if (closed.get()) return
+
+        val iterator = tickRepo.findAll().iterator()
+        if (!iterator.hasNext()) return
+        val tick = iterator.next()
+
+        try {
+            tickRepo.deleteById(tick.id)
+        } catch (_: Exception) {
+            return
+        }
+
+        try {
+            handler(tick.flowId, tick.flowInstanceId)
+        } catch (t: Throwable) {
+            when (t) {
+                is TickRedeliveryRequestedException -> {
+                    logger.debug("Tick redelivery requested for {}/{}: {}", tick.flowId, tick.flowInstanceId, t.message)
+                    scheduleTick(tick.flowId, tick.flowInstanceId)
                 }
-                if (backoffMillis < 50L) backoffMillis += 5L
-            } catch (_: Throwable) {
-                // best-effort
-                return
+                else -> {
+                    logger.error("Tick handler failed for {}/{}", tick.flowId, tick.flowInstanceId, t)
+                }
             }
         }
     }
 
     override fun close() {
-        scheduler.stop()
+        if (!closed.compareAndSet(false, true)) return
+        executor.shutdownNow()
+    }
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(DbSchedulerTickScheduler::class.java)
     }
 }

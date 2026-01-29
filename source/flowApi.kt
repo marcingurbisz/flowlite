@@ -535,7 +535,7 @@ class FlowEngine(
                 }
 
                 error("Stage ${pd.stage} has no transitions but is not terminal")
-            } catch (ex: Throwable) {
+            } catch (ex: Exception) {
                 log.error(ex) { "Failure in $flowId/$flowInstanceId at stage ${pd.stage}" }
                 persister.save(pd.copy(stageStatus = StageStatus.ERROR))
                 throw ex

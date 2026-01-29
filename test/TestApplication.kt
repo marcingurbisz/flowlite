@@ -41,7 +41,7 @@ object Beans {
         }
 
         registerBean<DbTickScheduler> {
-            DbTickScheduler(bean<FlowLiteTickRepository>()).also { it.start() }
+            DbTickScheduler(bean<FlowLiteTickRepository>())
         }
 
         registerBean {

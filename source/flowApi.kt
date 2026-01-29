@@ -1,7 +1,7 @@
 package io.flowlite.api
 
 import java.util.UUID
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Represents a stage within a workflow. Implementations should be enums to provide a finite set of possible stages.
@@ -334,6 +334,7 @@ class FlowEngine(
         flow: Flow<T>,
         statePersister: StatePersister<T>,
     ) {
+        log.info { "registerFlow(flowId=$flowId)" }
         flows[flowId] = flow as Flow<Any>
         persisters[flowId] = statePersister as StatePersister<Any>
     }
@@ -343,6 +344,7 @@ class FlowEngine(
         val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val initialStage = resolveInitialStage(flow as Flow<T>, initialState)
+        log.info { "startProcess(flowId=$flowId, flowInstanceId=$flowInstanceId, initialStage=$initialStage)" }
         val pd = ProcessData(
             flowInstanceId = flowInstanceId,
             state = initialState,
@@ -358,6 +360,7 @@ class FlowEngine(
         requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val current = persister.load(flowInstanceId)
+        log.info { "startProcess(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
         if (current.stageStatus == StageStatus.COMPLETED) return flowInstanceId
         enqueueTick(flowId, flowInstanceId)
         return flowInstanceId
@@ -366,6 +369,7 @@ class FlowEngine(
     fun sendEvent(flowId: String, flowInstanceId: UUID, event: Event) {
         requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
+        log.info { "sendEvent(flowId=$flowId, flowInstanceId=$flowInstanceId, event=$event)" }
         eventStore.append(flowId, flowInstanceId, event)
         enqueueTick(flowId, flowInstanceId)
     }
@@ -373,6 +377,7 @@ class FlowEngine(
     fun retry(flowId: String, flowInstanceId: UUID) {
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val current = persister.load(flowInstanceId)
+        log.info { "retry(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
         if (current.stageStatus != StageStatus.ERROR) {
             error("Cannot retry $flowId/$flowInstanceId because status is ${current.stageStatus}")
         }
@@ -384,6 +389,7 @@ class FlowEngine(
     fun getStatus(flowId: String, flowInstanceId: UUID): Pair<Stage, StageStatus>? {
         val persister = persisters[flowId] ?: return null
         val pd = persister.load(flowInstanceId)
+        log.debug { "getStatus(flowId=$flowId, flowInstanceId=$flowInstanceId) -> (${pd.stage}, ${pd.stageStatus})" }
         return pd.stage to pd.stageStatus
     }
 
@@ -414,11 +420,11 @@ class FlowEngine(
         val loaded = persister.load(flowInstanceId)
         when (loaded.stageStatus) {
             StageStatus.ERROR -> {
-                log("$flowId/$flowInstanceId is in ERROR at stage ${loaded.stage}; awaiting retry")
+                log.debug { "$flowId/$flowInstanceId is in ERROR at stage ${loaded.stage}; awaiting retry" }
                 return
             }
             StageStatus.COMPLETED -> {
-                log("$flowId/$flowInstanceId already COMPLETED")
+                log.debug { "$flowId/$flowInstanceId already COMPLETED" }
                 return
             }
             StageStatus.RUNNING -> {
@@ -451,7 +457,7 @@ class FlowEngine(
         val flowInstanceId = pd.flowInstanceId
 
         while (true) {
-            log("Processing loop for $flowId/$flowInstanceId at stage ${pd.stage}")
+            log.debug { "Processing loop for $flowId/$flowInstanceId at stage ${pd.stage}" }
             val def = flow.stages[pd.stage]
                 ?: throw FlowDefinitionException("No definition for stage ${pd.stage}")
 
@@ -459,7 +465,7 @@ class FlowEngine(
                 if (def.eventHandlers.isNotEmpty()) {
                     val next = tryConsumeEventAndAdvance(flowId, def, pd, persister, flowInstanceId)
                     if (next != null) {
-                        log("Event consumed for ${pd.stage}; advancing")
+                        log.debug { "Event consumed for ${pd.stage}; advancing" }
                         pd = next
                         continue
                     }
@@ -474,7 +480,7 @@ class FlowEngine(
 
                     if (def.isTerminal()) {
                         persister.save(pd.copy(state = newState, stageStatus = StageStatus.COMPLETED))
-                        log("Stage ${def.stage} completed after action")
+                        log.info { "Stage ${def.stage} completed after action ($flowId/$flowInstanceId)" }
                         return
                     }
 
@@ -488,7 +494,7 @@ class FlowEngine(
 
                     val from = pd.stage
                     pd = persister.save(pd.copy(state = newState, stage = nextStage))
-                    log("Action advanced $from -> $nextStage")
+                    log.debug { "Action advanced $from -> $nextStage ($flowId/$flowInstanceId)" }
                     continue
                 }
 
@@ -497,26 +503,27 @@ class FlowEngine(
                     val target = resolveConditionInitialStage(cond, pd.state)
                         ?: throw FlowDefinitionException("Condition did not resolve to a stage from ${pd.stage}")
                     pd = persister.save(pd.copy(stage = target))
-                    log("Condition transition $from -> $target")
+                    log.debug { "Condition transition $from -> $target ($flowId/$flowInstanceId)" }
                     continue
                 }
 
                 def.nextStage?.let { ns ->
                     val from = pd.stage
                     pd = persister.save(pd.copy(stage = ns))
-                    log("Automatic transition $from -> $ns")
+                    log.debug { "Automatic transition $from -> $ns ($flowId/$flowInstanceId)" }
                     continue
                 }
 
                 if (def.isTerminal()) {
                     persister.save(pd.copy(stageStatus = StageStatus.COMPLETED))
-                    log("Stage ${pd.stage} marked COMPLETED")
+                    log.info { "Stage ${pd.stage} marked COMPLETED ($flowId/$flowInstanceId)" }
                     return
                 }
 
                 error("Stage ${pd.stage} has no transitions but is not terminal")
             } catch (ex: Throwable) {
-                handleFailure(flowId, flowInstanceId, pd, persister, ex)
+                log.error(ex) { "Failure in $flowId/$flowInstanceId at stage ${pd.stage}" }
+                persister.save(pd.copy(stageStatus = StageStatus.ERROR))
                 throw ex
             }
         }
@@ -541,30 +548,8 @@ class FlowEngine(
         return saved
     }
 
-    private fun handleFailure(
-        flowId: String,
-        flowInstanceId: UUID,
-        pd: ProcessData<Any>,
-        persister: StatePersister<Any>,
-        ex: Throwable,
-    ) {
-        log("Failure in $flowId/$flowInstanceId at stage ${pd.stage}: ${ex.message}")
-        val errored = pd.copy(stageStatus = StageStatus.ERROR)
-        try {
-            persister.save(errored)
-        } catch (_: Throwable) {
-            // best-effort
-        }
-    }
-
     private fun StageDefinition<*>.isTerminal(): Boolean =
         nextStage == null && conditionHandler == null && eventHandlers.isEmpty()
-
-    private fun log(message: String) {
-        logger.info(message)
-    }
-
-    companion object {
-        private val logger = LoggerFactory.getLogger(FlowEngine::class.java)
-    }
 }
+
+private val log = KotlinLogging.logger {}

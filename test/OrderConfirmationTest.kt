@@ -6,11 +6,11 @@ import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.*
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.Version
 import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.repository.CrudRepository
-import org.slf4j.LoggerFactory
 import java.util.UUID
 
 const val ORDER_CONFIRMATION_FLOW_ID = "order-confirmation"
@@ -216,17 +216,15 @@ class SpringDataOrderConfirmationPersister(
     }
 }
 
-private val orderLogger = LoggerFactory.getLogger("OrderConfirmationActions")
-
 fun initializeOrderConfirmation(confirmation: OrderConfirmation): OrderConfirmation {
-    orderLogger.info("Initializing order confirmation for order ${confirmation.orderNumber}")
+    log.info { "Initializing order confirmation for order ${confirmation.orderNumber}" }
     val timestamp = System.currentTimeMillis().toString()
-    return confirmation.copy(stage = InitializingConfirmation, confirmationTimestamp = timestamp)
+    return confirmation.copy(confirmationTimestamp = timestamp)
 }
 
 fun removeFromConfirmationQueue(confirmation: OrderConfirmation): OrderConfirmation {
-    orderLogger.info("Removing order ${confirmation.orderNumber} from confirmation queue (digital processing)")
-    return confirmation.copy(stage = RemovingFromConfirmationQueue, isRemovedFromQueue = true)
+    log.info { "Removing order ${confirmation.orderNumber} from confirmation queue (digital processing)" }
+    return confirmation.copy(isRemovedFromQueue = true)
 }
 
 fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
@@ -235,10 +233,8 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
             ConfirmationType.DIGITAL -> "app notification/email"
             ConfirmationType.PHYSICAL -> "phone call"
         }
-    orderLogger.info(
-        "Informing customer ${confirmation.customerName} via $method that order ${confirmation.orderNumber} is being prepared"
-    )
-    return confirmation.copy(stage = InformingCustomer, isCustomerInformed = true)
+    log.info { "Informing customer ${confirmation.customerName} via $method that order ${confirmation.orderNumber} is being prepared" }
+    return confirmation.copy(isCustomerInformed = true)
 }
 
 // FLOW-DEFINITION-START
@@ -256,3 +252,5 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
         .build()
 }
 // FLOW-DEFINITION-END
+
+private val log = KotlinLogging.logger {}

@@ -1,13 +1,13 @@
 package io.flowlite.test
 
 import java.util.concurrent.TimeUnit
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 class EmployeeOnboardingActions(
     private val repo: EmployeeOnboardingRepository,
 ) {
     fun createUserInSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
-        onboardingLogger.info("Creating user account in system")
+        log.info { "Creating user account in system" }
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
 
         EmployeeOnboardingTestHooks.get(id)?.createUserInSystemHooks?.let { hooks ->
@@ -31,7 +31,7 @@ class EmployeeOnboardingActions(
     }
 
     fun activateEmployee(employee: EmployeeOnboarding): EmployeeOnboarding {
-        onboardingLogger.info("Activating employee account")
+        log.info { "Activating employee account" }
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
@@ -42,7 +42,7 @@ class EmployeeOnboardingActions(
     }
 
     fun updateSecurityClearanceLevels(employee: EmployeeOnboarding): EmployeeOnboarding {
-        onboardingLogger.info("Updating security clearance levels")
+        log.info { "Updating security clearance levels" }
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
@@ -53,7 +53,7 @@ class EmployeeOnboardingActions(
     }
 
     fun setDepartmentAccess(employee: EmployeeOnboarding): EmployeeOnboarding {
-        onboardingLogger.info("Setting department access permissions")
+        log.info { "Setting department access permissions" }
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
@@ -64,7 +64,7 @@ class EmployeeOnboardingActions(
     }
 
     fun generateEmployeeDocuments(employee: EmployeeOnboarding): EmployeeOnboarding {
-        onboardingLogger.info("Generating employee documents")
+        log.info { "Generating employee documents" }
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
@@ -75,7 +75,7 @@ class EmployeeOnboardingActions(
     }
 
     fun sendContractForSigning(employee: EmployeeOnboarding): EmployeeOnboarding {
-        onboardingLogger.info("Sending contract for signing")
+        log.info { "Sending contract for signing" }
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
@@ -86,7 +86,7 @@ class EmployeeOnboardingActions(
     }
 
     fun updateStatusInHRSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
-        onboardingLogger.info("Updating status in HR system")
+        log.info { "Updating status in HR system" }
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
@@ -95,8 +95,6 @@ class EmployeeOnboardingActions(
             latest.copy(statusUpdatedInHR = true)
         }
     }
-
-    companion object {
-        private val onboardingLogger = LoggerFactory.getLogger("EmployeeOnboardingActions")
-    }
 }
+
+private val log = KotlinLogging.logger {}

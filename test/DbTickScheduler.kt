@@ -2,12 +2,12 @@ package io.flowlite.test
 
 import io.flowlite.api.TickScheduler
 import io.flowlite.api.TickRedeliveryRequestedException
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import org.slf4j.LoggerFactory
 import org.springframework.data.annotation.Id
 import org.springframework.data.relational.core.mapping.Table
 import org.springframework.data.repository.CrudRepository
@@ -27,15 +27,13 @@ class DbTickScheduler(
 ) : TickScheduler, AutoCloseable {
 
     private var tickHandler: ((String, UUID) -> Unit)? = null
-    private val started = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
 
     private val executor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(
         Thread.ofVirtual().name("flowlite-tick-worker-", 0).factory(),
     )
 
-    fun start() {
-        if (!started.compareAndSet(false, true)) return
+    init {
         executor.scheduleWithFixedDelay(
             { pollOnce() },
             0,
@@ -68,7 +66,7 @@ class DbTickScheduler(
         val tick = iterator.next()
 
         try {
-            tickRepo.deleteById(tick.id)
+            tickRepo.deleteById(requireNotNull(tick.id) { "Tick.id must not be null when loaded from repository" })
         } catch (_: Exception) {
             return
         }
@@ -78,11 +76,11 @@ class DbTickScheduler(
         } catch (t: Throwable) {
             when (t) {
                 is TickRedeliveryRequestedException -> {
-                    logger.debug("Tick redelivery requested for {}/{}: {}", tick.flowId, tick.flowInstanceId, t.message)
+                    log.debug { "Tick redelivery requested for ${tick.flowId}/${tick.flowInstanceId}: ${t.message}" }
                     scheduleTick(tick.flowId, tick.flowInstanceId)
                 }
                 else -> {
-                    logger.error("Tick handler failed for {}/{}", tick.flowId, tick.flowInstanceId, t)
+                    log.error(t) { "Tick handler failed for ${tick.flowId}/${tick.flowInstanceId}" }
                 }
             }
         }
@@ -92,8 +90,6 @@ class DbTickScheduler(
         if (!closed.compareAndSet(false, true)) return
         executor.shutdownNow()
     }
-
-    companion object {
-        private val logger = LoggerFactory.getLogger(DbTickScheduler::class.java)
-    }
 }
+
+private val log = KotlinLogging.logger {}

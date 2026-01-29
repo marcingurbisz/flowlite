@@ -308,7 +308,7 @@ stateDiagram-v2
              - If the current stage consumes an event: advance to the next stage and continue (staying `RUNNING`).
              - If the current stage executes an action: run it and advance to the next stage and continue (staying `RUNNING`), or mark `COMPLETED` if terminal.
              - On failure: set `ERROR` (best-effort) and stop.
-3. External events: `sendEvent(flowInstanceId, eventType)` inserts a event into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
+3. External events: `sendEvent(flowId, flowInstanceId, event)` inserts a event into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
 
 `RUNNING` acts as a single-flight claim for tick processing. If a JVM crashes mid-loop, the instance may remain `RUNNING` until application-defined recovery resets it.
 

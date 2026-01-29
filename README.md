@@ -368,7 +368,7 @@ In tests, examples of these integrations live in:
 - If the tick handler throws `TickRedeliveryRequestedException`, the scheduler should treat it as a normal retry signal (redeliver later).
 - If the tick handler throws any other exception, the scheduler should log the error and stop the current delivery attempt.
 
-See `test/DbSchedulerTickScheduler.kt` for a minimal in-process polling scheduler.
+See `test/DbTickScheduler.kt` for a minimal in-process polling scheduler.
 
 Concurrency scenarios (cheat sheet):
 

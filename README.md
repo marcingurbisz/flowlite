@@ -349,7 +349,8 @@ In tests, examples of these integrations live in:
 - `load(flowInstanceId)` → current state (including process fields); throws if the process does not exist
 - `save(processData)` → create or update; beside updated engine fields processData may contain domain modifications produced by actions (see action persistence guidance below); returns refreshed data on success.
     - Should be best-effort in the presence of concurrency (optimistic locking): retry and/or merge engine-owned fields (`stage`, `stage_status`) with a freshly loaded domain snapshot to avoid lost updates.
-- `tryTransitionStageStatus(flowInstanceId, expectedStage, expectedStatus, newStatus)` → best-effort single-flight claim for tick processing.
+- `tryTransitionStageStatus(flowInstanceId, expectedStage, expectedStatus, newStatus)` → atomic compare-and-set transition of `stage_status` (guarded by both `stage` and `stage_status`). Returns true only if the expected values matched and the update was applied.
+    - Used by the engine to claim single-flight processing (`PENDING -> RUNNING`).
     - Implementation options include:
         - Atomic CAS update (e.g. SQL `UPDATE ... WHERE id AND stage AND stage_status`).
         - `load` + check + `save` guarded by optimistic locking (`@Version`) and handling optimistic lock failures.

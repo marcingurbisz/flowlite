@@ -62,7 +62,12 @@ interface StatePersister<T : Any> {
     fun load(flowInstanceId: UUID): ProcessData<T>
 
     /**
-     * Must be implemented as an atomic CAS update.
+     * Attempt to transition stage status atomically (compare-and-set).
+     *
+     * Implementations must ensure the update is applied only if both `expectedStage` and `expectedStageStatus` match
+     * the current persisted values. Returns `true` if the transition was applied, otherwise `false`.
+     *
+     * This is used by the engine primarily to claim single-flight processing (`PENDING -> RUNNING`).
      */
     fun tryTransitionStageStatus(
         flowInstanceId: UUID,

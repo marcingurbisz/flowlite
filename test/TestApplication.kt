@@ -112,10 +112,10 @@ private fun createTickTable(jdbc: NamedParameterJdbcTemplate) {
     jdbc.jdbcTemplate.execute(
         """
         create table if not exists flowlite_tick (
-            id uuid not null,
+            id uuid not null primary key,
             flow_id varchar(128) not null,
             flow_instance_id uuid not null,
-            primary key (id)
+            version bigint
         );
         """.trimIndent(),
     )

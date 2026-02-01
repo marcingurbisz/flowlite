@@ -2,6 +2,8 @@
 
 FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to define business processes in an intuitive and maintainable way. It provides a fluent, type-safe API that stays close to domain language while remaining simple to reason about.
 
+Note: FlowLite is actively evolving. Breaking changes may be introduced and backwards compatibility is not considered for now.
+
 ## Table of Contents
 - [Why FlowLite?](#why-flowlite)
 - [Example flow](#example-flow)
@@ -299,15 +301,16 @@ stateDiagram-v2
 
 1. Starting a flow instance persists a process, calculates initial stage and enqueues a Tick. It's also possible to pre-create the process earlier with your business data and later start processing by providing id.
 2. Tick processing loop:
-     - Load process state (stage + status) via `StatePersister`.
-     - If status `ERROR` → stop (await retry).
-         - If status `RUNNING` → another worker currently owns the instance; stop and let the tick be redelivered later.
-         - If status `PENDING`: atomically claim the instance by transitioning `PENDING -> RUNNING` (optimistic CAS in persistence).
-         - While `RUNNING`, the engine will keep advancing through automatic transitions and actions.
-             - If the current stage waits for events and no matching event exists: release the claim by setting status back to `PENDING` and stop.
-             - If the current stage consumes an event: advance to the next stage and continue (staying `RUNNING`).
-             - If the current stage executes an action: run it and advance to the next stage and continue (staying `RUNNING`), or mark `COMPLETED` if terminal.
-             - On failure: set `ERROR` (best-effort) and stop.
+    - Load process state (stage + status) via `StatePersister`.
+    - If status `ERROR` → stop (await retry).
+    - If status `RUNNING` → another worker currently owns the instance; stop (tick delivered while the instance is already being processed).
+    - If status `PENDING`: atomically claim the instance by transitioning `PENDING -> RUNNING` (optimistic CAS in persistence).
+    - While `RUNNING`, the engine will keep advancing through automatic transitions and actions.
+        - If the current stage waits for events and no matching event exists: release the claim by setting status back to `PENDING`, enqueue a Tick, and stop.
+            - Why enqueue: an event may arrive while the instance is `RUNNING` and its Tick can be delivered and ignored; enqueueing after releasing to `PENDING` ensures the event store is re-checked.
+        - If the current stage consumes an event: advance to the next stage and continue (staying `RUNNING`).
+        - If the current stage executes an action: run it and advance to the next stage and continue (staying `RUNNING`), or mark `COMPLETED` if terminal.
+        - On failure: set `ERROR` (best-effort) and stop.
 3. External events: `sendEvent(flowId, flowInstanceId, event)` inserts a event into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
 
 `RUNNING` acts as a single-flight claim for tick processing. If a JVM crashes mid-loop, the instance may remain `RUNNING` until application-defined recovery resets it.
@@ -357,25 +360,28 @@ In tests, examples of these integrations live in:
         - Persist engine state (stage/status) separately from business state.
 
 
-`(state: T) -> T?)` action persistence guidance:
+`(state: T) -> T?` action persistence guidance:
 - If an action needs to persist business changes (i.e. has side effects on the process business data), it is recommended that the action persists those changes itself and then returns the updated state to the engine.
 - An action may also return updated state without saving and rely on the engine calling `StatePersister.save(...)` for persistence. In this case, the persister must handle concurrency correctly (optimistic locking / merge rules). See the concurrency notes below.
 - If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances
 
 `TickScheduler` contract:
-- `scheduleTick(flowId, flowInstanceId)` can be called multiple times.
+- Methods:
+    - `setTickHandler(handler: (flowId: String, flowInstanceId: UUID) -> Unit)`
+    - `scheduleTick(flowId: String, flowInstanceId: UUID)`
+- The engine calls `setTickHandler(...)` once during `FlowEngine` initialization (constructor) to register its internal tick processor.
 - The scheduler delivers ticks with at-least-once semantics; duplicates are allowed.
-- If the tick handler throws `TickRedeliveryRequestedException`, the scheduler should treat it as a normal retry signal (redeliver later).
+- The scheduler should start delivering already-queued ticks (invoke handler for them) after application startup.
 - If the tick handler throws any other exception, the scheduler should log the error and stop the current delivery attempt.
 
 See `test/DbTickScheduler.kt` for a minimal in-process polling scheduler.
 
 Concurrency scenarios (cheat sheet):
 
-| Scenario                                                        | Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                |
-|-----------------------------------------------------------------|--------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| Two ticks processed concurrently for same instance              | No (if correctly implemented) | Double action execution; double stage advance; inconsistent state                            | Use an atomic `PENDING -> RUNNING` claim (`tryTransitionStageStatus(...)`) in persistence              |
-| Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one `waitFor(...)`), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth |
+| Scenario                                                        | Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                                        |
+|-----------------------------------------------------------------|--------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| Two ticks processed concurrently for same instance              | No (if correctly implemented) | Double action execution; double stage advance; inconsistent state                            | Use an atomic `PENDING -> RUNNING` claim using CAS (`tryTransitionStageStatus(...)`) in persistence                           |
+| Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one `waitFor(...)`), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth                                             |
 | External writer updates the same row while engine is processing |                                   Yes (GUI, notifications) | Potential lost updates; optimistic lock conflicts                                            | Options in case of JDBC persistence: 1) use optimistic locking (with merge or retries) 2) move engine state to separate table |
 
 

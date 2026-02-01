@@ -77,8 +77,6 @@ interface StatePersister<T : Any> {
     ): Boolean
 }
 
-class TickRedeliveryRequestedException(message: String) : RuntimeException(message)
-
 /**
  * Pluggable store for pending events. Default implementation is in-memory; applications can provide
  * persistent implementations (e.g., Spring Data JDBC) without changing the engine.
@@ -434,16 +432,18 @@ class FlowEngine(
         val loaded = persister.load(flowInstanceId)
         when (loaded.stageStatus) {
             StageStatus.ERROR -> {
-                log.debug { "$flowId/$flowInstanceId is in ERROR at stage ${loaded.stage}; awaiting retry" }
+                log.info { "Tick when $flowId/$flowInstanceId is in ERROR at stage ${loaded.stage}; awaiting retry" }
                 return
             }
             StageStatus.COMPLETED -> {
-                log.debug { "$flowId/$flowInstanceId already COMPLETED" }
+                log.info { "Tick when $flowId/$flowInstanceId already COMPLETED" }
                 return
             }
             StageStatus.RUNNING -> {
-                // Leave the tick for later delivery (do not treat as an error).
-                throw TickRedeliveryRequestedException("$flowId/$flowInstanceId is RUNNING")
+                // Tick delivered while another worker owns the RUNNING claim.
+                // This can happen, e.g. when an event arrives while the process is already running and enqueues a tick.
+                log.info { "Tick when $flowId/$flowInstanceId is RUNNING at stage ${loaded.stage}; ignoring" }
+                return
             }
             StageStatus.PENDING -> {
                 val claimed = persister.tryTransitionStageStatus(
@@ -485,6 +485,9 @@ class FlowEngine(
                     }
                     // No matching event; release the RUNNING claim.
                     persister.save(pd.copy(stageStatus = StageStatus.PENDING))
+                    // If an event arrived while we were RUNNING, its tick might have been delivered and ignored.
+                    // Enqueue a tick to re-check the event store after we become PENDING.
+                    enqueueTick(flowId, flowInstanceId)
                     return
                 }
 

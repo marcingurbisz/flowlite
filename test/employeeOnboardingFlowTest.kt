@@ -1,34 +1,191 @@
 package io.flowlite.test
 
 import io.flowlite.api.*
-import io.flowlite.api.Event
-import io.flowlite.api.Flow
-import io.flowlite.api.FlowBuilder
-import io.flowlite.api.Stage
 import io.flowlite.test.EmployeeEvent.*
 import io.flowlite.test.EmployeeStage.*
 import io.kotest.core.spec.style.BehaviorSpec
+import org.springframework.dao.OptimisticLockingFailureException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import org.springframework.data.annotation.Id
+import org.springframework.data.annotation.Version
+import org.springframework.data.repository.CrudRepository
+import java.util.UUID
 
-class EmployeeOnboardingFlowTest :
-    BehaviorSpec({
-        given("an employee onboarding flow") {
-            When("generating a mermaid diagram") {
-                val flow = createEmployeeOnboardingFlow()
-                val generator = MermaidGenerator()
-                val diagram = generator.generateDiagram("employee-onboarding-flow", flow)
+const val EMPLOYEE_ONBOARDING_FLOW_ID = "employee-onboarding"
 
-                println("\n=== EMPLOYEE ONBOARDING FLOW DIAGRAM ===")
-                println(diagram)
-                println("=== END DIAGRAM ===\n")
+class EmployeeOnboardingFlowTest : BehaviorSpec({
+    extension(TestApplicationExtension)
 
-                then("should generate diagram successfully") {
-                    // Just verify that diagram was generated (not empty)
-                    assert(diagram.isNotEmpty())
-                    assert(diagram.contains("stateDiagram-v2"))
+    val engine = TestApplicationExtension.engine
+    val repo = TestApplicationExtension.employeeOnboardingRepository
+
+    given("an employee onboarding flow") {
+        `when`("generating a mermaid diagram") {
+            val flow = createEmployeeOnboardingFlow(TestApplicationExtension.employeeOnboardingActions)
+            val generator = MermaidGenerator()
+            val diagram = generator.generateDiagram("employee-onboarding-flow", flow)
+
+            then("should generate diagram successfully") {
+                assert(diagram.isNotEmpty())
+                assert(diagram.contains("stateDiagram-v2"))
+            }
+        }
+    }
+
+    given("employee onboarding flow - manual path") {
+        val processId = engine.startInstance(
+            flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
+            initialState = EmployeeOnboarding(
+                stage = WaitingForContractSigned,
+                isOnboardingAutomated = false,
+                isExecutiveRole = false,
+                isSecurityClearanceRequired = false,
+                isFullOnboardingRequired = false,
+            ),
+        )
+
+        then("it starts at waiting for contract signature") {
+            awaitStatus(
+                fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, processId) },
+                expected = WaitingForContractSigned to StageStatus.PENDING,
+            )
+        }
+
+        `when`("contract is signed and onboarding completes") {
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, processId, ContractSigned)
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, processId, OnboardingComplete)
+
+            then("it finishes in HR system update stage") {
+                awaitStatus(
+                    fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, processId) },
+                    expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
+                )
+            }
+        }
+    }
+
+    given("employee onboarding persister - optimistic locking with external updates") {
+        fun awaitLatch(latch: CountDownLatch, name: String) {
+            require(latch.await(2, TimeUnit.SECONDS)) { "Timed out waiting for $name" }
+        }
+
+        `when`("an external update happens during action execution") {
+            val id = UUID.randomUUID()
+
+            val entered = CountDownLatch(1)
+            val allowProceedToSave = CountDownLatch(1)
+            val saved = CountDownLatch(1)
+            val allowReturnAfterSave = CountDownLatch(0)
+            EmployeeOnboardingTestHooks.set(
+                id,
+                EmployeeOnboardingActionHooks().apply {
+                    createUserInSystemHooks = EmployeeOnboardingActionHooks.CreateUserInSystemHooks(
+                        entered = entered,
+                        allowProceedToSave = allowProceedToSave,
+                        saved = saved,
+                        allowReturnAfterSave = allowReturnAfterSave,
+                    )
+                },
+            )
+
+            repo.save(
+                EmployeeOnboarding(
+                    id = id,
+                    stage = CreateUserInSystem,
+                    stageStatus = StageStatus.PENDING,
+                    isOnboardingAutomated = true,
+                    isExecutiveRole = true,
+                    isSecurityClearanceRequired = false,
+                ),
+            )
+
+            // Can be sent early; mailbox semantics will deliver later.
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, ContractSigned)
+            engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, id)
+
+            then("persister merges engine progress with external business updates") {
+                try {
+                    awaitLatch(entered, "entered")
+
+                    val external = repo.findById(id).orElseThrow()
+                    repo.save(external.copy(isRemoteEmployee = true))
+
+                    allowProceedToSave.countDown()
+                    awaitLatch(saved, "saved")
+
+                    awaitStatus(
+                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                        expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
+                    )
+
+                    val final = repo.findById(id).orElseThrow()
+                    require(final.userCreatedInSystem)
+                    require(final.isRemoteEmployee)
+                } finally {
+                    EmployeeOnboardingTestHooks.clear(id)
                 }
             }
         }
-    })
+
+        `when`("an external update happens after action saves but before it returns") {
+            val id = UUID.randomUUID()
+
+            val entered = CountDownLatch(1)
+            val allowProceedToSave = CountDownLatch(0)
+            val saved = CountDownLatch(1)
+            val allowReturnAfterSave = CountDownLatch(1)
+            EmployeeOnboardingTestHooks.set(
+                id,
+                EmployeeOnboardingActionHooks().apply {
+                    createUserInSystemHooks = EmployeeOnboardingActionHooks.CreateUserInSystemHooks(
+                        entered = entered,
+                        allowProceedToSave = allowProceedToSave,
+                        saved = saved,
+                        allowReturnAfterSave = allowReturnAfterSave,
+                    )
+                },
+            )
+
+            repo.save(
+                EmployeeOnboarding(
+                    id = id,
+                    stage = CreateUserInSystem,
+                    stageStatus = StageStatus.PENDING,
+                    isOnboardingAutomated = true,
+                    isExecutiveRole = true,
+                    isSecurityClearanceRequired = false,
+                ),
+            )
+
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, ContractSigned)
+            engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, id)
+
+            then("persister merges without losing the external update") {
+                try {
+                    awaitLatch(entered, "entered")
+                    awaitLatch(saved, "saved")
+
+                    val external = repo.findById(id).orElseThrow()
+                    repo.save(external.copy(isManagerOrDirectorRole = true))
+
+                    allowReturnAfterSave.countDown()
+
+                    awaitStatus(
+                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                        expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
+                    )
+
+                    val final = repo.findById(id).orElseThrow()
+                    require(final.userCreatedInSystem)
+                    require(final.isManagerOrDirectorRole)
+                } finally {
+                    EmployeeOnboardingTestHooks.clear(id)
+                }
+            }
+        }
+    }
+})
 
 // --- Domain Classes ---
 
@@ -53,8 +210,12 @@ enum class EmployeeEvent : Event {
 }
 
 data class EmployeeOnboarding(
-    val processId: String = "",
-    val stage: EmployeeStage? = null,
+    @Id
+    val id: UUID? = null,
+    @Version
+    val version: Long = 0,
+    val stage: EmployeeStage,
+    val stageStatus: StageStatus = StageStatus.PENDING,
     val isOnboardingAutomated: Boolean = false,
     val isContractSigned: Boolean = false,
     val isExecutiveRole: Boolean = false,
@@ -71,44 +232,61 @@ data class EmployeeOnboarding(
     val statusUpdatedInHR: Boolean = false,
 )
 
-// --- Action Functions ---
+interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboarding, UUID>
 
-fun createUserInSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Creating user account in system")
-    return employee
+class SpringDataEmployeeOnboardingPersister(
+    private val repo: EmployeeOnboardingRepository,
+) : StatePersister<EmployeeOnboarding> {
+    override fun tryTransitionStageStatus(
+        flowInstanceId: UUID,
+        expectedStage: Stage,
+        expectedStageStatus: StageStatus,
+        newStageStatus: StageStatus,
+    ): Boolean {
+        val current = load(flowInstanceId)
+        if (current.stage != expectedStage) return false
+        if (current.stageStatus != expectedStageStatus) return false
+
+        return try {
+            repo.save(
+                current.state.copy(
+                    stageStatus = newStageStatus,
+                ),
+            )
+            true
+        } catch (_: OptimisticLockingFailureException) {
+            false
+        }
+    }
+
+    override fun save(processData: ProcessData<EmployeeOnboarding>): ProcessData<EmployeeOnboarding> {
+        val stage = processData.stage as? EmployeeStage
+            ?: error("Unexpected stage ${processData.stage}")
+
+        val saved = repo.saveWithOptimisticLockRetry(
+            id = processData.flowInstanceId,
+            candidate = processData.state.copy(
+                id = processData.flowInstanceId,
+                stage = stage,
+                stageStatus = processData.stageStatus,
+            )
+        ) { latest -> latest.copy(stage = stage, stageStatus = processData.stageStatus) }
+        return processData.copy(state = saved)
+    }
+
+    override fun load(flowInstanceId: UUID): ProcessData<EmployeeOnboarding> {
+        val entity = repo.findById(flowInstanceId).orElse(null)
+            ?: error("Process '$flowInstanceId' not found")
+        return ProcessData(
+            flowInstanceId = flowInstanceId,
+            state = entity,
+            stage = entity.stage,
+            stageStatus = entity.stageStatus,
+        )
+    }
 }
 
-fun activateEmployee(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Activating employee account")
-    return employee
-}
-
-fun updateSecurityClearanceLevels(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Updating security clearance levels")
-    return employee
-}
-
-fun setDepartmentAccess(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Setting department access permissions")
-    return employee
-}
-
-fun generateEmployeeDocuments(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Generating employee documents")
-    return employee
-}
-
-fun sendContractForSigning(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Sending contract for signing")
-    return employee
-}
-
-fun updateStatusInHRSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
-    println("[Action] Updating status in HR system")
-    return employee
-}
-
-fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
+fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<EmployeeOnboarding> {
     val flow = // FLOW-DEFINITION-START
         FlowBuilder<EmployeeOnboarding>()
             .condition(
@@ -116,14 +294,14 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
                 description = "isOnboardingAutomated",
                 onTrue = {
                     // Automated path
-                    stage(CreateUserInSystem, ::createUserInSystem)
+                    stage(CreateUserInSystem, actions::createUserInSystem)
                         .condition(
                             { it.isExecutiveRole || it.isSecurityClearanceRequired },
                             description = "isExecutiveRole || isSecurityClearanceRequired",
                             onFalse = {
-                                stage(ActivateStandardEmployee, ::activateEmployee)
-                                    .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
-                                    .stage(SendContractForSigning, ::sendContractForSigning)
+                                stage(ActivateStandardEmployee, actions::activateEmployee)
+                                    .stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
+                                    .stage(SendContractForSigning, actions::sendContractForSigning)
                                     .stage(WaitingForEmployeeDocumentsSigned)
                                     .waitFor(EmployeeDocumentsSigned)
                                     .stage(WaitingForContractSigned)
@@ -132,8 +310,8 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
                                         { it.isExecutiveRole || it.isSecurityClearanceRequired },
                                         description = "isExecutiveRole || isSecurityClearanceRequired",
                                         onTrue = {
-                                            stage(ActivateSpecializedEmployee, ::activateEmployee)
-                                                .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem)
+                                            stage(ActivateSpecializedEmployee, actions::activateEmployee)
+                                                .stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
                                         },
                                         onFalse = {
                                             stage(WaitingForOnboardingCompletion)
@@ -143,7 +321,7 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
                                     )
                             },
                             onTrue = {
-                                stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
                                     .condition(
                                         { it.isSecurityClearanceRequired },
                                         description = "isSecurityClearanceRequired",
@@ -152,7 +330,7 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
                                                 { it.isFullOnboardingRequired },
                                                 description = "isFullOnboardingRequired",
                                                 onTrue = {
-                                                    stage(SetDepartmentAccess, ::setDepartmentAccess)
+                                                    stage(SetDepartmentAccess, actions::setDepartmentAccess)
                                                         .join(GenerateEmployeeDocuments)
                                                 },
                                                 onFalse = { join(GenerateEmployeeDocuments) },
@@ -172,3 +350,4 @@ fun createEmployeeOnboardingFlow(): Flow<EmployeeOnboarding> {
     // FLOW-DEFINITION-END
     return flow
 }
+

@@ -2,6 +2,8 @@
 
 FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to define business processes in an intuitive and maintainable way. It provides a fluent, type-safe API that stays close to domain language while remaining simple to reason about.
 
+Note: FlowLite is actively evolving. Breaking changes may be introduced and backwards compatibility is not considered for now.
+
 ## Table of Contents
 - [Why FlowLite?](#why-flowlite)
 - [Example flow](#example-flow)
@@ -10,10 +12,16 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
 - [Conditional Branching](#conditional-branching)
 - [Join Operations](#join-operations)
 - [More examples](#more-examples)
-  - [Pizza Order](#pizza-order)
   - [Employee Onboarding](#employee-onboarding)
   - [Order Confirmation](#order-confirmation)
-- [Core Architecture](#core-architecture)
+- [Core Architecture](#architecture)
+    - [Runtime & Execution Model](#runtime--execution-model)
+    - [Transaction Boundaries](#transaction-boundaries)
+    - [Persistence Approach](#persistence-approach)
+    - [Contracts](#contracts)
+      - [Practical schema guidance (JDBC)](#practical-schema-guidance-jdbc)
+    - [Engine API](#engine-api)
+    - [Deferred / Future Enhancements](#deferred--future-enhancements)
   - [Flow Definition System](#flow-definition-system-sourceflowapikt)
   - [Core Interfaces](#core-interfaces)
   - [Flow Components](#flow-components)
@@ -27,13 +35,13 @@ FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to defi
 
 ## Why FlowLite?
 
-Traditional BPM platforms (e.g. Camunda) are powerful but often heavyweight for code-centric teams.
+Traditional BPM platforms (e.g. Camunda) are powerful but heavyweight for code-centric teams.
 
 FlowLite at a glance:
-- **Type-safe fluent API** – Kotlin-first (enums + functions)
+- **Type-safe fluent API**
 - **Visuals from code** – Mermaid diagrams generated automatically
 - **Natural syntax** – Reads close to business intent
-- **Lightweight** – Minimal surface area, no BPMN modeling overhead
+- **Lightweight**
 
 ## Example flow
 
@@ -44,7 +52,7 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {
-            waitFor(OrderConfirmationEvent.ConfirmedDigitally)
+            waitFor(ConfirmedDigitally)
                 .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 .stage(InformingCustomer, ::informCustomer)
             waitFor(ConfirmedPhysically).join(InformingCustomer)
@@ -74,21 +82,24 @@ stateDiagram-v2
 
 - **Stage**: A named step (implements `Stage`, usually enum). Represents “we are doing X” - activity-oriented naming (e.g. `InitializingPayment`).
 - **Action**: Function executed when entering a stage `.stage(InitializingConfirmation, ::initializeOrderConfirmation)` (optional).
-- **Event**: External trigger causing a transition (implements `Event`).
+- **Event**: External trigger causing a transition (implements `Event`). Submitted through engine API.
 - **Condition**: Binary branching with a predicate -> true/false branch (renders as a choice node).
-- **Join**: Converges control flow by pointing to an existing stage.
-- **Flow**: Immutable definition produced by `FlowBuilder<T>.build()`.
-- **Status**: Enum (PENDING, IN_PROGRESS, COMPLETED, ERROR) - details about stage and overall process status 🚧 **TODO**
+- **Join**: Converges control flow by pointing to an existing stage
+- **Flow**: Immutable definition produced by `FlowBuilder<T>.build()` and held in-memory.
+- **StageStatus**: Lifecycle state of the single active stage:
+    - `PENDING` – Active stage awaiting action execution or matching event.
+    - `RUNNING` – Flow instance is currently being progressed by the engine (claimed via an atomic `PENDING -> RUNNING` transition in persistence). Remains `RUNNING` during the whole processing loop and is released back to `PENDING` when the instance needs to wait for an event.
+    - `COMPLETED` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `PENDING` rather than persisting completion of the previous stage.
+    - `ERROR` – Action failed; requires manual retry.
+- **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
+    - A tick carries no business payload;
+    - Ticks are emitted on `startInstance`, `sendEvent`, and `retry`.
+- Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and process specific data
+- Single-token model: only one active stage at any moment (no parallelism within one flow).
 - Code-first definitions -> diagrams are derived artifacts.
 - Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
-- (Stage, Status, retry config) driving next action selection logic 🚧 **TODO**
-- External message trigger mechanism ("execute next step in flow for instance x") 🚧 **TODO**
-- Error Handling 🚧 **TODO**
-  - FlowLite differentiates between two types of exceptions: 
-      - **Process Exceptions**: Unexpected errors that represent technical issues (e.g. database connection failures, bug in the process action code)
-      - **Business Exceptions**: Expected exceptions that represent valid business cases (payment declined, validation errors) (those which implements `BusinessException` marker interface)
-  - Process exceptions can be retried via the FlowLite cockpit (accessible by technical stuff only)
-  - Business exceptions meant to be retried via FlowLite api (which you can use when you build your own UI to show process status) but also via FlowLite cockpit.
+- Error handling: any exception marks stage `ERROR`; `retry` resets it back to `PENDING` and restarts from that stage.
+- Migration: If the flow changes, migrations of existing instances are the responsibility of the application that uses FlowLite. No flow versioning nor migration support is planned in FlowLite.
 
 ### Stage Transitions
 
@@ -108,22 +119,30 @@ FlowLite supports 2 types of stage transitions:
 
 Event waiting semantics (`waitFor`):
 - A stage that calls `waitFor(EventX)` will transition when `EventX` is received.
-- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered (buffered / mailbox semantics).  🚧 **TODO**
+- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered.
 
 ### Conditional Branching
    ```kotlin
    flow.condition(
        predicate = { it.paymentMethod == PaymentMethod.CASH },
-       onTrue = { /* cash flow */ },
-       onFalse = { /* online flow */ }
+       onTrue = { /* true flow */ },
+       onFalse = { /* false flow */ }
    )
    ```
 ### Join Operations
 
-Reference existing stages from other branches
+Reference already defined stages using `join()`:
    ```kotlin
    flow.waitFor(PaymentCompleted).join(ProcessingOrder)
    ```
+
+### Action functions
+
+- Signature: `(state: T) -> T?`
+    - Return a new instance to persist domain changes and proceed.
+    - Return `null` to indicate no domain changes; the engine will still persist the stage/status transition and proceed.
+- Guidelines:
+    - Keep actions small and focused.
   
 ## More examples
 
@@ -138,73 +157,6 @@ Documentation refresh:
 - Run `./gradlew updateReadme` if you want to run it locally
 
 <!-- FlowDoc(all) -->
-### Pizza Order
-
-```kotlin
-fun createPizzaOrderFlow(): Flow<PizzaOrder> {
-
-    // Define main pizza order flow
-    return FlowBuilder<PizzaOrder>()
-        .condition(
-            predicate = { it.paymentMethod == PaymentMethod.CASH },
-            onTrue = {
-                stage(InitializingCashPayment, ::initializeCashPayment).apply {
-                    waitFor(PaymentConfirmed)
-                        .stage(StartingOrderPreparation, ::startOrderPreparation)
-                        .waitFor(ReadyForDelivery)
-                        .stage(InitializingDelivery, ::initializeDelivery)
-                        .apply {
-                            waitFor(DeliveryCompleted).stage(CompletingOrder, ::completeOrder).end()
-                            waitFor(DeliveryFailed).stage(CancellingOrder, ::sendOrderCancellation).end()
-                        }
-                    waitFor(Cancel).join(CancellingOrder)
-                }
-            },
-            onFalse = {
-                stage(InitializingOnlinePayment, ::initializeOnlinePayment).apply {
-                    waitFor(PaymentCompleted).join(StartingOrderPreparation)
-                    waitFor(SwitchToCashPayment).join(InitializingCashPayment)
-                    waitFor(Cancel).join(CancellingOrder)
-                    waitFor(PaymentSessionExpired).stage(ExpiringOnlinePayment).apply {
-                        waitFor(RetryPayment).join(InitializingOnlinePayment)
-                        waitFor(Cancel).join(CancellingOrder)
-                    }
-                }
-            },
-            description = "paymentMethod == PaymentMethod.CASH"
-        )
-        .build()
-}
-```
-
-```mermaid
-stateDiagram-v2
-    state if_paymentmethod_paymentmethod_cash <<choice>>
-    [*] --> if_paymentmethod_paymentmethod_cash
-    if_paymentmethod_paymentmethod_cash --> InitializingCashPayment: paymentMethod == PaymentMethod.CASH
-    InitializingCashPayment: InitializingCashPayment initializeCashPayment()
-    InitializingCashPayment --> StartingOrderPreparation: onEvent PaymentConfirmed
-    StartingOrderPreparation: StartingOrderPreparation startOrderPreparation()
-    StartingOrderPreparation --> InitializingDelivery: onEvent ReadyForDelivery
-    InitializingDelivery: InitializingDelivery initializeDelivery()
-    InitializingDelivery --> CompletingOrder: onEvent DeliveryCompleted
-    CompletingOrder: CompletingOrder completeOrder()
-    InitializingDelivery --> CancellingOrder: onEvent DeliveryFailed
-    CancellingOrder: CancellingOrder sendOrderCancellation()
-    InitializingCashPayment --> CancellingOrder: onEvent Cancel
-    if_paymentmethod_paymentmethod_cash --> InitializingOnlinePayment: NOT (paymentMethod == PaymentMethod.CASH)
-    InitializingOnlinePayment: InitializingOnlinePayment initializeOnlinePayment()
-    InitializingOnlinePayment --> StartingOrderPreparation: onEvent PaymentCompleted
-    InitializingOnlinePayment --> InitializingCashPayment: onEvent SwitchToCashPayment
-    InitializingOnlinePayment --> CancellingOrder: onEvent Cancel
-    InitializingOnlinePayment --> ExpiringOnlinePayment: onEvent PaymentSessionExpired
-    ExpiringOnlinePayment --> InitializingOnlinePayment: onEvent RetryPayment
-    ExpiringOnlinePayment --> CancellingOrder: onEvent Cancel
-    CompletingOrder --> [*]
-    CancellingOrder --> [*]
-
-```
-
 ### Employee Onboarding
 
 ```kotlin
@@ -214,14 +166,14 @@ stateDiagram-v2
                 description = "isOnboardingAutomated",
                 onTrue = {
                     // Automated path
-                    stage(CreateUserInSystem, ::createUserInSystem)
+                    stage(CreateUserInSystem, actions::createUserInSystem)
                         .condition(
                             { it.isExecutiveRole || it.isSecurityClearanceRequired },
                             description = "isExecutiveRole || isSecurityClearanceRequired",
                             onFalse = {
-                                stage(ActivateStandardEmployee, ::activateEmployee)
-                                    .stage(GenerateEmployeeDocuments, ::generateEmployeeDocuments)
-                                    .stage(SendContractForSigning, ::sendContractForSigning)
+                                stage(ActivateStandardEmployee, actions::activateEmployee)
+                                    .stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
+                                    .stage(SendContractForSigning, actions::sendContractForSigning)
                                     .stage(WaitingForEmployeeDocumentsSigned)
                                     .waitFor(EmployeeDocumentsSigned)
                                     .stage(WaitingForContractSigned)
@@ -230,8 +182,8 @@ stateDiagram-v2
                                         { it.isExecutiveRole || it.isSecurityClearanceRequired },
                                         description = "isExecutiveRole || isSecurityClearanceRequired",
                                         onTrue = {
-                                            stage(ActivateSpecializedEmployee, ::activateEmployee)
-                                                .stage(UpdateStatusInHRSystem, ::updateStatusInHRSystem)
+                                            stage(ActivateSpecializedEmployee, actions::activateEmployee)
+                                                .stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
                                         },
                                         onFalse = {
                                             stage(WaitingForOnboardingCompletion)
@@ -241,7 +193,7 @@ stateDiagram-v2
                                     )
                             },
                             onTrue = {
-                                stage(UpdateSecurityClearanceLevels, ::updateSecurityClearanceLevels)
+                                stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
                                     .condition(
                                         { it.isSecurityClearanceRequired },
                                         description = "isSecurityClearanceRequired",
@@ -250,7 +202,7 @@ stateDiagram-v2
                                                 { it.isFullOnboardingRequired },
                                                 description = "isFullOnboardingRequired",
                                                 onTrue = {
-                                                    stage(SetDepartmentAccess, ::setDepartmentAccess)
+                                                    stage(SetDepartmentAccess, actions::setDepartmentAccess)
                                                         .join(GenerateEmployeeDocuments)
                                                 },
                                                 onFalse = { join(GenerateEmployeeDocuments) },
@@ -278,31 +230,31 @@ stateDiagram-v2
     state if_isexecutiverole_issecurityclearancerequired_2 <<choice>>
     [*] --> if_isonboardingautomated
     if_isonboardingautomated --> CreateUserInSystem: isOnboardingAutomated
-    CreateUserInSystem: CreateUserInSystem createUserInSystem()
+    CreateUserInSystem: CreateUserInSystem io.flowlite.test.EmployeeOnboardingActions.createUserInSystem()
     CreateUserInSystem --> if_isexecutiverole_issecurityclearancerequired
     if_isexecutiverole_issecurityclearancerequired --> UpdateSecurityClearanceLevels: isExecutiveRole || isSecurityClearanceRequired
-    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels updateSecurityClearanceLevels()
+    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels io.flowlite.test.EmployeeOnboardingActions.updateSecurityClearanceLevels()
     UpdateSecurityClearanceLevels --> if_issecurityclearancerequired
     if_issecurityclearancerequired --> if_isfullonboardingrequired: isSecurityClearanceRequired
     if_isfullonboardingrequired --> SetDepartmentAccess: isFullOnboardingRequired
-    SetDepartmentAccess: SetDepartmentAccess setDepartmentAccess()
+    SetDepartmentAccess: SetDepartmentAccess io.flowlite.test.EmployeeOnboardingActions.setDepartmentAccess()
     SetDepartmentAccess --> GenerateEmployeeDocuments
-    GenerateEmployeeDocuments: GenerateEmployeeDocuments generateEmployeeDocuments()
+    GenerateEmployeeDocuments: GenerateEmployeeDocuments io.flowlite.test.EmployeeOnboardingActions.generateEmployeeDocuments()
     GenerateEmployeeDocuments --> SendContractForSigning
-    SendContractForSigning: SendContractForSigning sendContractForSigning()
+    SendContractForSigning: SendContractForSigning io.flowlite.test.EmployeeOnboardingActions.sendContractForSigning()
     SendContractForSigning --> WaitingForEmployeeDocumentsSigned
     WaitingForEmployeeDocumentsSigned --> WaitingForContractSigned: onEvent EmployeeDocumentsSigned
     WaitingForContractSigned --> if_isexecutiverole_issecurityclearancerequired_2: onEvent ContractSigned
     if_isexecutiverole_issecurityclearancerequired_2 --> ActivateSpecializedEmployee: isExecutiveRole || isSecurityClearanceRequired
-    ActivateSpecializedEmployee: ActivateSpecializedEmployee activateEmployee()
+    ActivateSpecializedEmployee: ActivateSpecializedEmployee io.flowlite.test.EmployeeOnboardingActions.activateEmployee()
     ActivateSpecializedEmployee --> UpdateStatusInHRSystem
-    UpdateStatusInHRSystem: UpdateStatusInHRSystem updateStatusInHRSystem()
+    UpdateStatusInHRSystem: UpdateStatusInHRSystem io.flowlite.test.EmployeeOnboardingActions.updateStatusInHRSystem()
     if_isexecutiverole_issecurityclearancerequired_2 --> WaitingForOnboardingCompletion: NOT (isExecutiveRole || isSecurityClearanceRequired)
     WaitingForOnboardingCompletion --> UpdateStatusInHRSystem: onEvent OnboardingComplete
     if_isfullonboardingrequired --> GenerateEmployeeDocuments: NOT (isFullOnboardingRequired)
     if_issecurityclearancerequired --> WaitingForContractSigned: NOT (isSecurityClearanceRequired)
     if_isexecutiverole_issecurityclearancerequired --> ActivateStandardEmployee: NOT (isExecutiveRole || isSecurityClearanceRequired)
-    ActivateStandardEmployee: ActivateStandardEmployee activateEmployee()
+    ActivateStandardEmployee: ActivateStandardEmployee io.flowlite.test.EmployeeOnboardingActions.activateEmployee()
     ActivateStandardEmployee --> GenerateEmployeeDocuments
     if_isonboardingautomated --> WaitingForContractSigned: NOT (isOnboardingAutomated)
     UpdateStatusInHRSystem --> [*]
@@ -317,7 +269,7 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {
-            waitFor(OrderConfirmationEvent.ConfirmedDigitally)
+            waitFor(ConfirmedDigitally)
                 .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 .stage(InformingCustomer, ::informCustomer)
             waitFor(ConfirmedPhysically).join(InformingCustomer)
@@ -343,7 +295,128 @@ stateDiagram-v2
 
 <!-- FlowDoc.end -->
 
-## Core Architecture
+## Architecture
+
+### Runtime & Execution Model
+
+1. Starting a flow instance persists instance data, calculates initial stage and enqueues a Tick. It's also possible to pre-create the flow instance earlier with your business data and later start processing by providing id.
+2. Tick processing loop:
+    - Load flow instance state (stage + status) via `StatePersister`.
+    - If status `ERROR` → stop (await retry).
+    - If status `RUNNING` → another worker currently owns the instance; stop (tick delivered while the instance is already being processed).
+    - If status `PENDING`: atomically claim the instance by transitioning `PENDING -> RUNNING` (optimistic CAS in persistence).
+    - While `RUNNING`, the engine will keep advancing through automatic transitions and actions.
+        - If the current stage waits for events and no matching event exists: release the claim by setting status back to `PENDING`, enqueue a Tick, and stop.
+            - Why enqueue: an event may arrive while the instance is `RUNNING` and its Tick can be delivered and ignored; enqueueing after releasing to `PENDING` ensures the event store is re-checked.
+        - If the current stage consumes an event: advance to the next stage and continue (staying `RUNNING`).
+        - If the current stage executes an action: run it and advance to the next stage and continue (staying `RUNNING`), or mark `COMPLETED` if terminal.
+        - On failure: set `ERROR` (best-effort) and stop.
+3. External events: `sendEvent(flowId, flowInstanceId, event)` inserts a event into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
+
+`RUNNING` acts as a single-flight claim for tick processing. If a JVM crashes mid-loop, the instance may remain `RUNNING` until application-defined recovery resets it.
+
+### Transaction Boundaries
+FlowLite does not start or manage transactions internally (to remain persistence-agnostic).
+
+Practical guidance (DB-backed implementations):
+- `startInstance`: persist the flow instance and enqueue a tick in the same transaction (or via an outbox) to avoid “flow instance created but never scheduled”.
+- `sendEvent`: append the pending event and enqueue a tick in the same transaction (or via an outbox) to avoid “event stored but never scheduled”.
+- `retry`: update `stage_status` to `PENDING` and enqueue a tick in the same transaction (or via an outbox).
+- Tick handling (`processTick`): wrapping it into transaction is not recommended since this will create a big transaction spanning all transition and actions between start and first stage with event handler or terminal state.
+
+### Persistence Approach
+
+FlowLite is “application-owned” for persistence which means you need to provide persistence implementation.
+At minimum, an application needs two persistence components:
+
+1. **Flow instance state persistence** (`StatePersister<T>`)
+    - Stores domain state **and** engine state for a single flow instance.
+    - Required engine fields:
+      - `id` (UUID, flow instance id)
+      - `stage` (string/enum name)
+      - `stage_status` (`PENDING` | `RUNNING` | `ERROR` | `COMPLETED`)
+        - Engine fields are **owned by the engine** and must not be updated by external writers.
+    - Plus your domain fields (customer data, order data, etc).
+
+2. **Pending events persistence** (`EventStore`)
+    - Stores events submitted via `sendEvent` until the flow reaches a stage that can consume them.
+    - This is what enables “mailbox semantics”: events can arrive early and will be applied later.
+
+In tests, examples of these integrations live in:
+- `StatePersister`: `SpringDataOrderConfirmationPersister`, `SpringDataEmployeeOnboardingPersister`
+- `EventStore`: `SpringDataEventStore`
+
+### Contracts
+
+`StatePersister<T>`:
+- `load(flowInstanceId)` → current state (including engine fields); throws if the flow instance does not exist
+- `save(processData)` → create or update; beside updated engine fields processData may contain domain modifications produced by actions (see action persistence guidance below); returns refreshed data on success.
+    - Should be best-effort in the presence of concurrency (optimistic locking): retry and/or merge engine-owned fields (`stage`, `stage_status`) with a freshly loaded domain snapshot to avoid lost updates.
+- `tryTransitionStageStatus(flowInstanceId, expectedStage, expectedStatus, newStatus)` → atomic compare-and-set transition of `stage_status` (guarded by both `stage` and `stage_status`). Returns true only if the expected values matched and the update was applied.
+    - Used by the engine to claim single-flight processing (`PENDING -> RUNNING`).
+    - Implementation options include:
+        - Atomic CAS update (e.g. SQL `UPDATE ... WHERE id AND stage AND stage_status`).
+        - `load` + check + `save` guarded by optimistic locking (`@Version`) and handling optimistic lock failures.
+        - Persist engine state (stage/status) separately from business state.
+
+
+`(state: T) -> T?` action persistence guidance:
+- If an action needs to persist business changes (i.e. has side effects on the process business data), it is recommended that the action persists those changes itself and then returns the updated state to the engine.
+- An action may also return updated state without saving and rely on the engine calling `StatePersister.save(...)` for persistence. In this case, the persister must handle concurrency correctly (optimistic locking / merge rules). See the concurrency notes below.
+- If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances
+
+`TickScheduler` contract:
+- `setTickHandler(handler)`
+    - Called once by the engine during `FlowEngine` initialization to register the function that processes ticks.
+- `scheduleTick(flowId, flowInstanceId)`
+    - Enqueues a tick for `(flowId, flowInstanceId)`.
+    - At-least-once delivery is required; duplicates are allowed.
+- Delivery/lifecycle expectations:
+    - Schedulers should start delivering already-queued ticks after application startup.
+- Error handling:
+    - If the tick handler throws, the scheduler should log and continue delivering future ticks (optionally with backoff). It must not crash permanently.
+
+See `test/DbTickScheduler.kt` for a minimal in-process polling scheduler.
+
+Concurrency scenarios (cheat sheet):
+
+| Scenario                                                        | Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                                        |
+|-----------------------------------------------------------------|--------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| Two ticks processed concurrently for same instance              | No (if correctly implemented) | Double action execution; double stage advance; inconsistent state                            | Use an atomic `PENDING -> RUNNING` claim using CAS (`tryTransitionStageStatus(...)`) in persistence                           |
+| Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one `waitFor(...)`), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth                                             |
+| External writer updates the same row while engine is processing |                                   Yes (GUI, notifications) | Potential lost updates; optimistic lock conflicts                                            | Options in case of JDBC persistence: 1) use optimistic locking (with merge or retries) 2) move engine state to separate table |
+
+
+#### Practical schema guidance (JDBC)
+
+No external updates (only process updates the row):
+- No issues with keeping engine and business fields in one table (one row per flow instance).
+- Optimistic locking not necessary
+- Actions can return a new state `T` and the persister can save business + engine fields atomically.
+
+External updates exist (GUI / notifications / other services):
+- Option A: Single table; External writers update business fields and handle optimistic lock conflicts with proper merge; persister called by engine handles optimistic lock conflicts with proper merge.
+- Option B: Separate table for engine and business fields.
+
+### Engine API
+
+The canonical reference for the API is the code in `source/flowApi.kt`.
+This README keeps a short, “semantic” list to explain intent, but the signatures may evolve.
+
+- `registerFlow(flowId, flow, statePersister)`
+- `startInstance(flowId, initialState)` – persists initial state and enqueues a Tick
+- `startInstance(flowId, flowInstanceId)` – starts processing for an already persisted row
+- `sendEvent(flowId, flowInstanceId, event)` – appends a pending event and enqueues a Tick
+- `retry(flowId, flowInstanceId)` – if current stage status is `ERROR`, resets it to `PENDING` and enqueues a Tick
+- `getStatus(flowId, flowInstanceId)` – returns `(stage, stageStatus)`
+
+### Deferred / Future Enhancements
+
+- Cockpit
+- structured audit history with error 
+- Distinguish business vs technical errors with tailored retry policies
+- Parallelism
+- Metrics, tracing
 
 ### Flow Definition System (`source/flowApi.kt`)
 - `FlowBuilder<T>` - Fluent API for defining workflows
@@ -361,6 +434,10 @@ stateDiagram-v2
 - `ConditionHandler<T>` - Handles conditional branching
 - `EventHandler<T>` - Handles event-based transitions
 - `FlowEngine` - Runtime engine for executing flows
+    - Drives progression via internal Tick messages
+    - Maintains exactly one active stage per process
+    - Uses `StageStatus` to guard action execution and enable idempotent replay
+    - External events stored in a shared `pending_events` table and consumed when a matching waiting stage becomes active
 
 ### Diagram Generation (`source/MermaidGenerator.kt`)
 - `MermaidGenerator` - Converts flow definitions to Mermaid diagrams
@@ -369,7 +446,7 @@ stateDiagram-v2
 
 ### Windows Setup
 
-If you're cloning this repository on Windows, symbolic links (like `CLAUDE.md -> README.md`) require special Git configuration:
+If you're cloning this repository on Windows, symbolic links (like `AGENTS.md -> README.md`) require special Git configuration:
 
 **Option 1: Enable symlinks globally (recommended)**
 ```bash
@@ -384,7 +461,7 @@ git clone -c core.symlinks=true <repository-url>
 
 **Requirements:** Git for Windows 2.10.2+, NTFS file system, and either Developer Mode enabled or Administrator privileges.
 
-If symbolic links don't work, `CLAUDE.md` will appear as a text file containing "README.md" - in this case, just refer to README.md directly.
+If symbolic links don't work, `AGENTS.md` will appear as a text file containing "README.md" - in this case, just refer to README.md directly.
 
 ### Build and Test Commands
 - `./gradlew build` - Build the entire project
@@ -410,3 +487,4 @@ FlowLite uses a **flat directory structure** to keep the codebase simple and org
 - Favor clear naming over comments
 - Comment only non-obvious cases or complex logic
 - Keep architectural & usage docs in this README
+- Remember to update "Table of Contents" in README when adding new chapter or changing existing

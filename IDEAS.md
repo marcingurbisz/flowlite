@@ -1,3 +1,21 @@
+## Cockpit
+* Consider that engine will expose the api for history of instance changes and error details
+* List of flows
+  * For each flow:
+    * diagram
+    * where are not completed instances
+* List of flows instances with status ERROR
+  * group by flow id and stage
+* Introduce concept of ERRORs retriable by user that I need on my concrete use case?
+  * how to diff them on cockpit?
+  * How to implement them? In core engine or extension
+* Retry single flow:
+  * single
+  * list of flows (list by query?)
+  * select from list?
+* List of completed flow instances
+* History for each flow instance
+
 ## Parallel Execution (Idea)
 
 FlowLite achieves parallelism through parent-child flow relationships.

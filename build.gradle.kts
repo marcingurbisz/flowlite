@@ -35,12 +35,21 @@ dependencies {
     // Kotlin standard library
     implementation(kotlin("stdlib"))
     implementation(kotlin("reflect"))
+    implementation("org.slf4j:slf4j-api:2.0.13")
+    implementation("io.github.oshai:kotlin-logging-jvm:7.0.14")
+    runtimeOnly("ch.qos.logback:logback-classic:1.5.13")
 
     // Testing
     testImplementation("io.kotest:kotest-runner-junit5:5.8.0")
     testImplementation("io.kotest:kotest-assertions-core:5.8.0")
     testImplementation("io.kotest:kotest-framework-datatest:5.8.0")
     testImplementation("io.mockk:mockk:1.13.10")
+    testImplementation("org.springframework.data:spring-data-jdbc:4.0.1")
+    testImplementation("org.springframework.boot:spring-boot-starter-data-jdbc:4.0.1")
+    testImplementation("org.springframework.boot:spring-boot-starter-test:4.0.1")
+    testImplementation("org.springframework.boot:spring-boot-starter-jdbc:4.0.1")
+    testImplementation("com.h2database:h2:2.2.224")
+    testImplementation("com.github.kagkarlsson:db-scheduler:16.7.0")
 }
 
 tasks.test {

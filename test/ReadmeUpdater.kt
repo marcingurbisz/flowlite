@@ -2,6 +2,7 @@ package io.flowlite.test
 
 import io.flowlite.api.Flow
 import io.flowlite.api.MermaidGenerator
+import org.springframework.beans.factory.getBean
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readLines
@@ -19,16 +20,10 @@ data class FlowSpec(
 
 private val documentedFlows = listOf(
     FlowSpec(
-        id = "pizza-order",
-        title = "Pizza Order",
-        source = Path.of("test/pizzaOrderFlowTest.kt"),
-        factory = ::createPizzaOrderFlow
-    ),
-    FlowSpec(
         id = "employee-onboarding",
         title = "Employee Onboarding",
         source = Path.of("test/employeeOnboardingFlowTest.kt"),
-        factory = ::createEmployeeOnboardingFlow
+        factory = ::createEmployeeOnboardingFlowFromSpring
     ),
     FlowSpec(
         id = "order-confirmation",
@@ -37,6 +32,14 @@ private val documentedFlows = listOf(
         factory = ::createOrderConfirmationFlow
     )
 )
+
+private fun createEmployeeOnboardingFlowFromSpring(): Flow<*> {
+    val context = startTestApplication()
+    return context.use { context ->
+        val actions = context.getBean<EmployeeOnboardingActions>()
+        createEmployeeOnboardingFlow(actions)
+    }
+}
 
 fun main() {
     val generator = MermaidGenerator()

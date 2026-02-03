@@ -93,7 +93,7 @@ stateDiagram-v2
     - `ERROR` – Action failed; requires manual retry.
 - **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
     - A tick carries no business payload;
-    - Ticks are emitted on `startProcess`, `sendEvent`, and `retry`.
+    - Ticks are emitted on `startInstance`, `sendEvent`, and `retry`.
 - Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and process specific data
 - Single-token model: only one active stage at any moment (no parallelism within one flow).
 - Code-first definitions -> diagrams are derived artifacts.
@@ -299,9 +299,9 @@ stateDiagram-v2
 
 ### Runtime & Execution Model
 
-1. Starting a flow instance persists a process, calculates initial stage and enqueues a Tick. It's also possible to pre-create the process earlier with your business data and later start processing by providing id.
+1. Starting a flow instance persists instance data, calculates initial stage and enqueues a Tick. It's also possible to pre-create the flow instance earlier with your business data and later start processing by providing id.
 2. Tick processing loop:
-    - Load process state (stage + status) via `StatePersister`.
+    - Load flow instance state (stage + status) via `StatePersister`.
     - If status `ERROR` → stop (await retry).
     - If status `RUNNING` → another worker currently owns the instance; stop (tick delivered while the instance is already being processed).
     - If status `PENDING`: atomically claim the instance by transitioning `PENDING -> RUNNING` (optimistic CAS in persistence).
@@ -319,7 +319,7 @@ stateDiagram-v2
 FlowLite does not start or manage transactions internally (to remain persistence-agnostic).
 
 Practical guidance (DB-backed implementations):
-- `startProcess`: persist the initial process row and enqueue a tick in the same transaction (or via an outbox) to avoid “process created but never scheduled”.
+- `startInstance`: persist the flow instance and enqueue a tick in the same transaction (or via an outbox) to avoid “flow instance created but never scheduled”.
 - `sendEvent`: append the pending event and enqueue a tick in the same transaction (or via an outbox) to avoid “event stored but never scheduled”.
 - `retry`: update `stage_status` to `PENDING` and enqueue a tick in the same transaction (or via an outbox).
 - Tick handling (`processTick`): wrapping it into transaction is not recommended since this will create a big transaction spanning all transition and actions between start and first stage with event handler or terminal state.
@@ -329,7 +329,7 @@ Practical guidance (DB-backed implementations):
 FlowLite is “application-owned” for persistence which means you need to provide persistence implementation.
 At minimum, an application needs two persistence components:
 
-1. **Process state persistence** (`StatePersister<T>`)
+1. **Flow instance state persistence** (`StatePersister<T>`)
     - Stores domain state **and** engine state for a single flow instance.
     - Required engine fields:
       - `id` (UUID, flow instance id)
@@ -349,7 +349,7 @@ In tests, examples of these integrations live in:
 ### Contracts
 
 `StatePersister<T>`:
-- `load(flowInstanceId)` → current state (including process fields); throws if the process does not exist
+- `load(flowInstanceId)` → current state (including engine fields); throws if the flow instance does not exist
 - `save(processData)` → create or update; beside updated engine fields processData may contain domain modifications produced by actions (see action persistence guidance below); returns refreshed data on success.
     - Should be best-effort in the presence of concurrency (optimistic locking): retry and/or merge engine-owned fields (`stage`, `stage_status`) with a freshly loaded domain snapshot to avoid lost updates.
 - `tryTransitionStageStatus(flowInstanceId, expectedStage, expectedStatus, newStatus)` → atomic compare-and-set transition of `stage_status` (guarded by both `stage` and `stage_status`). Returns true only if the expected values matched and the update was applied.
@@ -366,13 +366,15 @@ In tests, examples of these integrations live in:
 - If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances
 
 `TickScheduler` contract:
-- Methods:
-    - `setTickHandler(handler: (flowId: String, flowInstanceId: UUID) -> Unit)`
-    - `scheduleTick(flowId: String, flowInstanceId: UUID)`
-- The engine calls `setTickHandler(...)` once during `FlowEngine` initialization (constructor) to register its internal tick processor.
-- The scheduler delivers ticks with at-least-once semantics; duplicates are allowed.
-- The scheduler should start delivering already-queued ticks (invoke handler for them) after application startup.
-- If the tick handler throws any other exception, the scheduler should log the error and stop the current delivery attempt.
+- `setTickHandler(handler)`
+    - Called once by the engine during `FlowEngine` initialization to register the function that processes ticks.
+- `scheduleTick(flowId, flowInstanceId)`
+    - Enqueues a tick for `(flowId, flowInstanceId)`.
+    - At-least-once delivery is required; duplicates are allowed.
+- Delivery/lifecycle expectations:
+    - Schedulers should start delivering already-queued ticks after application startup.
+- Error handling:
+    - If the tick handler throws, the scheduler should log and continue delivering future ticks (optionally with backoff). It must not crash permanently.
 
 See `test/DbTickScheduler.kt` for a minimal in-process polling scheduler.
 
@@ -402,8 +404,8 @@ The canonical reference for the API is the code in `source/flowApi.kt`.
 This README keeps a short, “semantic” list to explain intent, but the signatures may evolve.
 
 - `registerFlow(flowId, flow, statePersister)`
-- `startProcess(flowId, initialState)` – persists initial state and enqueues a Tick
-- `startProcess(flowId, flowInstanceId)` – starts processing for an already persisted row
+- `startInstance(flowId, initialState)` – persists initial state and enqueues a Tick
+- `startInstance(flowId, flowInstanceId)` – starts processing for an already persisted row
 - `sendEvent(flowId, flowInstanceId, event)` – appends a pending event and enqueues a Tick
 - `retry(flowId, flowInstanceId)` – if current stage status is `ERROR`, resets it to `PENDING` and enqueues a Tick
 - `getStatus(flowId, flowInstanceId)` – returns `(stage, stageStatus)`

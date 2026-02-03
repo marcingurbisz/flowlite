@@ -7,10 +7,9 @@ import org.springframework.beans.factory.getBean
 import org.springframework.context.ConfigurableApplicationContext
 
 object TestApplicationExtension : ProjectListener {
-    @Volatile private var context: ConfigurableApplicationContext? = null
+    @Volatile var context: ConfigurableApplicationContext? = null
 
-
-    private fun context(): ConfigurableApplicationContext {
+    fun context(): ConfigurableApplicationContext {
         val existing = context
         if (existing != null) return existing
 

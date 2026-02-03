@@ -351,12 +351,12 @@ class FlowEngine(
     }
 
     @Suppress("UNCHECKED_CAST")
-    fun <T : Any> startProcess(flowId: String, initialState: T): UUID {
+    fun <T : Any> startInstance(flowId: String, initialState: T): UUID {
         val flowInstanceId = UUID.randomUUID()
         val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val initialStage = resolveInitialStage(flow as Flow<T>, initialState)
-        log.info { "startProcess(flowId=$flowId, flowInstanceId=$flowInstanceId, initialStage=$initialStage)" }
+        log.info { "startInstance(flowId=$flowId, flowInstanceId=$flowInstanceId, initialStage=$initialStage)" }
         val pd = ProcessData(
             flowInstanceId = flowInstanceId,
             state = initialState,
@@ -368,11 +368,11 @@ class FlowEngine(
         return flowInstanceId
     }
 
-    fun startProcess(flowId: String, flowInstanceId: UUID): UUID {
+    fun startInstance(flowId: String, flowInstanceId: UUID): UUID {
         requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val current = persister.load(flowInstanceId)
-        log.info { "startProcess(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
+        log.info { "startInstance(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
         if (current.stageStatus == StageStatus.COMPLETED) return flowInstanceId
         enqueueTick(flowId, flowInstanceId)
         return flowInstanceId

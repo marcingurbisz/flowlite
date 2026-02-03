@@ -43,7 +43,7 @@ class FlowEngineErrorHandlingTest : BehaviorSpec({
         }
 
         `when`("processing the first tick") {
-            val flowInstanceId = engine.startProcess(flowId, ErrorFlowState(stage = ErrorFlowStage.Failing))
+            val flowInstanceId = engine.startInstance(flowId, ErrorFlowState(stage = ErrorFlowStage.Failing))
             shouldThrow<IllegalStateException> {
                 tickScheduler.drain()
             }

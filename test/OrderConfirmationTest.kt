@@ -68,7 +68,7 @@ class OrderConfirmationTest : BehaviorSpec({
         }
 
         `when`("processing digital confirmation path (engine generates id)") {
-            val processId = engine.startProcess(
+            val processId = engine.startInstance(
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
                 initialState = OrderConfirmation(
                     stage = InitializingConfirmation,
@@ -112,7 +112,7 @@ class OrderConfirmationTest : BehaviorSpec({
                 ),
             )
 
-            engine.startProcess(
+            engine.startInstance(
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
                 flowInstanceId = processId,
             )

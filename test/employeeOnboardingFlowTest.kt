@@ -34,7 +34,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
     }
 
     given("employee onboarding flow - manual path") {
-        val processId = engine.startProcess(
+        val processId = engine.startInstance(
             flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
             initialState = EmployeeOnboarding(
                 stage = WaitingForContractSigned,
@@ -102,7 +102,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
             // Can be sent early; mailbox semantics will deliver later.
             engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, ContractSigned)
-            engine.startProcess(EMPLOYEE_ONBOARDING_FLOW_ID, id)
+            engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, id)
 
             then("persister merges engine progress with external business updates") {
                 try {
@@ -159,7 +159,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             )
 
             engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, ContractSigned)
-            engine.startProcess(EMPLOYEE_ONBOARDING_FLOW_ID, id)
+            engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, id)
 
             then("persister merges without losing the external update") {
                 try {

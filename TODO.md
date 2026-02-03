@@ -1,6 +1,7 @@
 ## TODO
 Agent:
 
+* Fix diagrams (no packages names)
 * Rename remaining "process" usages in doc and code
 * Split flowApi.kt into api and implementation files
 * Replace list of methods and components with link to files containing them

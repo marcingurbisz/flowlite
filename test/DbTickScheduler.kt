@@ -120,7 +120,8 @@ class DbTickScheduler(
     }
 
     override fun stop() {
-        log.error { "Spring should not call stop() when SmartLifecycle.stop(callback: Runnable) is provided" }
+        log.warn { "Spring invoked stop() even though SmartLifecycle.stop(callback: Runnable) is implemented; this is unexpected" }
+        stop {}
     }
 
     override fun stop(callback: Runnable) {

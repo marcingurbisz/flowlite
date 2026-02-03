@@ -426,8 +426,8 @@ class FlowEngine(
     }
 
     private fun processTick(flowId: String, flowInstanceId: UUID) {
-        val flow = flows[flowId] ?: return
-        val persister = persisters[flowId] ?: return
+        val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
+        val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
 
         val loaded = persister.load(flowInstanceId)
         when (loaded.stageStatus) {
@@ -486,8 +486,10 @@ class FlowEngine(
                     // No matching event; release the RUNNING claim.
                     persister.save(pd.copy(stageStatus = StageStatus.PENDING))
                     // If an event arrived while we were RUNNING, its tick might have been delivered and ignored.
-                    // Enqueue a tick to re-check the event store after we become PENDING.
-                    enqueueTick(flowId, flowInstanceId)
+                    // Check the store and enqueue a tick in case event is there
+                    if (eventStore.peek(flowId, flowInstanceId, def.eventHandlers.keys) != null) {
+                        enqueueTick(flowId, flowInstanceId)
+                    }
                     return
                 }
 

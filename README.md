@@ -1,6 +1,6 @@
 # FlowLite
 
-FlowLite is a lightweight, developer-friendly workflow engine for Kotlin to define business processes in an intuitive and maintainable way. It provides a fluent, type-safe API that stays close to domain language while remaining simple to reason about.
+FlowLite is a lightweight, developer-friendly workflow engine for Kotlin.
 
 Note: FlowLite is actively evolving. Breaking changes may be introduced and backwards compatibility is not considered for now.
 
@@ -38,10 +38,8 @@ Note: FlowLite is actively evolving. Breaking changes may be introduced and back
 Traditional BPM platforms (e.g. Camunda) are powerful but heavyweight for code-centric teams.
 
 FlowLite at a glance:
-- **Type-safe fluent API**
+- **Type-safe fluent API** for workflow definition
 - **Visuals from code** – Mermaid diagrams generated automatically
-- **Natural syntax** – Reads close to business intent
-- **Lightweight**
 
 ## Example flow
 
@@ -230,31 +228,31 @@ stateDiagram-v2
     state if_isexecutiverole_issecurityclearancerequired_2 <<choice>>
     [*] --> if_isonboardingautomated
     if_isonboardingautomated --> CreateUserInSystem: isOnboardingAutomated
-    CreateUserInSystem: CreateUserInSystem io.flowlite.test.EmployeeOnboardingActions.createUserInSystem()
+    CreateUserInSystem: CreateUserInSystem createUserInSystem()
     CreateUserInSystem --> if_isexecutiverole_issecurityclearancerequired
     if_isexecutiverole_issecurityclearancerequired --> UpdateSecurityClearanceLevels: isExecutiveRole || isSecurityClearanceRequired
-    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels io.flowlite.test.EmployeeOnboardingActions.updateSecurityClearanceLevels()
+    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels updateSecurityClearanceLevels()
     UpdateSecurityClearanceLevels --> if_issecurityclearancerequired
     if_issecurityclearancerequired --> if_isfullonboardingrequired: isSecurityClearanceRequired
     if_isfullonboardingrequired --> SetDepartmentAccess: isFullOnboardingRequired
-    SetDepartmentAccess: SetDepartmentAccess io.flowlite.test.EmployeeOnboardingActions.setDepartmentAccess()
+    SetDepartmentAccess: SetDepartmentAccess setDepartmentAccess()
     SetDepartmentAccess --> GenerateEmployeeDocuments
-    GenerateEmployeeDocuments: GenerateEmployeeDocuments io.flowlite.test.EmployeeOnboardingActions.generateEmployeeDocuments()
+    GenerateEmployeeDocuments: GenerateEmployeeDocuments generateEmployeeDocuments()
     GenerateEmployeeDocuments --> SendContractForSigning
-    SendContractForSigning: SendContractForSigning io.flowlite.test.EmployeeOnboardingActions.sendContractForSigning()
+    SendContractForSigning: SendContractForSigning sendContractForSigning()
     SendContractForSigning --> WaitingForEmployeeDocumentsSigned
     WaitingForEmployeeDocumentsSigned --> WaitingForContractSigned: onEvent EmployeeDocumentsSigned
     WaitingForContractSigned --> if_isexecutiverole_issecurityclearancerequired_2: onEvent ContractSigned
     if_isexecutiverole_issecurityclearancerequired_2 --> ActivateSpecializedEmployee: isExecutiveRole || isSecurityClearanceRequired
-    ActivateSpecializedEmployee: ActivateSpecializedEmployee io.flowlite.test.EmployeeOnboardingActions.activateEmployee()
+    ActivateSpecializedEmployee: ActivateSpecializedEmployee activateEmployee()
     ActivateSpecializedEmployee --> UpdateStatusInHRSystem
-    UpdateStatusInHRSystem: UpdateStatusInHRSystem io.flowlite.test.EmployeeOnboardingActions.updateStatusInHRSystem()
+    UpdateStatusInHRSystem: UpdateStatusInHRSystem updateStatusInHRSystem()
     if_isexecutiverole_issecurityclearancerequired_2 --> WaitingForOnboardingCompletion: NOT (isExecutiveRole || isSecurityClearanceRequired)
     WaitingForOnboardingCompletion --> UpdateStatusInHRSystem: onEvent OnboardingComplete
     if_isfullonboardingrequired --> GenerateEmployeeDocuments: NOT (isFullOnboardingRequired)
     if_issecurityclearancerequired --> WaitingForContractSigned: NOT (isSecurityClearanceRequired)
     if_isexecutiverole_issecurityclearancerequired --> ActivateStandardEmployee: NOT (isExecutiveRole || isSecurityClearanceRequired)
-    ActivateStandardEmployee: ActivateStandardEmployee io.flowlite.test.EmployeeOnboardingActions.activateEmployee()
+    ActivateStandardEmployee: ActivateStandardEmployee activateEmployee()
     ActivateStandardEmployee --> GenerateEmployeeDocuments
     if_isonboardingautomated --> WaitingForContractSigned: NOT (isOnboardingAutomated)
     UpdateStatusInHRSystem --> [*]

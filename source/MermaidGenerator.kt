@@ -2,21 +2,12 @@ package io.flowlite.api
 
 /**
  * Generates Mermaid diagram representation of a Flow.
- * This allows visualizing the flow structure for documentation or debugging.
  */
 class MermaidGenerator {
 
-    // Tracks assigned names for conditions to ensure stable node names
     private val conditionNodeNames = mutableMapOf<ConditionHandler<*>, String>()
     private val conditionNameCounts = mutableMapOf<String, Int>()
 
-    /**
-     * Generates a Mermaid diagram string from a Flow object.
-     *
-     * @param flowId The identifier of the flow
-     * @param flow The Flow object to convert to a diagram
-     * @return String containing the Mermaid diagram definition
-     */
     fun <T : Any> generateDiagram(flowId: String, flow: Flow<T>): String {
         conditionNodeNames.clear()
         conditionNameCounts.clear()
@@ -67,7 +58,7 @@ class MermaidGenerator {
         }
         
         // Add all choice nodes (condition handlers in stages)
-        flow.stages.forEach { (stage, definition) ->
+        flow.stages.forEach { (_, definition) ->
             if (definition.conditionHandler != null) {
                 val choiceNodeName = generateConditionNodeName(definition.conditionHandler!!)
                 sb.append("    state $choiceNodeName <<choice>>\n")
@@ -253,19 +244,19 @@ class MermaidGenerator {
      */
     private fun extractActionName(action: Any): String {
         val actionStr = action.toString()
-        return when {
-            // Handle function references like "fun functionName(params): ReturnType"
+        val rawName = when {
+            // Handle function references like "fun package.Class.method(params): ReturnType"
             actionStr.startsWith("fun ") -> {
                 actionStr.substringAfter("fun ")
                     .substringBefore("(")
             }
             // Fallback to original logic for other cases
             else -> {
-                actionStr.substringAfterLast(".")
-                    .substringBefore("(")
+                actionStr.substringBefore("(")
                     .substringBefore("$")
             }
         }
+        return rawName.substringAfterLast(".")
     }
     
 }

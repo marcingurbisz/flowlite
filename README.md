@@ -27,8 +27,8 @@ See this [article](https://medium.com/@marcin.gurbisz/flowlite-a-tiny-workflow-e
 
 <!-- FlowDoc(order-confirmation) -->
 ```kotlin
-fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
-    return FlowBuilder<OrderConfirmation>()
+fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    return FlowBuilder<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent>()
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {
@@ -140,7 +140,7 @@ Documentation refresh:
 ### Employee Onboarding
 
 ```kotlin
-        FlowBuilder<EmployeeOnboarding>()
+        FlowBuilder<EmployeeOnboarding, EmployeeStage, EmployeeEvent>()
             .condition(
                 predicate = { it.isOnboardingAutomated },
                 description = "isOnboardingAutomated",
@@ -244,8 +244,8 @@ stateDiagram-v2
 ### Order Confirmation
 
 ```kotlin
-fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
-    return FlowBuilder<OrderConfirmation>()
+fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    return FlowBuilder<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent>()
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {

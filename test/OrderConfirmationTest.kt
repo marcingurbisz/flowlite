@@ -165,10 +165,10 @@ interface OrderConfirmationRepository : CrudRepository<OrderConfirmation, UUID>
 
 class SpringDataOrderConfirmationPersister(
     private val repo: OrderConfirmationRepository,
-) : StatePersister<OrderConfirmation> {
+) : StatePersister<OrderConfirmation, OrderConfirmationStage> {
     override fun tryTransitionStageStatus(
         flowInstanceId: UUID,
-        expectedStage: Stage,
+        expectedStage: OrderConfirmationStage,
         expectedStageStatus: StageStatus,
         newStageStatus: StageStatus,
     ): Boolean {
@@ -188,12 +188,10 @@ class SpringDataOrderConfirmationPersister(
         }
     }
 
-    override fun save(instanceData: InstanceData<OrderConfirmation>): InstanceData<OrderConfirmation> {
-        val stage = instanceData.stage as? OrderConfirmationStage
-            ?: error("Unexpected stage ${instanceData.stage}")
+    override fun save(instanceData: InstanceData<OrderConfirmation, OrderConfirmationStage>): InstanceData<OrderConfirmation, OrderConfirmationStage> {
         val entity = instanceData.state.copy(
             id = instanceData.flowInstanceId,
-            stage = stage,
+            stage = instanceData.stage,
             stageStatus = instanceData.stageStatus,
         )
         val saved = repo.save(entity)
@@ -204,7 +202,7 @@ class SpringDataOrderConfirmationPersister(
         )
     }
 
-    override fun load(flowInstanceId: UUID): InstanceData<OrderConfirmation> {
+    override fun load(flowInstanceId: UUID): InstanceData<OrderConfirmation, OrderConfirmationStage> {
         val entity = repo.findById(flowInstanceId).orElse(null)
             ?: error("Process '$flowInstanceId' not found")
         return InstanceData(
@@ -238,8 +236,8 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
 }
 
 // FLOW-DEFINITION-START
-fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
-    return FlowBuilder<OrderConfirmation>()
+fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    return FlowBuilder<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent>()
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {

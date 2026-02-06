@@ -25,7 +25,7 @@ object TestApplicationExtension : ProjectListener {
     val engine: FlowEngine
         get() = context().getBean<FlowEngine>()
 
-    val orderPersister: StatePersister<OrderConfirmation>
+    val orderPersister: StatePersister<OrderConfirmation, OrderConfirmationStage>
         get() = context().getBean<SpringDataOrderConfirmationPersister>()
 
     val employeeOnboardingRepository: EmployeeOnboardingRepository

@@ -8,6 +8,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 private enum class ErrorFlowStage : Stage { Failing, Done }
+private enum class ErrorFlowEvent : Event
 
 private data class ErrorFlowState(
     val stage: ErrorFlowStage,
@@ -28,7 +29,7 @@ class FlowEngineErrorHandlingTest : BehaviorSpec({
             return s.copy(attempts = n)
         }
 
-        val flow = FlowBuilder<ErrorFlowState>()
+        val flow = FlowBuilder<ErrorFlowState, ErrorFlowStage, ErrorFlowEvent>()
             .stage(ErrorFlowStage.Failing, ::flakyAction)
             .stage(ErrorFlowStage.Done)
             .end()
@@ -36,7 +37,7 @@ class FlowEngineErrorHandlingTest : BehaviorSpec({
 
         val eventStore = InMemoryEventStore()
         val tickScheduler = ManualTickScheduler()
-        val persister = InMemoryStatePersister<ErrorFlowState>()
+        val persister = InMemoryStatePersister<ErrorFlowState, ErrorFlowStage>()
 
         val engine = FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler).also {
             it.registerFlow(flowId, flow, persister)
@@ -84,12 +85,12 @@ private class ManualTickScheduler : TickScheduler {
     }
 }
 
-private class InMemoryStatePersister<T : Any> : StatePersister<T> {
-    private val data = mutableMapOf<UUID, InstanceData<T>>()
+private class InMemoryStatePersister<T : Any, S : Stage> : StatePersister<T, S> {
+    private val data = mutableMapOf<UUID, InstanceData<T, S>>()
 
     override fun tryTransitionStageStatus(
         flowInstanceId: UUID,
-        expectedStage: Stage,
+        expectedStage: S,
         expectedStageStatus: StageStatus,
         newStageStatus: StageStatus,
     ): Boolean {
@@ -100,12 +101,12 @@ private class InMemoryStatePersister<T : Any> : StatePersister<T> {
         return true
     }
 
-    override fun save(instanceData: InstanceData<T>): InstanceData<T> {
+    override fun save(instanceData: InstanceData<T, S>): InstanceData<T, S> {
         data[instanceData.flowInstanceId] = instanceData
         return instanceData
     }
 
-    override fun load(flowInstanceId: UUID): InstanceData<T> =
+    override fun load(flowInstanceId: UUID): InstanceData<T, S> =
         data[flowInstanceId] ?: error("Process '$flowInstanceId' not found")
 }
 

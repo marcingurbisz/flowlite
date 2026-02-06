@@ -11,10 +11,10 @@ interface Stage
  */
 interface Event
 
-data class Flow<T : Any>(
-    val initialStage: Stage?,
-    val initialCondition: ConditionHandler<T>?,
-    val stages: Map<Stage, StageDefinition<T>>,
+data class Flow<T : Any, S : Stage, E : Event>(
+    val initialStage: S?,
+    val initialCondition: ConditionHandler<T, S>?,
+    val stages: Map<S, StageDefinition<T, S, E>>,
 ) {
     init {
         require((initialStage != null) xor (initialCondition != null)) {
@@ -23,39 +23,39 @@ data class Flow<T : Any>(
     }
 }
 
-class FlowBuilder<T : Any> {
+class FlowBuilder<T : Any, S : Stage, E : Event> {
 
-    internal val stages = mutableMapOf<Stage, StageDefinition<T>>()
-    internal var initialStage: Stage? = null
-    internal var initialCondition: ConditionHandler<T>? = null
+    internal val stages = mutableMapOf<S, StageDefinition<T, S, E>>()
+    internal var initialStage: S? = null
+    internal var initialCondition: ConditionHandler<T, S>? = null
 
-    fun stage(stage: Stage, action: ((item: T) -> T?)? = null): StageBuilder<T> {
+    fun stage(stage: S, action: ((item: T) -> T?)? = null): StageBuilder<T, S, E> {
         return internalStage(stage, action)
     }
 
-    fun join(targetStage: Stage) { initialStage = targetStage }
+    fun join(targetStage: S) { initialStage = targetStage }
 
-    internal fun internalStage(stage: Stage, action: ((item: T) -> T?)? = null): StageBuilder<T> {
+    internal fun internalStage(stage: S, action: ((item: T) -> T?)? = null): StageBuilder<T, S, E> {
         if (initialStage == null && initialCondition == null) {
             initialStage = stage
         }
 
-        val stageDefinition = StageDefinition<T>(stage, action)
+        val stageDefinition = StageDefinition<T, S, E>(stage, action)
         addStage(stage, stageDefinition)
         return StageBuilder(this, stageDefinition)
     }
 
     fun condition(
         predicate: (item: T) -> Boolean,
-        onTrue: FlowBuilder<T>.() -> Unit,
-        onFalse: FlowBuilder<T>.() -> Unit,
+        onTrue: FlowBuilder<T, S, E>.() -> Unit,
+        onFalse: FlowBuilder<T, S, E>.() -> Unit,
         description: String
-    ): FlowBuilder<T> {
+    ): FlowBuilder<T, S, E> {
         initialCondition = createConditionHandler(predicate, onTrue, onFalse, description)
         return this
     }
 
-    internal fun addStage(stage: Stage, definition: StageDefinition<T>) {
+    internal fun addStage(stage: S, definition: StageDefinition<T, S, E>) {
         if (stage in stages) {
             error("Stage $stage already defined - each stage should be defined only once")
         }
@@ -64,13 +64,13 @@ class FlowBuilder<T : Any> {
 
     internal fun createConditionHandler(
         predicate: (item: T) -> Boolean,
-        onTrue: FlowBuilder<T>.() -> Unit,
-        onFalse: FlowBuilder<T>.() -> Unit,
+        onTrue: FlowBuilder<T, S, E>.() -> Unit,
+        onFalse: FlowBuilder<T, S, E>.() -> Unit,
         description: String
-    ): ConditionHandler<T> {
+    ): ConditionHandler<T, S> {
         // Create both branch builders
-        val trueBranch = FlowBuilder<T>().apply(onTrue)
-        val falseBranch = FlowBuilder<T>().apply(onFalse)
+        val trueBranch = FlowBuilder<T, S, E>().apply(onTrue)
+        val falseBranch = FlowBuilder<T, S, E>().apply(onFalse)
 
         // Collect all stage definitions from both branches
         trueBranch.stages.forEach { (stage, definition) ->
@@ -93,13 +93,13 @@ class FlowBuilder<T : Any> {
     /**
      * Builds and returns an immutable flow.
      */
-    fun build(): Flow<T> {
+    fun build(): Flow<T, S, E> {
         validateDefinitions()
         return Flow(initialStage, initialCondition, stages.toMap())
     }
 
     private fun validateDefinitions() {
-        val eventToStage = mutableMapOf<Event, Stage>()
+        val eventToStage = mutableMapOf<E, S>()
         stages.values.forEach { def ->
             if (def.action != null && def.eventHandlers.isNotEmpty()) {
                 error("Stage ${def.stage} cannot declare both an action and event handlers")
@@ -132,13 +132,13 @@ enum class TransitionType {
     CONDITION  // Conditional branching
 }
 
-data class StageDefinition<T : Any>(
-    val stage: Stage,
+data class StageDefinition<T : Any, S : Stage, E : Event>(
+    val stage: S,
     val action: ((item: T) -> T?)? = null,
 ) {
-    val eventHandlers = mutableMapOf<Event, EventHandler<T>>()
-    var conditionHandler: ConditionHandler<T>? = null
-    var nextStage: Stage? = null
+    val eventHandlers = mutableMapOf<E, EventHandler<T, S, E>>()
+    var conditionHandler: ConditionHandler<T, S>? = null
+    var nextStage: S? = null
 
     fun hasConflictingTransitions(newTransitionType: TransitionType): Boolean {
         return when (newTransitionType) {
@@ -157,26 +157,26 @@ data class StageDefinition<T : Any>(
     }
 }
 
-data class ConditionHandler<T : Any>(
+data class ConditionHandler<T : Any, S : Stage>(
     val predicate: (item: T) -> Boolean,
-    val trueStage: Stage?,
-    val trueCondition: ConditionHandler<T>?,
-    val falseStage: Stage?,
-    val falseCondition: ConditionHandler<T>?,
+    val trueStage: S?,
+    val trueCondition: ConditionHandler<T, S>?,
+    val falseStage: S?,
+    val falseCondition: ConditionHandler<T, S>?,
     val description: String,
 )
 
-data class EventHandler<T : Any>(
-    val event: Event,
-    val targetStage: Stage?,
-    val targetCondition: ConditionHandler<T>?,
+data class EventHandler<T : Any, S : Stage, E : Event>(
+    val event: E,
+    val targetStage: S?,
+    val targetCondition: ConditionHandler<T, S>?,
 )
 
-class StageBuilder<T : Any>(
-    val flowBuilder: FlowBuilder<T>,
-    val stageDefinition: StageDefinition<T>,
+class StageBuilder<T : Any, S : Stage, E : Event>(
+    val flowBuilder: FlowBuilder<T, S, E>,
+    val stageDefinition: StageDefinition<T, S, E>,
 ) {
-    fun stage(stage: Stage, action: ((item: T) -> T?)? = null): StageBuilder<T> {
+    fun stage(stage: S, action: ((item: T) -> T?)? = null): StageBuilder<T, S, E> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
             error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
@@ -184,14 +184,14 @@ class StageBuilder<T : Any>(
         return flowBuilder.internalStage(stage, action)
     }
 
-    fun waitFor(event: Event): EventBuilder<T> = EventBuilder(this, event)
+    fun waitFor(event: E): EventBuilder<T, S, E> = EventBuilder(this, event)
 
     fun condition(
         predicate: (item: T) -> Boolean,
-        onTrue: FlowBuilder<T>.() -> Unit,
-        onFalse: FlowBuilder<T>.() -> Unit,
+        onTrue: FlowBuilder<T, S, E>.() -> Unit,
+        onFalse: FlowBuilder<T, S, E>.() -> Unit,
         description: String
-    ): FlowBuilder<T> {
+    ): FlowBuilder<T, S, E> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.CONDITION)) {
             error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
@@ -200,7 +200,7 @@ class StageBuilder<T : Any>(
         return flowBuilder
     }
 
-    fun join(targetStage: Stage): FlowBuilder<T> {
+    fun join(targetStage: S): FlowBuilder<T, S, E> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
             error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
@@ -208,14 +208,14 @@ class StageBuilder<T : Any>(
         return flowBuilder
     }
 
-    fun end(): FlowBuilder<T> = flowBuilder
+    fun end(): FlowBuilder<T, S, E> = flowBuilder
 }
 
-class EventBuilder<T : Any>(
-    private val stageBuilder: StageBuilder<T>,
-    private val event: Event
+class EventBuilder<T : Any, S : Stage, E : Event>(
+    private val stageBuilder: StageBuilder<T, S, E>,
+    private val event: E
 ) {
-    fun stage(stage: Stage, action: ((item: T) -> T?)? = null): StageBuilder<T> {
+    fun stage(stage: S, action: ((item: T) -> T?)? = null): StageBuilder<T, S, E> {
         if (stageBuilder.stageDefinition.hasConflictingTransitions(TransitionType.EVENT)) {
             error("Stage ${stageBuilder.stageDefinition.stage} already has transitions defined: ${stageBuilder.stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
@@ -226,16 +226,16 @@ class EventBuilder<T : Any>(
         return targetStageBuilder
     }
 
-    fun join(targetStage: Stage) {
+    fun join(targetStage: S) {
         stageBuilder.stageDefinition.eventHandlers[event] = EventHandler(event, targetStage, null)
     }
 
     fun condition(
         predicate: (item: T) -> Boolean,
-        onTrue: FlowBuilder<T>.() -> Unit,
-        onFalse: FlowBuilder<T>.() -> Unit,
+        onTrue: FlowBuilder<T, S, E>.() -> Unit,
+        onFalse: FlowBuilder<T, S, E>.() -> Unit,
         description: String
-    ): FlowBuilder<T> {
+    ): FlowBuilder<T, S, E> {
         stageBuilder.stageDefinition.eventHandlers[event] = EventHandler(event, null,
             stageBuilder.flowBuilder.createConditionHandler(predicate, onTrue, onFalse, description))
         return stageBuilder.flowBuilder

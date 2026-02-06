@@ -236,10 +236,10 @@ interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboarding, UUID
 
 class SpringDataEmployeeOnboardingPersister(
     private val repo: EmployeeOnboardingRepository,
-) : StatePersister<EmployeeOnboarding> {
+) : StatePersister<EmployeeOnboarding, EmployeeStage> {
     override fun tryTransitionStageStatus(
         flowInstanceId: UUID,
-        expectedStage: Stage,
+        expectedStage: EmployeeStage,
         expectedStageStatus: StageStatus,
         newStageStatus: StageStatus,
     ): Boolean {
@@ -259,22 +259,19 @@ class SpringDataEmployeeOnboardingPersister(
         }
     }
 
-    override fun save(data: InstanceData<EmployeeOnboarding>): InstanceData<EmployeeOnboarding> {
-        val stage = data.stage as? EmployeeStage
-            ?: error("Unexpected stage ${data.stage}")
-
+    override fun save(data: InstanceData<EmployeeOnboarding, EmployeeStage>): InstanceData<EmployeeOnboarding, EmployeeStage> {
         val saved = repo.saveWithOptimisticLockRetry(
             id = data.flowInstanceId,
             candidate = data.state.copy(
                 id = data.flowInstanceId,
-                stage = stage,
+                stage = data.stage,
                 stageStatus = data.stageStatus,
             )
-        ) { latest -> latest.copy(stage = stage, stageStatus = data.stageStatus) }
+        ) { latest -> latest.copy(stage = data.stage, stageStatus = data.stageStatus) }
         return data.copy(state = saved)
     }
 
-    override fun load(flowInstanceId: UUID): InstanceData<EmployeeOnboarding> {
+    override fun load(flowInstanceId: UUID): InstanceData<EmployeeOnboarding, EmployeeStage> {
         val entity = repo.findById(flowInstanceId).orElse(null)
             ?: error("Process '$flowInstanceId' not found")
         return InstanceData(
@@ -286,9 +283,9 @@ class SpringDataEmployeeOnboardingPersister(
     }
 }
 
-fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<EmployeeOnboarding> {
+fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<EmployeeOnboarding, EmployeeStage, EmployeeEvent> {
     val flow = // FLOW-DEFINITION-START
-        FlowBuilder<EmployeeOnboarding>()
+        FlowBuilder<EmployeeOnboarding, EmployeeStage, EmployeeEvent>()
             .condition(
                 predicate = { it.isOnboardingAutomated },
                 description = "isOnboardingAutomated",
@@ -350,4 +347,3 @@ fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<Emplo
     // FLOW-DEFINITION-END
     return flow
 }
-

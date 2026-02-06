@@ -15,10 +15,10 @@ enum class StageStatus {
 /**
  * Persisted view of a flow instance.
  */
-data class InstanceData<T : Any>(
+data class InstanceData<T : Any, S : Stage>(
     val flowInstanceId: UUID,
     val state: T,
-    val stage: Stage,
+    val stage: S,
     val stageStatus: StageStatus,
 )
 
@@ -26,8 +26,9 @@ data class InstanceData<T : Any>(
  * Interface for persisting the state of a workflow instance.
  *
  * @param T The type of the state object.
+ * @param S The stage enum type for this flow.
  */
-interface StatePersister<T : Any> {
+interface StatePersister<T : Any, S : Stage> {
     /**
      * Create or update the domain row and engine columns atomically.
      *
@@ -39,10 +40,10 @@ interface StatePersister<T : Any> {
      *
      * Returns refreshed data on success.
      */
-    fun save(instanceData: InstanceData<T>): InstanceData<T>
+    fun save(instanceData: InstanceData<T, S>): InstanceData<T, S>
 
     /** Load current process data; throws if the process does not exist. */
-    fun load(flowInstanceId: UUID): InstanceData<T>
+    fun load(flowInstanceId: UUID): InstanceData<T, S>
 
     /**
      * Attempt to transition stage status atomically (compare-and-set).
@@ -54,7 +55,7 @@ interface StatePersister<T : Any> {
      */
     fun tryTransitionStageStatus(
         flowInstanceId: UUID,
-        expectedStage: Stage,
+        expectedStage: S,
         expectedStageStatus: StageStatus,
         newStageStatus: StageStatus,
     ): Boolean

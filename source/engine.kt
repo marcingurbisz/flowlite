@@ -10,18 +10,18 @@ class FlowEngine(
     init {
         tickScheduler.setTickHandler(::processTick)
     }
-    private val flows = mutableMapOf<String, Flow<Any>>()
-    private val persisters = mutableMapOf<String, StatePersister<Any>>()
+    private val flows = mutableMapOf<String, Flow<Any, Stage, Event>>()
+    private val persisters = mutableMapOf<String, StatePersister<Any, Stage>>()
 
     @Suppress("UNCHECKED_CAST")
-    fun <T : Any> registerFlow(
+    fun <T : Any, S : Stage, E : Event> registerFlow(
         flowId: String,
-        flow: Flow<T>,
-        statePersister: StatePersister<T>,
+        flow: Flow<T, S, E>,
+        statePersister: StatePersister<T, S>,
     ) {
         log.info { "registerFlow(flowId=$flowId)" }
-        flows[flowId] = flow as Flow<Any>
-        persisters[flowId] = statePersister as StatePersister<Any>
+        flows[flowId] = flow as Flow<Any, Stage, Event>
+        persisters[flowId] = statePersister as StatePersister<Any, Stage>
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -29,15 +29,15 @@ class FlowEngine(
         val flowInstanceId = UUID.randomUUID()
         val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
-        val initialStage = resolveInitialStage(flow as Flow<T>, initialState)
+        val initialStage = resolveInitialStage(flow, initialState)
         log.info { "startInstance(flowId=$flowId, flowInstanceId=$flowInstanceId, initialStage=$initialStage)" }
         val data = InstanceData(
             flowInstanceId = flowInstanceId,
-            state = initialState,
+            state = initialState as Any,
             stage = initialStage,
             stageStatus = StageStatus.PENDING,
         )
-        persister.save(data as InstanceData<Any>)
+        persister.save(data)
         enqueueTick(flowId, flowInstanceId)
         return flowInstanceId
     }
@@ -81,14 +81,14 @@ class FlowEngine(
 
     // --- Internal processing ---
 
-    private fun <T : Any> resolveInitialStage(flow: Flow<T>, state: T): Stage {
+    private fun resolveInitialStage(flow: Flow<Any, Stage, Event>, state: Any): Stage {
         flow.initialStage?.let { return it }
         val cond = requireNotNull(flow.initialCondition) { "Flow must have initial stage or condition" }
         return resolveConditionInitialStage(cond, state)
             ?: error("Initial condition did not resolve to a stage")
     }
 
-    private fun <T : Any> resolveConditionInitialStage(condition: ConditionHandler<T>, state: T): Stage? {
+    private fun resolveConditionInitialStage(condition: ConditionHandler<Any, Stage>, state: Any): Stage? {
         val branchTrue = condition.predicate(state)
         val stage = if (branchTrue) condition.trueStage else condition.falseStage
         val nested = if (branchTrue) condition.trueCondition else condition.falseCondition
@@ -136,7 +136,12 @@ class FlowEngine(
         }
     }
 
-    private fun processTickLoop(flowId: String, flow: Flow<Any>, persister: StatePersister<Any>, initial: InstanceData<Any>) {
+    private fun processTickLoop(
+        flowId: String,
+        flow: Flow<Any, Stage, Event>,
+        persister: StatePersister<Any, Stage>,
+        initial: InstanceData<Any, Stage>,
+    ) {
         require(initial.stageStatus == StageStatus.RUNNING) {
             "processTickLoop expects RUNNING but was ${initial.stageStatus}"
         }
@@ -224,11 +229,11 @@ class FlowEngine(
 
     private fun tryConsumeEventAndAdvance(
         flowId: String,
-        def: StageDefinition<Any>,
-        data: InstanceData<Any>,
-        persister: StatePersister<Any>,
+        def: StageDefinition<Any, Stage, Event>,
+        data: InstanceData<Any, Stage>,
+        persister: StatePersister<Any, Stage>,
         flowInstanceId: UUID,
-    ): InstanceData<Any>? {
+    ): InstanceData<Any, Stage>? {
         val stored = eventStore.peek(flowId, flowInstanceId, def.eventHandlers.keys) ?: return null
         val handler = def.eventHandlers[stored.event] ?: return null
         val targetStage = handler.targetStage ?: handler.targetCondition?.let { ch ->
@@ -241,7 +246,7 @@ class FlowEngine(
         return saved
     }
 
-    private fun StageDefinition<*>.isTerminal(): Boolean =
+    private fun StageDefinition<*, *, *>.isTerminal(): Boolean =
         nextStage == null && conditionHandler == null && eventHandlers.isEmpty()
 }
 

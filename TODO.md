@@ -1,10 +1,7 @@
 ## TODO
 
-* Improve the first 2 chapters of README
-* Rename ProcessData to FlowInstanceData
-* FlowDefinitionException - replace by error
-* Replace list of methods and components with link to files containing them
 * Reread README
+* Is there benefit of having Stage and Event interfaces?
 * Rename remaining "process" usages in doc and code
 * What tests are missing to have good test coverage? 
 * Integrate test coverage measuring tools

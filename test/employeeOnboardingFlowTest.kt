@@ -259,25 +259,25 @@ class SpringDataEmployeeOnboardingPersister(
         }
     }
 
-    override fun save(processData: ProcessData<EmployeeOnboarding>): ProcessData<EmployeeOnboarding> {
-        val stage = processData.stage as? EmployeeStage
-            ?: error("Unexpected stage ${processData.stage}")
+    override fun save(data: InstanceData<EmployeeOnboarding>): InstanceData<EmployeeOnboarding> {
+        val stage = data.stage as? EmployeeStage
+            ?: error("Unexpected stage ${data.stage}")
 
         val saved = repo.saveWithOptimisticLockRetry(
-            id = processData.flowInstanceId,
-            candidate = processData.state.copy(
-                id = processData.flowInstanceId,
+            id = data.flowInstanceId,
+            candidate = data.state.copy(
+                id = data.flowInstanceId,
                 stage = stage,
-                stageStatus = processData.stageStatus,
+                stageStatus = data.stageStatus,
             )
-        ) { latest -> latest.copy(stage = stage, stageStatus = processData.stageStatus) }
-        return processData.copy(state = saved)
+        ) { latest -> latest.copy(stage = stage, stageStatus = data.stageStatus) }
+        return data.copy(state = saved)
     }
 
-    override fun load(flowInstanceId: UUID): ProcessData<EmployeeOnboarding> {
+    override fun load(flowInstanceId: UUID): InstanceData<EmployeeOnboarding> {
         val entity = repo.findById(flowInstanceId).orElse(null)
             ?: error("Process '$flowInstanceId' not found")
-        return ProcessData(
+        return InstanceData(
             flowInstanceId = flowInstanceId,
             state = entity,
             stage = entity.stage,

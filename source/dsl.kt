@@ -11,11 +11,6 @@ interface Stage
  */
 interface Event
 
-/**
- * Exception thrown when a duplicate stage or event is added to a flow.
- */
-class FlowDefinitionException(message: String) : RuntimeException(message)
-
 data class Flow<T : Any>(
     val initialStage: Stage?,
     val initialCondition: ConditionHandler<T>?,
@@ -62,7 +57,7 @@ class FlowBuilder<T : Any> {
 
     internal fun addStage(stage: Stage, definition: StageDefinition<T>) {
         if (stage in stages) {
-            throw FlowDefinitionException("Stage $stage already defined - each stage should be defined only once")
+            error("Stage $stage already defined - each stage should be defined only once")
         }
         stages[stage] = definition
     }
@@ -107,16 +102,16 @@ class FlowBuilder<T : Any> {
         val eventToStage = mutableMapOf<Event, Stage>()
         stages.values.forEach { def ->
             if (def.action != null && def.eventHandlers.isNotEmpty()) {
-                throw FlowDefinitionException("Stage ${def.stage} cannot declare both an action and event handlers")
+                error("Stage ${def.stage} cannot declare both an action and event handlers")
             }
             if (def.eventHandlers.isNotEmpty() && (def.nextStage != null || def.conditionHandler != null)) {
-                throw FlowDefinitionException("Stage ${def.stage} cannot mix event handlers with direct or conditional transitions")
+                error("Stage ${def.stage} cannot mix event handlers with direct or conditional transitions")
             }
 
             def.eventHandlers.keys.forEach { event ->
                 val existing = eventToStage.putIfAbsent(event, def.stage)
                 if (existing != null && existing != def.stage) {
-                    throw FlowDefinitionException(
+                    error(
                         "Event $event is used in multiple waitFor declarations ($existing and ${def.stage}). " +
                             "Reusing the same event type in different parts of a flow is not supported; " +
                             "model repeated occurrences as distinct event types or include event identity/deduplication in your EventStore."
@@ -183,7 +178,7 @@ class StageBuilder<T : Any>(
 ) {
     fun stage(stage: Stage, action: ((item: T) -> T?)? = null): StageBuilder<T> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
-            throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
+            error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
         stageDefinition.nextStage = stage
         return flowBuilder.internalStage(stage, action)
@@ -198,7 +193,7 @@ class StageBuilder<T : Any>(
         description: String
     ): FlowBuilder<T> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.CONDITION)) {
-            throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
+            error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
         stageDefinition.conditionHandler = flowBuilder.createConditionHandler(predicate, onTrue, onFalse, description)
 
@@ -207,7 +202,7 @@ class StageBuilder<T : Any>(
 
     fun join(targetStage: Stage): FlowBuilder<T> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
-            throw FlowDefinitionException("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
+            error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
         stageDefinition.nextStage = targetStage
         return flowBuilder
@@ -222,7 +217,7 @@ class EventBuilder<T : Any>(
 ) {
     fun stage(stage: Stage, action: ((item: T) -> T?)? = null): StageBuilder<T> {
         if (stageBuilder.stageDefinition.hasConflictingTransitions(TransitionType.EVENT)) {
-            throw FlowDefinitionException("Stage ${stageBuilder.stageDefinition.stage} already has transitions defined: ${stageBuilder.stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
+            error("Stage ${stageBuilder.stageDefinition.stage} already has transitions defined: ${stageBuilder.stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
 
         val targetStageBuilder = stageBuilder.flowBuilder.internalStage(stage, action)

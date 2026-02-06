@@ -85,7 +85,7 @@ private class ManualTickScheduler : TickScheduler {
 }
 
 private class InMemoryStatePersister<T : Any> : StatePersister<T> {
-    private val data = mutableMapOf<UUID, ProcessData<T>>()
+    private val data = mutableMapOf<UUID, InstanceData<T>>()
 
     override fun tryTransitionStageStatus(
         flowInstanceId: UUID,
@@ -100,12 +100,12 @@ private class InMemoryStatePersister<T : Any> : StatePersister<T> {
         return true
     }
 
-    override fun save(processData: ProcessData<T>): ProcessData<T> {
-        data[processData.flowInstanceId] = processData
-        return processData
+    override fun save(instanceData: InstanceData<T>): InstanceData<T> {
+        data[instanceData.flowInstanceId] = instanceData
+        return instanceData
     }
 
-    override fun load(flowInstanceId: UUID): ProcessData<T> =
+    override fun load(flowInstanceId: UUID): InstanceData<T> =
         data[flowInstanceId] ?: error("Process '$flowInstanceId' not found")
 }
 

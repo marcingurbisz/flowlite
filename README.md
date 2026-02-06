@@ -1,45 +1,27 @@
 # FlowLite
 
-FlowLite is a lightweight, developer-friendly workflow engine for Kotlin.
+FlowLite is a lightweight, code-first workflow engine for Kotlin.
+
+It’s designed for workflows owned by a single component/microservice/modulith (one JVM or a few replicas): explicit stages, durable “mailbox” events, and a straightforward tick-based execution model.
 
 Note: FlowLite is actively evolving. Breaking changes may be introduced and backwards compatibility is not considered for now.
 
-## Table of Contents
-- [Why FlowLite?](#why-flowlite)
-- [Example flow](#example-flow)
-- [Key concepts and assumptions](#key-concepts-and-assumptions)
-- [Stage Transitions](#stage-transitions)
-- [Conditional Branching](#conditional-branching)
-- [Join Operations](#join-operations)
-- [More examples](#more-examples)
-  - [Employee Onboarding](#employee-onboarding)
-  - [Order Confirmation](#order-confirmation)
-- [Core Architecture](#architecture)
-    - [Runtime & Execution Model](#runtime--execution-model)
-    - [Transaction Boundaries](#transaction-boundaries)
-    - [Persistence Approach](#persistence-approach)
-    - [Contracts](#contracts)
-      - [Practical schema guidance (JDBC)](#practical-schema-guidance-jdbc)
-    - [Engine API](#engine-api)
-    - [Deferred / Future Enhancements](#deferred--future-enhancements)
-  - [Flow Definition System](#flow-definition-system-sourceflowapikt)
-  - [Core Interfaces](#core-interfaces)
-  - [Flow Components](#flow-components)
-  - [Diagram Generation](#diagram-generation-sourcemermaidgeneratorkt)
-- [Development Guide](#development-guide)
-  - [Windows Setup](#windows-setup)
-  - [Build and Test Commands](#build-and-test-commands)
-  - [Code Structure](#code-structure)
-  - [Development Notes](#development-notes)
-- [Code Documentation Guidelines](#code-documentation-guidelines)
-
 ## Why FlowLite?
 
-Traditional BPM platforms (e.g. Camunda) are powerful but heavyweight for code-centric teams.
-
 FlowLite at a glance:
-- **Type-safe fluent API** for workflow definition
-- **Visuals from code** – Mermaid diagrams generated automatically
+- **Type-safe DSL** for stages, events, conditions, and joins
+- **Mermaid diagrams from code** (no separate model to maintain)
+- **Mailbox event semantics** via a pluggable `EventStore`
+- **Tick-based runtime** with a single-flight claim (`PENDING -> RUNNING`)
+- **Retries** via `retry(...)`
+- **Cockpit** [prototype](https://claude.ai/public/artifacts/b4d9ad11-6ee4-44ba-ac22-c879e9af2e17)
+
+FlowLite is intentionally biased toward the “single component owns the workflow” case. It focuses on:
+- explicit wait states,
+- durable pending events (events can arrive early and get consumed later),
+- a small, predictable runtime model.
+
+See this [article](https://medium.com/@marcin.gurbisz/flowlite-a-tiny-workflow-engine-cebb544aa4b9) for more context and motivation.
 
 ## Example flow
 
@@ -78,15 +60,15 @@ stateDiagram-v2
 
 ## Key concepts and assumptions
 
-- **Stage**: A named step (implements `Stage`, usually enum). Represents “we are doing X” - activity-oriented naming (e.g. `InitializingPayment`).
-- **Action**: Function executed when entering a stage `.stage(InitializingConfirmation, ::initializeOrderConfirmation)` (optional).
+- **Stage**: A named step (enum implementing `Stage` interface). Represents “we are doing X” - activity-oriented naming (e.g. `InitializingPayment`).
+- **Action**: Function executed when entering a stage `.stage(InitializingConfirmation, ::initializeOrderConfirmation)` (optional for stage).
 - **Event**: External trigger causing a transition (implements `Event`). Submitted through engine API.
-- **Condition**: Binary branching with a predicate -> true/false branch (renders as a choice node).
-- **Join**: Converges control flow by pointing to an existing stage
+- **Condition**: Binary branching with a predicate. Renders as a choice node on diagram.
+- **Join**: Converges control flow by pointing to an existing stage.
 - **Flow**: Immutable definition produced by `FlowBuilder<T>.build()` and held in-memory.
 - **StageStatus**: Lifecycle state of the single active stage:
     - `PENDING` – Active stage awaiting action execution or matching event.
-    - `RUNNING` – Flow instance is currently being progressed by the engine (claimed via an atomic `PENDING -> RUNNING` transition in persistence). Remains `RUNNING` during the whole processing loop and is released back to `PENDING` when the instance needs to wait for an event.
+    - `RUNNING` – Flow instance is currently being progressed by the engine. Remains `RUNNING` during the whole processing loop and is released back to `PENDING` when the instance needs to wait for an event.
     - `COMPLETED` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `PENDING` rather than persisting completion of the previous stage.
     - `ERROR` – Action failed; requires manual retry.
 - **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
@@ -94,7 +76,7 @@ stateDiagram-v2
     - Ticks are emitted on `startInstance`, `sendEvent`, and `retry`.
 - Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and process specific data
 - Single-token model: only one active stage at any moment (no parallelism within one flow).
-- Code-first definitions -> diagrams are derived artifacts.
+- Code-first definitions → diagrams are generated from code.
 - Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
 - Error handling: any exception marks stage `ERROR`; `retry` resets it back to `PENDING` and restarts from that stage.
 - Migration: If the flow changes, migrations of existing instances are the responsibility of the application that uses FlowLite. No flow versioning nor migration support is planned in FlowLite.
@@ -137,8 +119,8 @@ Reference already defined stages using `join()`:
 ### Action functions
 
 - Signature: `(state: T) -> T?`
-    - Return a new instance to persist domain changes and proceed.
-    - Return `null` to indicate no domain changes; the engine will still persist the stage/status transition and proceed.
+    - Return a new state to persist or `null` to indicate no state changes.
+    - Any changes to engine managed fields will be overridden before engine persist them.
 - Guidelines:
     - Keep actions small and focused.
   
@@ -295,6 +277,25 @@ stateDiagram-v2
 
 ## Architecture
 
+### API
+
+* Defining flow - See [source/dsl.kt](source/dsl.kt):
+  * `Stage`, `Event`
+  * `FlowBuilder`, `StageBuilder`, `EventBuilder`, `Flow`.
+* Registering flows, starting process instances, etc. - [source/engine.kt](source/engine.kt) (`FlowEngine`).
+* Interfaces that must be implemented by client [source/persistance.kt](source/persistance.kt):
+  * `StatePersister`
+  * `EventStore`
+  * `TickScheduler`
+
+Reference implementations:
+- `EventStore`: [test/SpringDataEventStore.kt](test/SpringDataEventStore.kt) (`SpringDataEventStore`).
+- `TickScheduler`: [test/DbTickScheduler.kt](test/DbTickScheduler.kt) (`DbTickScheduler`, Spring Data JDBC-based polling scheduler).
+- `StatePersister`: [test/OrderConfirmationTest.kt](test/OrderConfirmationTest.kt) (`SpringDataOrderConfirmationPersister`) and [test/employeeOnboardingFlowTest.kt](test/employeeOnboardingFlowTest.kt) (`SpringDataEmployeeOnboardingPersister`).
+- Wiring example: [test/TestApplication.kt](test/TestApplication.kt).
+
+See [Contracts](#contracts) for the persistence/scheduler interfaces.
+
 ### Runtime & Execution Model
 
 1. Starting a flow instance persists instance data, calculates initial stage and enqueues a Tick. It's also possible to pre-create the flow instance earlier with your business data and later start processing by providing id.
@@ -320,7 +321,7 @@ Practical guidance (DB-backed implementations):
 - `startInstance`: persist the flow instance and enqueue a tick in the same transaction (or via an outbox) to avoid “flow instance created but never scheduled”.
 - `sendEvent`: append the pending event and enqueue a tick in the same transaction (or via an outbox) to avoid “event stored but never scheduled”.
 - `retry`: update `stage_status` to `PENDING` and enqueue a tick in the same transaction (or via an outbox).
-- Tick handling (`processTick`): wrapping it into transaction is not recommended since this will create a big transaction spanning all transition and actions between start and first stage with event handler or terminal state.
+- Tick handling (`processTick`): wrapping it into transaction is not recommended since this will create a big transaction that span over all transition and actions between start and first stage with event handler or terminal state.
 
 ### Persistence Approach
 
@@ -348,7 +349,7 @@ In tests, examples of these integrations live in:
 
 `StatePersister<T>`:
 - `load(flowInstanceId)` → current state (including engine fields); throws if the flow instance does not exist
-- `save(processData)` → create or update; beside updated engine fields processData may contain domain modifications produced by actions (see action persistence guidance below); returns refreshed data on success.
+- `save(instanceData)` → create or update; beside updated engine fields instanceData may contain domain modifications produced by actions (see action persistence guidance below); returns refreshed data on success.
     - Should be best-effort in the presence of concurrency (optimistic locking): retry and/or merge engine-owned fields (`stage`, `stage_status`) with a freshly loaded domain snapshot to avoid lost updates.
 - `tryTransitionStageStatus(flowInstanceId, expectedStage, expectedStatus, newStatus)` → atomic compare-and-set transition of `stage_status` (guarded by both `stage` and `stage_status`). Returns true only if the expected values matched and the update was applied.
     - Used by the engine to claim single-flight processing (`PENDING -> RUNNING`).
@@ -396,76 +397,24 @@ External updates exist (GUI / notifications / other services):
 - Option A: Single table; External writers update business fields and handle optimistic lock conflicts with proper merge; persister called by engine handles optimistic lock conflicts with proper merge.
 - Option B: Separate table for engine and business fields.
 
-### Engine API
-
-The canonical reference for the API is the code in `source/flowApi.kt`.
-This README keeps a short, “semantic” list to explain intent, but the signatures may evolve.
-
-- `registerFlow(flowId, flow, statePersister)`
-- `startInstance(flowId, initialState)` – persists initial state and enqueues a Tick
-- `startInstance(flowId, flowInstanceId)` – starts processing for an already persisted row
-- `sendEvent(flowId, flowInstanceId, event)` – appends a pending event and enqueues a Tick
-- `retry(flowId, flowInstanceId)` – if current stage status is `ERROR`, resets it to `PENDING` and enqueues a Tick
-- `getStatus(flowId, flowInstanceId)` – returns `(stage, stageStatus)`
+### Diagram Generation
+- [`source/MermaidGenerator.kt`](`source/MermaidGenerator.kt`) - Converts flow definitions to Mermaid diagrams
 
 ### Deferred / Future Enhancements
 
-- Cockpit
-- structured audit history with error 
+- Cockpit and Structured history with error details (WIP)
 - Distinguish business vs technical errors with tailored retry policies
-- Parallelism
-- Metrics, tracing
-
-### Flow Definition System (`source/flowApi.kt`)
-- `FlowBuilder<T>` - Fluent API for defining workflows
-- `StageBuilder<T>` - Builder for individual stages within flows
-- `EventBuilder<T>` - Builder for event-based transitions
-- `Flow<T>` - Immutable flow definition container
-
-### Core Interfaces
-- `Stage` - Enum-based stage definitions (action-oriented naming)
-- `Event` - Enum-based event definitions for transitions
-- `StatePersister<T>` - Interface for persisting workflow state
-
-### Flow Components
-- `StageDefinition<T>` - Contains stage action, event handlers, condition handler, and next stage
-- `ConditionHandler<T>` - Handles conditional branching
-- `EventHandler<T>` - Handles event-based transitions
-- `FlowEngine` - Runtime engine for executing flows
-    - Drives progression via internal Tick messages
-    - Maintains exactly one active stage per process
-    - Uses `StageStatus` to guard action execution and enable idempotent replay
-    - External events stored in a shared `pending_events` table and consumed when a matching waiting stage becomes active
-
-### Diagram Generation (`source/MermaidGenerator.kt`)
-- `MermaidGenerator` - Converts flow definitions to Mermaid diagrams
+- Parallelism via coordination of multiple flow instances
 
 ## Development Guide
-
-### Windows Setup
-
-If you're cloning this repository on Windows, symbolic links (like `AGENTS.md -> README.md`) require special Git configuration:
-
-**Option 1: Enable symlinks globally (recommended)**
-```bash
-git config --global core.symlinks true
-git clone <repository-url>
-```
-
-**Option 2: Clone with symlinks enabled**
-```bash
-git clone -c core.symlinks=true <repository-url>
-```
-
-**Requirements:** Git for Windows 2.10.2+, NTFS file system, and either Developer Mode enabled or Administrator privileges.
-
-If symbolic links don't work, `AGENTS.md` will appear as a text file containing "README.md" - in this case, just refer to README.md directly.
 
 ### Build and Test Commands
 - `./gradlew build` - Build the entire project
 - `./gradlew test` - Run all tests
 - `./gradlew clean` - Clean build artifacts
 - `./gradlew check` - Run all verification tasks
+
+Note for agent: After changing source code, run `./gradlew test` before returning to user.
 
 ### Code Structure
 

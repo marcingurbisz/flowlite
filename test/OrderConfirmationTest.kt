@@ -104,7 +104,7 @@ class OrderConfirmationTest : BehaviorSpec({
                 customerName = "Bob",
             )
             persister.save(
-                ProcessData(
+                InstanceData(
                     flowInstanceId = processId,
                     state = prePersisted,
                     stage = InitializingConfirmation,
@@ -188,26 +188,26 @@ class SpringDataOrderConfirmationPersister(
         }
     }
 
-    override fun save(processData: ProcessData<OrderConfirmation>): ProcessData<OrderConfirmation> {
-        val stage = processData.stage as? OrderConfirmationStage
-            ?: error("Unexpected stage ${processData.stage}")
-        val entity = processData.state.copy(
-            id = processData.flowInstanceId,
+    override fun save(instanceData: InstanceData<OrderConfirmation>): InstanceData<OrderConfirmation> {
+        val stage = instanceData.stage as? OrderConfirmationStage
+            ?: error("Unexpected stage ${instanceData.stage}")
+        val entity = instanceData.state.copy(
+            id = instanceData.flowInstanceId,
             stage = stage,
-            stageStatus = processData.stageStatus,
+            stageStatus = instanceData.stageStatus,
         )
         val saved = repo.save(entity)
-        return processData.copy(
+        return instanceData.copy(
             state = saved,
             stage = saved.stage,
             stageStatus = saved.stageStatus,
         )
     }
 
-    override fun load(flowInstanceId: UUID): ProcessData<OrderConfirmation> {
+    override fun load(flowInstanceId: UUID): InstanceData<OrderConfirmation> {
         val entity = repo.findById(flowInstanceId).orElse(null)
             ?: error("Process '$flowInstanceId' not found")
-        return ProcessData(
+        return InstanceData(
             flowInstanceId = flowInstanceId,
             state = entity,
             stage = entity.stage,

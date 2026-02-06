@@ -15,7 +15,7 @@ enum class StageStatus {
 /**
  * Persisted view of a flow instance.
  */
-data class ProcessData<T : Any>(
+data class InstanceData<T : Any>(
     val flowInstanceId: UUID,
     val state: T,
     val stage: Stage,
@@ -39,10 +39,10 @@ interface StatePersister<T : Any> {
      *
      * Returns refreshed data on success.
      */
-    fun save(processData: ProcessData<T>): ProcessData<T>
+    fun save(instanceData: InstanceData<T>): InstanceData<T>
 
     /** Load current process data; throws if the process does not exist. */
-    fun load(flowInstanceId: UUID): ProcessData<T>
+    fun load(flowInstanceId: UUID): InstanceData<T>
 
     /**
      * Attempt to transition stage status atomically (compare-and-set).

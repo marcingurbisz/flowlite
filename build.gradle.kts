@@ -2,6 +2,8 @@ plugins {
     kotlin("jvm") version "2.2.10"
     `java-library`
     `maven-publish`
+    jacoco
+    id("org.sonarqube") version "7.2.2.6593"
 }
 
 group = "io.flowlite"
@@ -39,15 +41,20 @@ dependencies {
     implementation("io.github.oshai:kotlin-logging-jvm:7.0.14")
     runtimeOnly("ch.qos.logback:logback-classic:1.5.13")
 
+    // Client-facing Spring Data JDBC implementations (optional; consumers must provide Spring deps)
+    compileOnly("org.springframework.data:spring-data-jdbc:4.0.2")
+    compileOnly("org.springframework.boot:spring-boot:4.0.2")
+    compileOnly("org.springframework:spring-context:7.0.3")
+    compileOnly("org.springframework:spring-tx:7.0.3")
+
     // Testing
     testImplementation("io.kotest:kotest-runner-junit5:5.8.0")
     testImplementation("io.kotest:kotest-assertions-core:5.8.0")
     testImplementation("io.kotest:kotest-framework-datatest:5.8.0")
     testImplementation("io.mockk:mockk:1.13.10")
-    testImplementation("org.springframework.data:spring-data-jdbc:4.0.1")
-    testImplementation("org.springframework.boot:spring-boot-starter-data-jdbc:4.0.1")
-    testImplementation("org.springframework.boot:spring-boot-starter-test:4.0.1")
-    testImplementation("org.springframework.boot:spring-boot-starter-jdbc:4.0.1")
+    testImplementation("org.springframework.boot:spring-boot-starter-test:4.0.2")
+    testImplementation("org.springframework.boot:spring-boot-starter-data-jdbc:4.0.2")
+    testImplementation("org.springframework.boot:spring-boot-starter-jdbc:4.0.2")
     testImplementation("com.h2database:h2:2.2.224")
     testImplementation("com.github.kagkarlsson:db-scheduler:16.7.0")
 }
@@ -59,6 +66,34 @@ tasks.test {
     testLogging {
         events("passed", "skipped", "failed", "standardOut", "standardError")
         showStandardStreams = true
+    }
+
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+}
+
+sonar {
+    properties {
+        property("sonar.projectKey", "marcingurbisz_flowlite")
+        property("sonar.organization", "marcingurbisz")
+        property("sonar.host.url", "https://sonarcloud.io")
+        property("sonar.sources", "source")
+        property("sonar.tests", "test")
+        property("sonar.java.binaries", "build/classes/kotlin/main")
+        property("sonar.junit.reportPaths", "build/test-results/test")
+        property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacocoTestReport.xml")
     }
 }
 

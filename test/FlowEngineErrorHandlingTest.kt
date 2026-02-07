@@ -106,7 +106,7 @@ private class InMemoryStatePersister<T : Any> : StatePersister<T> {
     }
 
     override fun load(flowInstanceId: UUID): InstanceData<T> =
-        data[flowInstanceId] ?: error("Process '$flowInstanceId' not found")
+        data[flowInstanceId] ?: error("Flow instance '$flowInstanceId' not found")
 }
 
 private class InMemoryEventStore : EventStore {

@@ -41,7 +41,7 @@ interface StatePersister<T : Any> {
      */
     fun save(instanceData: InstanceData<T>): InstanceData<T>
 
-    /** Load current process data; throws if the process does not exist. */
+    /** Load current flow instance data; throws if the flow instance does not exist. */
     fun load(flowInstanceId: UUID): InstanceData<T>
 
     /**

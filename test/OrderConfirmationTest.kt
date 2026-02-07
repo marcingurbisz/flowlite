@@ -68,7 +68,7 @@ class OrderConfirmationTest : BehaviorSpec({
         }
 
         `when`("processing digital confirmation path (engine generates id)") {
-            val processId = engine.startInstance(
+            val flowInstanceId = engine.startInstance(
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
                 initialState = OrderConfirmation(
                     stage = InitializingConfirmation,
@@ -80,24 +80,24 @@ class OrderConfirmationTest : BehaviorSpec({
 
             then("it waits for confirmation event") {
                 awaitStatus(
-                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, processId) },
+                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
                     expected = WaitingForConfirmation to StageStatus.PENDING,
                 )
             }
 
             then("it completes after digital confirmation event") {
-                engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, processId, ConfirmedDigitally)
+                engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId, ConfirmedDigitally)
                 awaitStatus(
-                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, processId) },
+                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
                     expected = InformingCustomer to StageStatus.COMPLETED,
                 )
             }
         }
 
         `when`("processing physical confirmation path (caller-supplied id)") {
-            val processId = UUID.randomUUID()
+            val flowInstanceId = UUID.randomUUID()
             val prePersisted = OrderConfirmation(
-                id = processId,
+                id = flowInstanceId,
                 stage = InitializingConfirmation,
                 orderNumber = "ORD-2",
                 confirmationType = ConfirmationType.PHYSICAL,
@@ -105,7 +105,7 @@ class OrderConfirmationTest : BehaviorSpec({
             )
             persister.save(
                 InstanceData(
-                    flowInstanceId = processId,
+                    flowInstanceId = flowInstanceId,
                     state = prePersisted,
                     stage = InitializingConfirmation,
                     stageStatus = StageStatus.PENDING,
@@ -114,14 +114,14 @@ class OrderConfirmationTest : BehaviorSpec({
 
             engine.startInstance(
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
-                flowInstanceId = processId,
+                flowInstanceId = flowInstanceId,
             )
 
-            engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, processId, ConfirmedPhysically)
+            engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId, ConfirmedPhysically)
 
             then("it informs customer and completes") {
                 awaitStatus(
-                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, processId) },
+                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
                     expected = InformingCustomer to StageStatus.COMPLETED,
                 )
             }
@@ -206,7 +206,7 @@ class SpringDataOrderConfirmationPersister(
 
     override fun load(flowInstanceId: UUID): InstanceData<OrderConfirmation> {
         val entity = repo.findById(flowInstanceId).orElse(null)
-            ?: error("Process '$flowInstanceId' not found")
+            ?: error("Flow instance '$flowInstanceId' not found")
         return InstanceData(
             flowInstanceId = flowInstanceId,
             state = entity,

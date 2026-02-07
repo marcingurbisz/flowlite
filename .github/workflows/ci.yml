@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test_coverage:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Cache SonarCloud packages
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Test + coverage (Sonar on main)
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            ./gradlew test jacocoTestReport sonar --info
+          else
+            ./gradlew test jacocoTestReport
+          fi
+
+      - name: Upload JaCoCo HTML (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-html
+          path: build/reports/jacoco/test/html
+
+      - name: Upload JaCoCo XML (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-xml
+          path: build/reports/jacoco/test/jacocoTestReport.xml
+
+      - name: Upload Pages artifact (JaCoCo HTML)
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/reports/jacoco/test/html
+
+  deploy_pages:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: test_coverage
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

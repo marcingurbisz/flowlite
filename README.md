@@ -74,7 +74,7 @@ stateDiagram-v2
 - **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
     - A tick carries no business payload;
     - Ticks are emitted on `startInstance`, `sendEvent`, and `retry`.
-- Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and process specific data
+- Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and domain-specific data
 - Single-token model: only one active stage at any moment (no parallelism within one flow).
 - Code-first definitions → diagrams are generated from code.
 - Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
@@ -282,15 +282,17 @@ stateDiagram-v2
 * Defining flow - See [source/dsl.kt](source/dsl.kt):
   * `Stage`, `Event`
   * `FlowBuilder`, `StageBuilder`, `EventBuilder`, `Flow`.
-* Registering flows, starting process instances, etc. - [source/engine.kt](source/engine.kt) (`FlowEngine`).
+* Registering flows, starting flow instances, etc. - [source/engine.kt](source/engine.kt) (`FlowEngine`).
 * Interfaces that must be implemented by client [source/persistance.kt](source/persistance.kt):
   * `StatePersister`
   * `EventStore`
   * `TickScheduler`
 
-Reference implementations:
-- `EventStore`: [test/SpringDataEventStore.kt](test/SpringDataEventStore.kt) (`SpringDataEventStore`).
-- `TickScheduler`: [test/DbTickScheduler.kt](test/DbTickScheduler.kt) (`DbTickScheduler`, Spring Data JDBC-based polling scheduler).
+See [Reference Implementations](#reference-implementations) for ready-to-use examples.
+
+### Reference Implementations
+- `EventStore`: [source/impl/springDataJdbcSchedulerAndStore.kt](source/impl/springDataJdbcSchedulerAndStore.kt) (`SpringDataJdbcEventStore`).
+- `TickScheduler`: [source/impl/springDataJdbcSchedulerAndStore.kt](source/impl/springDataJdbcSchedulerAndStore.kt) (`SpringDataJdbcTickScheduler`, Spring Data JDBC-based polling scheduler).
 - `StatePersister`: [test/OrderConfirmationTest.kt](test/OrderConfirmationTest.kt) (`SpringDataOrderConfirmationPersister`) and [test/employeeOnboardingFlowTest.kt](test/employeeOnboardingFlowTest.kt) (`SpringDataEmployeeOnboardingPersister`).
 - Wiring example: [test/TestApplication.kt](test/TestApplication.kt).
 
@@ -326,26 +328,24 @@ Practical guidance (DB-backed implementations):
 ### Persistence Approach
 
 FlowLite is “application-owned” for persistence which means you need to provide persistence implementation.
-At minimum, an application needs two persistence components:
+At minimum, an application needs three integration points:
 
-1. **Flow instance state persistence** (`StatePersister<T>`)
-    - Stores domain state **and** engine state for a single flow instance.
-    - Required engine fields:
-      - `id` (UUID, flow instance id)
-      - `stage` (string/enum name)
-      - `stage_status` (`PENDING` | `RUNNING` | `ERROR` | `COMPLETED`)
-        - Engine fields are **owned by the engine** and must not be updated by external writers.
-    - Plus your domain fields (customer data, order data, etc).
+1. **One `StatePersister<T>` per flow definition** (stores both engine-managed fields and your domain state)
+2. **One `TickScheduler`** (shared infrastructure that delivers “wake-ups” so the engine can progress instances)
+3. **One `EventStore`** (shared infrastructure that stores pending events until a stage can consume them)
 
-2. **Pending events persistence** (`EventStore`)
-    - Stores events submitted via `sendEvent` until the flow reaches a stage that can consume them.
-    - This is what enables “mailbox semantics”: events can arrive early and will be applied later.
+You can use the provided Spring Data JDBC reference implementations for `TickScheduler` and `EventStore` (see [Reference Implementations](#reference-implementations)), or provide your own implementations for either/both.
 
-In tests, examples of these integrations live in:
-- `StatePersister`: `SpringDataOrderConfirmationPersister`, `SpringDataEmployeeOnboardingPersister`
-- `EventStore`: `SpringDataEventStore`
+See [Contracts](#contracts) for the persistence/scheduler interfaces.
 
 ### Contracts
+
+FlowLite depends on three application-provided interfaces and application-provided action functions:
+
+- `StatePersister<T>`: persists a flow instance’s domain state plus engine-owned `stage` / `stage_status`.
+- `EventStore`: stores pending events (mailbox semantics: events can arrive early and get consumed later).
+- `TickScheduler`: delivers ticks (“wake-ups”) that tell the engine to attempt progress for `(flowId, flowInstanceId)`.
+- `(state: T) -> T?`: actions run when entering a stage.
 
 `StatePersister<T>`:
 - `load(flowInstanceId)` → current state (including engine fields); throws if the flow instance does not exist
@@ -358,11 +358,12 @@ In tests, examples of these integrations live in:
         - `load` + check + `save` guarded by optimistic locking (`@Version`) and handling optimistic lock failures.
         - Persist engine state (stage/status) separately from business state.
 
-
-`(state: T) -> T?` action persistence guidance:
-- If an action needs to persist business changes (i.e. has side effects on the process business data), it is recommended that the action persists those changes itself and then returns the updated state to the engine.
-- An action may also return updated state without saving and rely on the engine calling `StatePersister.save(...)` for persistence. In this case, the persister must handle concurrency correctly (optimistic locking / merge rules). See the concurrency notes below.
-- If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances
+`EventStore` contract:
+- `append(flowId, flowInstanceId, event)` → persist the event as pending (must be durable)
+- `peek(flowId, flowInstanceId, candidates)` → return a matching pending event (if any) among the provided candidates, without removing it
+- `delete(eventId)` → delete a previously returned `StoredEvent.id`; returns `true` if the row was deleted
+- Events may arrive before the flow reaches the stage that can consume them; they must remain pending until eligible.
+- At-least-once delivery is assumed; duplicate events may be appended.
 
 `TickScheduler` contract:
 - `setTickHandler(handler)`
@@ -375,7 +376,12 @@ In tests, examples of these integrations live in:
 - Error handling:
     - If the tick handler throws, the scheduler should log and continue delivering future ticks (optionally with backoff). It must not crash permanently.
 
-See `test/DbTickScheduler.kt` for a minimal in-process polling scheduler.
+`(state: T) -> T?`:
+- If an action needs to persist business changes (i.e. has side effects on the flow instance business data), it is recommended that the action persists those changes itself and then returns the updated state to the engine.
+- An action may also return updated state without saving and rely on the engine calling `StatePersister.save(...)` for persistence. In this case, the persister must handle concurrency correctly (optimistic locking / merge rules). See the concurrency notes below.
+- If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances.
+
+See [source/impl/springDataJdbcSchedulerAndStore.kt](source/impl/springDataJdbcSchedulerAndStore.kt) for a minimal Spring Data JDBC-based polling scheduler.
 
 Concurrency scenarios (cheat sheet):
 
@@ -388,7 +394,7 @@ Concurrency scenarios (cheat sheet):
 
 #### Practical schema guidance (JDBC)
 
-No external updates (only process updates the row):
+No external updates (only the workflow updates the row):
 - No issues with keeping engine and business fields in one table (one row per flow instance).
 - Optimistic locking not necessary
 - Actions can return a new state `T` and the persister can save business + engine fields atomically.
@@ -411,10 +417,21 @@ External updates exist (GUI / notifications / other services):
 ### Build and Test Commands
 - `./gradlew build` - Build the entire project
 - `./gradlew test` - Run all tests
+- `./gradlew test jacocoTestReport` - Run tests and generate coverage report (HTML + XML)
 - `./gradlew clean` - Clean build artifacts
 - `./gradlew check` - Run all verification tasks
 
 Note for agent: After changing source code, run `./gradlew test` before returning to user.
+
+### Coverage (Local + GitHub)
+
+Local coverage output:
+- HTML report: `build/reports/jacoco/test/html/index.html`
+- XML report: `build/reports/jacoco/test/jacocoTestReport.xml`
+
+GitHub CI publishes:
+- GitHub Pages: JaCoCo HTML report (from `main`)
+- SonarCloud: analysis + coverage import (from JaCoCo XML) (WIP)
 
 ### Code Structure
 

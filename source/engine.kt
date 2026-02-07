@@ -7,6 +7,10 @@ class FlowEngine(
     private val eventStore: EventStore,
     private val tickScheduler: TickScheduler,
 ) {
+    private companion object {
+        private val log = KotlinLogging.logger {}
+    }
+
     init {
         tickScheduler.setTickHandler(::processTick)
     }
@@ -72,8 +76,9 @@ class FlowEngine(
         enqueueTick(flowId, flowInstanceId)
     }
 
-    fun getStatus(flowId: String, flowInstanceId: UUID): Pair<Stage, StageStatus>? {
-        val persister = persisters[flowId] ?: return null
+    fun getStatus(flowId: String, flowInstanceId: UUID): Pair<Stage, StageStatus> {
+        requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
+        val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val pd = persister.load(flowInstanceId)
         log.debug { "getStatus(flowId=$flowId, flowInstanceId=$flowInstanceId) -> (${pd.stage}, ${pd.stageStatus})" }
         return pd.stage to pd.stageStatus
@@ -115,7 +120,7 @@ class FlowEngine(
             }
             StageStatus.RUNNING -> {
                 // Tick delivered while another worker owns the RUNNING claim.
-                // This can happen, e.g. when an event arrives while the process is already running and enqueues a tick.
+                // This can happen, e.g. when an event arrives while the flow instance is already running and enqueues a tick.
                 log.info { "Tick when $flowId/$flowInstanceId is RUNNING at stage ${loaded.stage}; ignoring" }
                 return
             }
@@ -146,10 +151,10 @@ class FlowEngine(
 
         while (true) {
             log.debug { "Processing loop for $flowId/$flowInstanceId at stage ${data.stage}" }
-            val def = flow.stages[data.stage]
-                ?: error("No definition for stage ${data.stage}")
-
             try {
+                val def = flow.stages[data.stage]
+                    ?: error("No definition for stage ${data.stage}")
+
                 if (def.eventHandlers.isNotEmpty()) {
                     val next = tryConsumeEventAndAdvance(flowId, def, data, persister, flowInstanceId)
                     if (next != null) {
@@ -244,5 +249,3 @@ class FlowEngine(
     private fun StageDefinition<*>.isTerminal(): Boolean =
         nextStage == null && conditionHandler == null && eventHandlers.isEmpty()
 }
-
-private val log = KotlinLogging.logger {}

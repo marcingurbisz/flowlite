@@ -1,16 +1,19 @@
 ## TODO
 
-* Reread README
-* Is there benefit of having Stage and Event interfaces?
-* Rename remaining "process" usages in doc and code
-* What tests are missing to have good test coverage? 
-* Integrate test coverage measuring tools
+WIP: 
 
+* What tests are missing to have good test coverage?
+* Move SpringData Jdbc implementations of TickScheduler and EventStore to source
+* Integrate with Sonar and Codecov
 
-* Tick using Azure Service Bus emulator
-* Send for review to guys
-* Full implementation of engine with working example
+Next:
+
+* Change io.flowlite.api to io.flowlite
 * onTrue/onFalse as methods?
-* Cockpit UI
-  * History of changes
-* optimistic locking like in walternate?
+* update to Java 25
+* Introduce Flow<T : Any, S : Stage, E : Event> with NoEvent as default
+* Implement history of changes
+* Integrate Cockpit prototype
+* Expose test instance publicly available 
+* Optimistic locking based on modified fields?
+* Tick using Azure Service Bus emulator? Different persistence? Mongo? Redis?

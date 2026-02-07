@@ -34,7 +34,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
     }
 
     given("employee onboarding flow - manual path") {
-        val processId = engine.startInstance(
+        val flowInstanceId = engine.startInstance(
             flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
             initialState = EmployeeOnboarding(
                 stage = WaitingForContractSigned,
@@ -47,18 +47,18 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
         then("it starts at waiting for contract signature") {
             awaitStatus(
-                fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, processId) },
+                fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
                 expected = WaitingForContractSigned to StageStatus.PENDING,
             )
         }
 
         `when`("contract is signed and onboarding completes") {
-            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, processId, ContractSigned)
-            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, processId, OnboardingComplete)
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId, ContractSigned)
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId, OnboardingComplete)
 
             then("it finishes in HR system update stage") {
                 awaitStatus(
-                    fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, processId) },
+                    fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
                     expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
                 )
             }
@@ -259,24 +259,24 @@ class SpringDataEmployeeOnboardingPersister(
         }
     }
 
-    override fun save(data: InstanceData<EmployeeOnboarding>): InstanceData<EmployeeOnboarding> {
-        val stage = data.stage as? EmployeeStage
-            ?: error("Unexpected stage ${data.stage}")
+    override fun save(instanceData: InstanceData<EmployeeOnboarding>): InstanceData<EmployeeOnboarding> {
+        val stage = instanceData.stage as? EmployeeStage
+            ?: error("Unexpected stage ${instanceData.stage}")
 
         val saved = repo.saveWithOptimisticLockRetry(
-            id = data.flowInstanceId,
-            candidate = data.state.copy(
-                id = data.flowInstanceId,
+            id = instanceData.flowInstanceId,
+            candidate = instanceData.state.copy(
+                id = instanceData.flowInstanceId,
                 stage = stage,
-                stageStatus = data.stageStatus,
+                stageStatus = instanceData.stageStatus,
             )
-        ) { latest -> latest.copy(stage = stage, stageStatus = data.stageStatus) }
-        return data.copy(state = saved)
+        ) { latest -> latest.copy(stage = stage, stageStatus = instanceData.stageStatus) }
+        return instanceData.copy(state = saved)
     }
 
     override fun load(flowInstanceId: UUID): InstanceData<EmployeeOnboarding> {
         val entity = repo.findById(flowInstanceId).orElse(null)
-            ?: error("Process '$flowInstanceId' not found")
+            ?: error("Flow instance '$flowInstanceId' not found")
         return InstanceData(
             flowInstanceId = flowInstanceId,
             state = entity,

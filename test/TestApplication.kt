@@ -1,6 +1,10 @@
 package io.flowlite.test
 
 import io.flowlite.api.FlowEngine
+import io.flowlite.impl.springdatajdbc.FlowLiteTickRepository
+import io.flowlite.impl.springdatajdbc.PendingEventRepository
+import io.flowlite.impl.springdatajdbc.SpringDataJdbcEventStore
+import io.flowlite.impl.springdatajdbc.SpringDataJdbcTickScheduler
 import java.util.UUID
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistrarDsl
@@ -9,6 +13,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 import org.springframework.context.ApplicationContextInitializer
 import org.springframework.context.support.GenericApplicationContext
+import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories
 import org.springframework.data.relational.core.mapping.NamingStrategy
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -16,6 +21,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource
 import javax.sql.DataSource
 
 @SpringBootApplication
+@EnableJdbcRepositories(basePackages = ["io.flowlite.impl.springdatajdbc", "io.flowlite.test"])
 open class TestApplication
 
 object Beans {
@@ -40,12 +46,12 @@ object Beans {
             NamedParameterJdbcTemplate(bean<DataSource>())
         }
 
-        registerBean<DbTickScheduler> {
-            DbTickScheduler(bean<FlowLiteTickRepository>())
+        registerBean {
+            SpringDataJdbcTickScheduler(bean<FlowLiteTickRepository>())
         }
 
         registerBean {
-            SpringDataEventStore(bean<PendingEventRepository>())
+            SpringDataJdbcEventStore(bean<PendingEventRepository>())
         }
 
         registerBean {
@@ -63,8 +69,8 @@ object Beans {
         }
 
         registerBean<FlowEngine> {
-            val eventStore = bean<SpringDataEventStore>()
-            val tickScheduler = bean<DbTickScheduler>()
+            val eventStore = bean<SpringDataJdbcEventStore>()
+            val tickScheduler = bean<SpringDataJdbcTickScheduler>()
             val orderPersister = bean<SpringDataOrderConfirmationPersister>()
             val onboardingPersister = bean<SpringDataEmployeeOnboardingPersister>()
             val onboardingActions = bean<EmployeeOnboardingActions>()

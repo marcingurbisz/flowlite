@@ -24,7 +24,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
         `when`("generating a mermaid diagram") {
             val flow = createEmployeeOnboardingFlow(TestApplicationExtension.employeeOnboardingActions)
             val generator = MermaidGenerator()
-            val diagram = generator.generateDiagram("employee-onboarding-flow", flow)
+            val diagram = generator.generateDiagram(flow)
 
             then("should generate diagram successfully") {
                 assert(diagram.isNotEmpty())

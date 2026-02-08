@@ -57,7 +57,7 @@ fun main() {
             val code = codeLines.joinToString(System.lineSeparator())
             @Suppress("UNCHECKED_CAST")
             val flow = spec.factory() as Flow<Any>
-            val diagram = generator.generateDiagram(spec.id, flow)
+            val diagram = generator.generateDiagram(flow)
             FlowDoc(title = spec.title, diagram = diagram, code = code, id = spec.id)
         }
     }

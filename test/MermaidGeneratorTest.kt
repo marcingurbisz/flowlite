@@ -31,7 +31,7 @@ class MermaidGeneratorTest : BehaviorSpec({
         val generator = MermaidGenerator()
 
         `when`("generating a diagram") {
-            val diagram = generator.generateDiagram("diagram-flow", flow)
+            val diagram = generator.generateDiagram(flow)
 
             then("it includes initial condition node and transitions") {
                 diagram shouldContain "stateDiagram-v2"

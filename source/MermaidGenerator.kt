@@ -8,7 +8,7 @@ class MermaidGenerator {
     private val conditionNodeNames = mutableMapOf<ConditionHandler<*>, String>()
     private val conditionNameCounts = mutableMapOf<String, Int>()
 
-    fun <T : Any> generateDiagram(flowId: String, flow: Flow<T>): String {
+    fun <T : Any> generateDiagram(flow: Flow<T>): String {
         conditionNodeNames.clear()
         conditionNameCounts.clear()
         val sb = StringBuilder()

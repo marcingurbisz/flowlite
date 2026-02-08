@@ -26,7 +26,7 @@ class OrderConfirmationTest : BehaviorSpec({
         val generator = MermaidGenerator()
 
         `when`("generating a mermaid diagram") {
-            val diagram = generator.generateDiagram(ORDER_CONFIRMATION_FLOW_ID, flow)
+            val diagram = generator.generateDiagram(flow)
 
             println("\n=== ORDER CONFIRMATION FLOW DIAGRAM ===")
             println(diagram)

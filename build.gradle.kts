@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.2.10"
+    kotlin("jvm") version "2.3.10"
     `java-library`
     `maven-publish`
     jacoco
@@ -48,9 +48,9 @@ dependencies {
     compileOnly("org.springframework:spring-tx:7.0.3")
 
     // Testing
-    testImplementation("io.kotest:kotest-runner-junit5:5.8.0")
-    testImplementation("io.kotest:kotest-assertions-core:5.8.0")
-    testImplementation("io.kotest:kotest-framework-datatest:5.8.0")
+    testImplementation(platform("io.kotest:kotest-bom:6.1.3"))
+    testImplementation("io.kotest:kotest-runner-junit5-jvm")
+    testImplementation("io.kotest:kotest-assertions-core-jvm")
     testImplementation("io.mockk:mockk:1.13.10")
     testImplementation("org.springframework.boot:spring-boot-starter-test:4.0.2")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jdbc:4.0.2")
@@ -62,17 +62,16 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     
-    // Show test output in console
     testLogging {
-        events("passed", "skipped", "failed", "standardOut", "standardError")
-        showStandardStreams = true
+        events("failed")
+        showStandardStreams = false
     }
 
     finalizedBy(tasks.jacocoTestReport)
 }
 
 jacoco {
-    toolVersion = "0.8.11"
+    toolVersion = "0.8.14"
 }
 
 tasks.jacocoTestReport {
@@ -101,7 +100,7 @@ java {
     withJavadocJar()
     withSourcesJar()
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 
@@ -112,13 +111,17 @@ tasks.named<Jar>("sourcesJar") {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
-        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
-        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
+        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_3)
+        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_3)
     }
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(21)
 }
 
 tasks.register<JavaExec>("updateReadme") {

@@ -430,8 +430,8 @@ Local coverage output:
 - XML report: `build/reports/jacoco/test/jacocoTestReport.xml`
 
 GitHub CI publishes:
-- GitHub Pages: JaCoCo HTML report (from `main`)
-- SonarCloud: analysis + coverage import (from JaCoCo XML) (WIP)
+- GitHub Pages (coverage): https://marcingurbisz.github.io/flowlite/ (from `main`)
+- SonarCloud: https://sonarcloud.io/summary/overall?id=marcingurbisz_flowlite&branch=main
 
 ### Code Structure
 
@@ -442,7 +442,7 @@ FlowLite uses a **flat directory structure** to keep the codebase simple and org
 - Resources are placed directly in source directory alongside code files, not in a separate resources directory
 
 ### Development Notes
-- Uses Kotlin 2.2 with Java 21 toolchain
+- Uses Kotlin 2.3.10 with Java 25 toolchain
 - Kotest for testing with BehaviorSpec style and MockK for mocking
 - Gradle build system with Maven publishing configuration
 

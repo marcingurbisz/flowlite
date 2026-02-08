@@ -1,5 +1,18 @@
 #!/bin/sh
 
+# Ensure the wrapper JVM enables native access on Java 24/25 to avoid
+# "restricted method" warnings from native-platform. Appends the flag if
+# not already present.
+if [ -z "$GRADLE_OPTS" ]; then
+    GRADLE_OPTS="--enable-native-access=ALL-UNNAMED"
+else
+    case " $GRADLE_OPTS " in
+        *" --enable-native-access=ALL-UNNAMED "*) ;;
+        *) GRADLE_OPTS="$GRADLE_OPTS --enable-native-access=ALL-UNNAMED" ;;
+    esac
+fi
+export GRADLE_OPTS
+
 #
 # Copyright © 2015-2021 the original authors.
 #

@@ -1,8 +1,8 @@
 package io.flowlite.test
 
-import io.flowlite.api.Event
-import io.flowlite.api.FlowBuilder
-import io.flowlite.api.Stage
+import io.flowlite.Event
+import io.flowlite.FlowBuilder
+import io.flowlite.Stage
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain

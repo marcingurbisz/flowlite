@@ -1,4 +1,4 @@
-package io.flowlite.api
+package io.flowlite
 
 /**
  * Generates Mermaid diagram representation of a Flow.

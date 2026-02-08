@@ -1,4 +1,4 @@
-package io.flowlite.api
+package io.flowlite
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID

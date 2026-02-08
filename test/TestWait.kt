@@ -1,7 +1,7 @@
 package io.flowlite.test
 
-import io.flowlite.api.Stage
-import io.flowlite.api.StageStatus
+import io.flowlite.Stage
+import io.flowlite.StageStatus
 import java.time.Duration
 
 fun awaitStatus(

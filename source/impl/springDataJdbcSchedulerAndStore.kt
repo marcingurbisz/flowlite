@@ -1,9 +1,9 @@
 package io.flowlite.impl.springdatajdbc
 
-import io.flowlite.api.Event
-import io.flowlite.api.EventStore
-import io.flowlite.api.StoredEvent
-import io.flowlite.api.TickScheduler
+import io.flowlite.Event
+import io.flowlite.EventStore
+import io.flowlite.StoredEvent
+import io.flowlite.TickScheduler
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Duration
 import java.util.UUID

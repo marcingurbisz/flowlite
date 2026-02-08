@@ -1,6 +1,6 @@
 package io.flowlite.test
 
-import io.flowlite.api.FlowEngine
+import io.flowlite.FlowEngine
 import io.flowlite.impl.springdatajdbc.FlowLiteTickRepository
 import io.flowlite.impl.springdatajdbc.PendingEventRepository
 import io.flowlite.impl.springdatajdbc.SpringDataJdbcEventStore

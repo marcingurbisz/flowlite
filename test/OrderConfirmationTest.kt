@@ -1,6 +1,6 @@
 package io.flowlite.test
 
-import io.flowlite.api.*
+import io.flowlite.*
 import io.flowlite.test.OrderConfirmationEvent.ConfirmedDigitally
 import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.*

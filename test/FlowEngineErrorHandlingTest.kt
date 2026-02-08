@@ -1,6 +1,6 @@
 package io.flowlite.test
 
-import io.flowlite.api.*
+import io.flowlite.*
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.assertions.throwables.shouldThrow

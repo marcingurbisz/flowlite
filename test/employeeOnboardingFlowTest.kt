@@ -1,6 +1,6 @@
 package io.flowlite.test
 
-import io.flowlite.api.*
+import io.flowlite.*
 import io.flowlite.test.EmployeeEvent.*
 import io.flowlite.test.EmployeeStage.*
 import io.kotest.core.spec.style.BehaviorSpec

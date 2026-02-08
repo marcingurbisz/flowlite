@@ -1,4 +1,4 @@
-package io.flowlite.api
+package io.flowlite
 
 /**
  * Represents a stage within a workflow. Implementations should be enums to provide a finite set of possible stages.

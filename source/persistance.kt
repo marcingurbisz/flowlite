@@ -1,4 +1,4 @@
-package io.flowlite.api
+package io.flowlite
 
 import java.util.UUID
 

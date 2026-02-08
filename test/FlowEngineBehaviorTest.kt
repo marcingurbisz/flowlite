@@ -1,15 +1,15 @@
 package io.flowlite.test
 
-import io.flowlite.api.Event
-import io.flowlite.api.Flow
-import io.flowlite.api.FlowBuilder
-import io.flowlite.api.FlowEngine
-import io.flowlite.api.InstanceData
-import io.flowlite.api.Stage
-import io.flowlite.api.StageStatus
-import io.flowlite.api.StatePersister
-import io.flowlite.api.StoredEvent
-import io.flowlite.api.TickScheduler
+import io.flowlite.Event
+import io.flowlite.Flow
+import io.flowlite.FlowBuilder
+import io.flowlite.FlowEngine
+import io.flowlite.InstanceData
+import io.flowlite.Stage
+import io.flowlite.StageStatus
+import io.flowlite.StatePersister
+import io.flowlite.StoredEvent
+import io.flowlite.TickScheduler
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
@@ -337,7 +337,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
         ): Boolean = false
     }
 
-    private class InMemoryEventStore : io.flowlite.api.EventStore {
+    private class InMemoryEventStore : io.flowlite.EventStore {
         private data class Row(val flowId: String, val flowInstanceId: UUID, val event: Event)
         private val rows = linkedMapOf<UUID, Row>()
 

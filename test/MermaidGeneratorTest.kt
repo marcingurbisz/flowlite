@@ -1,10 +1,10 @@
 package io.flowlite.test
 
-import io.flowlite.api.Event
-import io.flowlite.api.Flow
-import io.flowlite.api.FlowBuilder
-import io.flowlite.api.MermaidGenerator
-import io.flowlite.api.Stage
+import io.flowlite.Event
+import io.flowlite.Flow
+import io.flowlite.FlowBuilder
+import io.flowlite.MermaidGenerator
+import io.flowlite.Stage
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain
 

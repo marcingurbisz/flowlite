@@ -1,7 +1,7 @@
 package io.flowlite.test
 
-import io.flowlite.api.Flow
-import io.flowlite.api.MermaidGenerator
+import io.flowlite.Flow
+import io.flowlite.MermaidGenerator
 import org.springframework.beans.factory.getBean
 import java.nio.file.Files
 import java.nio.file.Path

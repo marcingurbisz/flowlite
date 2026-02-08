@@ -1,7 +1,7 @@
 package io.flowlite.test
 
-import io.flowlite.api.FlowEngine
-import io.flowlite.api.StatePersister
+import io.flowlite.FlowEngine
+import io.flowlite.StatePersister
 import io.kotest.core.listeners.ProjectListener
 import org.springframework.beans.factory.getBean
 import org.springframework.context.ConfigurableApplicationContext

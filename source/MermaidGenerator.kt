@@ -5,10 +5,10 @@ package io.flowlite
  */
 class MermaidGenerator {
 
-    private val conditionNodeNames = mutableMapOf<ConditionHandler<*>, String>()
+    private val conditionNodeNames = mutableMapOf<ConditionHandler<*, *>, String>()
     private val conditionNameCounts = mutableMapOf<String, Int>()
 
-    fun <T : Any> generateDiagram(flow: Flow<T>): String {
+    fun <T : Any, S : Stage, E : Event> generateDiagram(flow: Flow<T, S, E>): String {
         conditionNodeNames.clear()
         conditionNameCounts.clear()
         val sb = StringBuilder()
@@ -17,8 +17,8 @@ class MermaidGenerator {
         sb.append("stateDiagram-v2\n")
 
         // Track visited stages to avoid cycles in the diagram
-        val visitedStages = mutableSetOf<Stage>()
-        val visitedConditions = mutableSetOf<ConditionHandler<T>>()
+        val visitedStages = mutableSetOf<S>()
+        val visitedConditions = mutableSetOf<ConditionHandler<T, S>>()
 
         // Add all choice nodes (condition handlers)
         addAllChoiceNodes(flow, sb)
@@ -47,8 +47,8 @@ class MermaidGenerator {
     /**
      * Add all choice nodes for conditions in the flow
      */
-    private fun <T : Any> addAllChoiceNodes(flow: Flow<T>, sb: StringBuilder) {
-        val visitedConditions = mutableSetOf<ConditionHandler<T>>()
+    private fun <T : Any, S : Stage, E : Event> addAllChoiceNodes(flow: Flow<T, S, E>, sb: StringBuilder) {
+        val visitedConditions = mutableSetOf<ConditionHandler<T, S>>()
         
         // Add choice node for initial condition if present
         flow.initialCondition?.let {
@@ -83,10 +83,10 @@ class MermaidGenerator {
     /**
      * Recursively add choice nodes for nested conditions
      */
-    private fun <T : Any> addNestedChoiceNodes(
-        condition: ConditionHandler<T>, 
+    private fun <T : Any, S : Stage> addNestedChoiceNodes(
+        condition: ConditionHandler<T, S>, 
         sb: StringBuilder, 
-        visitedConditions: MutableSet<ConditionHandler<T>>
+        visitedConditions: MutableSet<ConditionHandler<T, S>>
     ) {
         if (!visitedConditions.add(condition)) {
             return  // Already processed this condition
@@ -108,13 +108,13 @@ class MermaidGenerator {
     /**
      * Process a condition handler and its branches
      */
-    private fun <T : Any> processCondition(
-        flow: Flow<T>,
-        condition: ConditionHandler<T>,
+    private fun <T : Any, S : Stage, E : Event> processCondition(
+        flow: Flow<T, S, E>,
+        condition: ConditionHandler<T, S>,
         choiceNodeName: String,
         sb: StringBuilder,
-        visitedStages: MutableSet<Stage>,
-        visitedConditions: MutableSet<ConditionHandler<T>>
+        visitedStages: MutableSet<S>,
+        visitedConditions: MutableSet<ConditionHandler<T, S>>
     ) {
         if (!visitedConditions.add(condition)) {
             return  // Avoid cycles
@@ -148,7 +148,7 @@ class MermaidGenerator {
     /**
      * Generate a unique node name for a condition based on its description
      */
-    private fun generateConditionNodeName(condition: ConditionHandler<*>): String {
+    private fun generateConditionNodeName(condition: ConditionHandler<*, *>): String {
         return conditionNodeNames.getOrPut(condition) {
             val base = "if_" + condition.description.lowercase()
                 .replace(Regex("[^a-z0-9]+"), "_")
@@ -162,12 +162,12 @@ class MermaidGenerator {
     /**
      * Process a stage and its transitions
      */
-    private fun <T : Any> processStage(
-        flow: Flow<T>,
-        currentStage: Stage,
+    private fun <T : Any, S : Stage, E : Event> processStage(
+        flow: Flow<T, S, E>,
+        currentStage: S,
         sb: StringBuilder,
-        visitedStages: MutableSet<Stage>,
-        visitedConditions: MutableSet<ConditionHandler<T>>
+        visitedStages: MutableSet<S>,
+        visitedConditions: MutableSet<ConditionHandler<T, S>>
     ) {
         // Skip if already visited to avoid cycles
         if (!visitedStages.add(currentStage)) {
@@ -227,7 +227,7 @@ class MermaidGenerator {
     /**
      * Check if a stage is a terminal state (end of the flow)
      */
-    private fun <T : Any> isTerminalState(stage: Stage, flow: Flow<T>): Boolean {
+    private fun <T : Any, S : Stage, E : Event> isTerminalState(stage: S, flow: Flow<T, S, E>): Boolean {
         val stageDefinition = flow.stages[stage] ?: return false
         
         // A stage is terminal if it has no outgoing transitions:

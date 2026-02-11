@@ -16,14 +16,14 @@ class FlowDslValidationTest : BehaviorSpec({
         `when`("building a flow with no initial stage or condition") {
             then("it fails") {
                 shouldThrow<IllegalArgumentException> {
-                    FlowBuilder<DslState>().build()
+                    FlowBuilder<DslState, DslStage, DslEvent>().build()
                 }
             }
         }
 
         `when`("a stage declares both an action and event handlers") {
             then("it fails validation") {
-                val builder = FlowBuilder<DslState>()
+                val builder = FlowBuilder<DslState, DslStage, DslEvent>()
                 builder.stage(DslStage.Start, ::identityAction)
                     .waitFor(DslEvent.Go)
                     .join(DslStage.Next)
@@ -37,7 +37,7 @@ class FlowDslValidationTest : BehaviorSpec({
 
         `when`("an event is reused in multiple waitFor declarations") {
             then("it fails validation") {
-                val builder = FlowBuilder<DslState>()
+                val builder = FlowBuilder<DslState, DslStage, DslEvent>()
                 builder.stage(DslStage.Start)
                     .waitFor(DslEvent.Go)
                     .join(DslStage.Next)
@@ -54,7 +54,7 @@ class FlowDslValidationTest : BehaviorSpec({
 
         `when`("a direct transition is added after event handlers") {
             then("it fails immediately") {
-                val builder = FlowBuilder<DslState>()
+                val builder = FlowBuilder<DslState, DslStage, DslEvent>()
                 val stageBuilder = builder.stage(DslStage.Start)
                 stageBuilder.waitFor(DslEvent.Go).join(DslStage.Next)
 

@@ -55,8 +55,8 @@ class MermaidGeneratorTest : BehaviorSpec({
     }
 })
 
-private fun createDiagramFlow(): Flow<DiagramState> {
-    return FlowBuilder<DiagramState>()
+private fun createDiagramFlow(): Flow<DiagramState, DiagramStage, DiagramEvent> {
+    return FlowBuilder<DiagramState, DiagramStage, DiagramEvent>()
         .condition(
             predicate = { it.flag },
             description = "Is Ready",

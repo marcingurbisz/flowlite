@@ -1,6 +1,8 @@
 package io.flowlite.test
 
 import io.flowlite.Event
+import io.flowlite.EventlessFlow
+import io.flowlite.EventlessFlowBuilder
 import io.flowlite.Flow
 import io.flowlite.FlowBuilder
 import io.flowlite.FlowEngine
@@ -358,12 +360,14 @@ class FlowEngineBehaviorTest : BehaviorSpec({
     }
 
     private companion object {
-        fun terminalFlow(): Flow<EngineState> = FlowBuilder<EngineState>()
+        fun terminalFlow(): EventlessFlow<EngineState, EngineStage> =
+            EventlessFlowBuilder<EngineState, EngineStage>()
             .stage(EngineStage.Start)
             .end()
             .build()
 
-        fun eventConditionFlow(): Flow<EngineState> = FlowBuilder<EngineState>()
+        fun eventConditionFlow(): Flow<EngineState, EngineStage, EngineEvent> =
+            FlowBuilder<EngineState, EngineStage, EngineEvent>()
             .stage(EngineStage.Wait)
             .waitFor(EngineEvent.Go)
             .condition(
@@ -374,25 +378,29 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             )
             .build()
 
-        fun waitingFlow(): Flow<EngineState> = FlowBuilder<EngineState>()
+        fun waitingFlow(): Flow<EngineState, EngineStage, EngineEvent> =
+            FlowBuilder<EngineState, EngineStage, EngineEvent>()
             .stage(EngineStage.Wait)
             .waitFor(EngineEvent.Go)
             .stage(EngineStage.Done)
             .end()
             .build()
 
-        fun terminalNoActionFlow(): Flow<EngineState> = FlowBuilder<EngineState>()
+        fun terminalNoActionFlow(): EventlessFlow<EngineState, EngineStage> =
+            EventlessFlowBuilder<EngineState, EngineStage>()
             .stage(EngineStage.Terminal)
             .end()
             .build()
 
-        fun automaticTransitionFlow(): Flow<EngineState> = FlowBuilder<EngineState>()
+        fun automaticTransitionFlow(): EventlessFlow<EngineState, EngineStage> =
+            EventlessFlowBuilder<EngineState, EngineStage>()
             .stage(EngineStage.Start)
             .stage(EngineStage.Done)
             .end()
             .build()
 
-        fun conditionOnlyFlow(): Flow<EngineState> = FlowBuilder<EngineState>()
+        fun conditionOnlyFlow(): EventlessFlow<EngineState, EngineStage> =
+            EventlessFlowBuilder<EngineState, EngineStage>()
             .stage(EngineStage.Start)
             .condition(
                 predicate = { it.flag },
@@ -402,8 +410,8 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             )
             .build()
 
-        fun eventJoinToConditionOnlyFlow(): Flow<EngineState> {
-            val b = FlowBuilder<EngineState>()
+        fun eventJoinToConditionOnlyFlow(): Flow<EngineState, EngineStage, EngineEvent> {
+            val b = FlowBuilder<EngineState, EngineStage, EngineEvent>()
 
             b.stage(EngineStage.Wait)
                 .waitFor(EngineEvent.Go)

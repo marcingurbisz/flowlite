@@ -286,9 +286,9 @@ class SpringDataEmployeeOnboardingPersister(
     }
 }
 
-fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<EmployeeOnboarding> {
+fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<EmployeeOnboarding, EmployeeStage, EmployeeEvent> {
     val flow = // FLOW-DEFINITION-START
-        FlowBuilder<EmployeeOnboarding>()
+        FlowBuilder<EmployeeOnboarding, EmployeeStage, EmployeeEvent>()
             .condition(
                 predicate = { it.isOnboardingAutomated },
                 description = "isOnboardingAutomated",

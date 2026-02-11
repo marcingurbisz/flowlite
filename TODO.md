@@ -3,12 +3,9 @@
 WIP: 
 
 * Introduce Flow<T : Any, S : Stage, E : Event> with NoEvent as default
-* Check why Claude Code (cloud) had problem with build (network limitations?) and how he solved it.
+* do you see any improvments for flowlite API?
 
 Next:
-
-* onTrue/onFalse as methods?
-* do you see any improvments for flowlite API?
 * Stages in pascal case?
 * Implement history of changes
 * Integrate Cockpit prototype

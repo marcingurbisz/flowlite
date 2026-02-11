@@ -421,8 +421,6 @@ External updates exist (GUI / notifications / other services):
 - `./gradlew clean` - Clean build artifacts
 - `./gradlew check` - Run all verification tasks
 
-Note for agent: After changing source code, run `./gradlew test` before returning to user.
-
 ### Coverage (Local + GitHub)
 
 Local coverage output:
@@ -452,3 +450,6 @@ FlowLite uses a **flat directory structure** to keep the codebase simple and org
 - Comment only non-obvious cases or complex logic
 - Keep architectural & usage docs in this README
 - Remember to update "Table of Contents" in README when adding new chapter or changing existing
+
+### Special notes for agent
+- After changing the source code, always run `./gradlew test` before returning to user.

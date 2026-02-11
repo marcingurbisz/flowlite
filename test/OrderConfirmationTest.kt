@@ -238,8 +238,8 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
 }
 
 // FLOW-DEFINITION-START
-fun createOrderConfirmationFlow(): Flow<OrderConfirmation> {
-    return FlowBuilder<OrderConfirmation>()
+fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    return FlowBuilder<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent>()
         .stage(InitializingConfirmation, ::initializeOrderConfirmation)
         .stage(WaitingForConfirmation)
         .apply {

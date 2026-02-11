@@ -28,7 +28,7 @@ class FlowEngineErrorHandlingTest : BehaviorSpec({
             return s.copy(attempts = n)
         }
 
-        val flow = FlowBuilder<ErrorFlowState>()
+        val flow = EventlessFlowBuilder<ErrorFlowState, ErrorFlowStage>()
             .stage(ErrorFlowStage.Failing, ::flakyAction)
             .stage(ErrorFlowStage.Done)
             .end()

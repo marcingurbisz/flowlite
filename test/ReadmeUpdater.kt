@@ -1,7 +1,9 @@
 package io.flowlite.test
 
+import io.flowlite.Event
 import io.flowlite.Flow
 import io.flowlite.MermaidGenerator
+import io.flowlite.Stage
 import org.springframework.beans.factory.getBean
 import java.nio.file.Files
 import java.nio.file.Path
@@ -15,7 +17,7 @@ data class FlowSpec(
     val id: String,
     val title: String,
     val source: Path,
-    val factory: () -> Flow<*>
+    val factory: () -> Flow<*, *, *>
 )
 
 private val documentedFlows = listOf(
@@ -33,7 +35,7 @@ private val documentedFlows = listOf(
     )
 )
 
-private fun createEmployeeOnboardingFlowFromSpring(): Flow<*> {
+private fun createEmployeeOnboardingFlowFromSpring(): Flow<*, *, *> {
     val context = startTestApplication()
     return context.use { context ->
         val actions = context.getBean<EmployeeOnboardingActions>()
@@ -56,7 +58,7 @@ fun main() {
             val codeLines = lines.subList(start + 1, end)
             val code = codeLines.joinToString(System.lineSeparator())
             @Suppress("UNCHECKED_CAST")
-            val flow = spec.factory() as Flow<Any>
+            val flow = spec.factory() as Flow<Any, Stage, Event>
             val diagram = generator.generateDiagram(flow)
             FlowDoc(title = spec.title, diagram = diagram, code = code, id = spec.id)
         }

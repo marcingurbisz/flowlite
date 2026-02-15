@@ -45,7 +45,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it marks the instance as COMPLETED") {
-                engine.getStatus("terminal-no-action", id) shouldBe (EngineStage.Terminal to StageStatus.COMPLETED)
+                engine.getStatus("terminal-no-action", id) shouldBe (EngineStage.Terminal to StageStatus.Completed)
             }
         }
 
@@ -61,7 +61,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it follows nextStage and completes") {
-                engine.getStatus("auto-transition", id) shouldBe (EngineStage.Done to StageStatus.COMPLETED)
+                engine.getStatus("auto-transition", id) shouldBe (EngineStage.Done to StageStatus.Completed)
             }
         }
 
@@ -77,7 +77,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it evaluates the condition and completes") {
-                engine.getStatus("condition-only", id) shouldBe (EngineStage.TrueStage to StageStatus.COMPLETED)
+                engine.getStatus("condition-only", id) shouldBe (EngineStage.TrueStage to StageStatus.Completed)
             }
         }
 
@@ -95,7 +95,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
                     flowInstanceId = id,
                     state = EngineState(flag = false),
                     stage = EngineStage.Start,
-                    stageStatus = StageStatus.RUNNING,
+                    stageStatus = StageStatus.Running,
                 ),
             )
 
@@ -103,7 +103,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it does not change status") {
-                engine.getStatus("running-flow", id) shouldBe (EngineStage.Start to StageStatus.RUNNING)
+                engine.getStatus("running-flow", id) shouldBe (EngineStage.Start to StageStatus.Running)
             }
         }
 
@@ -121,7 +121,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
                     flowInstanceId = id,
                     state = EngineState(flag = false),
                     stage = EngineStage.Start,
-                    stageStatus = StageStatus.PENDING,
+                    stageStatus = StageStatus.Pending,
                 ),
             )
 
@@ -129,7 +129,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it leaves the instance untouched") {
-                engine.getStatus("claim-flow", id) shouldBe (EngineStage.Start to StageStatus.PENDING)
+                engine.getStatus("claim-flow", id) shouldBe (EngineStage.Start to StageStatus.Pending)
             }
         }
 
@@ -146,7 +146,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it resolves the condition and completes") {
-                engine.getStatus("event-condition-flow", id) shouldBe (EngineStage.TrueStage to StageStatus.COMPLETED)
+                engine.getStatus("event-condition-flow", id) shouldBe (EngineStage.TrueStage to StageStatus.Completed)
             }
         }
 
@@ -162,7 +162,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it releases the RUNNING claim and stays pending") {
-                engine.getStatus("wait-flow", id) shouldBe (EngineStage.Wait to StageStatus.PENDING)
+                engine.getStatus("wait-flow", id) shouldBe (EngineStage.Wait to StageStatus.Pending)
             }
         }
 
@@ -179,7 +179,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it consumes the event, evaluates the condition, and completes") {
-                engine.getStatus("event-join-condition", id) shouldBe (EngineStage.FalseStage to StageStatus.COMPLETED)
+                engine.getStatus("event-join-condition", id) shouldBe (EngineStage.FalseStage to StageStatus.Completed)
             }
         }
 
@@ -197,7 +197,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
                     flowInstanceId = id,
                     state = EngineState(flag = false),
                     stage = EngineStage.Undefined,
-                    stageStatus = StageStatus.PENDING,
+                    stageStatus = StageStatus.Pending,
                 ),
             )
 
@@ -207,7 +207,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             }
 
             then("it marks the instance as ERROR") {
-                engine.getStatus("undefined-stage", id) shouldBe (EngineStage.Undefined to StageStatus.ERROR)
+                engine.getStatus("undefined-stage", id) shouldBe (EngineStage.Undefined to StageStatus.Error)
             }
         }
 

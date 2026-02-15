@@ -2,8 +2,10 @@ package io.flowlite.test
 
 import io.flowlite.FlowEngine
 import io.flowlite.impl.springdatajdbc.FlowLiteTickRepository
+import io.flowlite.impl.springdatajdbc.FlowLiteHistoryRepository
 import io.flowlite.impl.springdatajdbc.PendingEventRepository
 import io.flowlite.impl.springdatajdbc.SpringDataJdbcEventStore
+import io.flowlite.impl.springdatajdbc.SpringDataJdbcHistoryStore
 import io.flowlite.impl.springdatajdbc.SpringDataJdbcTickScheduler
 import java.util.UUID
 import org.springframework.beans.factory.BeanRegistrar
@@ -39,6 +41,7 @@ object Beans {
             createEmployeeOnboardingTable(jdbc)
             createPendingEventTable(jdbc)
             createTickTable(jdbc)
+            createHistoryTable(jdbc)
             ds
         }
 
@@ -52,6 +55,10 @@ object Beans {
 
         registerBean {
             SpringDataJdbcEventStore(bean<PendingEventRepository>())
+        }
+
+        registerBean {
+            SpringDataJdbcHistoryStore(bean<FlowLiteHistoryRepository>())
         }
 
         registerBean {
@@ -71,11 +78,12 @@ object Beans {
         registerBean<FlowEngine> {
             val eventStore = bean<SpringDataJdbcEventStore>()
             val tickScheduler = bean<SpringDataJdbcTickScheduler>()
+            val historyStore = bean<SpringDataJdbcHistoryStore>()
             val orderPersister = bean<SpringDataOrderConfirmationPersister>()
             val onboardingPersister = bean<SpringDataEmployeeOnboardingPersister>()
             val onboardingActions = bean<EmployeeOnboardingActions>()
 
-            FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler).also { engine ->
+            FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler, historyStore = historyStore).also { engine ->
                 engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)
                 engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(onboardingActions), onboardingPersister)
             }
@@ -143,6 +151,35 @@ private fun createPendingEventTable(jdbc: NamedParameterJdbcTemplate) {
             event_type varchar(256) not null,
             event_value varchar(256) not null
         );
+        """.trimIndent(),
+    )
+}
+
+private fun createHistoryTable(jdbc: NamedParameterJdbcTemplate) {
+    jdbc.jdbcTemplate.execute(
+        """
+        create table if not exists flowlite_history (
+            id uuid default random_uuid() primary key,
+            occurred_at timestamp not null,
+            flow_id varchar(128) not null,
+            flow_instance_id uuid not null,
+            type varchar(64) not null,
+            stage varchar(128),
+            from_stage varchar(128),
+            to_stage varchar(128),
+            from_status varchar(32),
+            to_status varchar(32),
+            event varchar(256),
+            error_type varchar(512),
+            error_message varchar(4000),
+            error_stack_trace clob
+        );
+        """.trimIndent(),
+    )
+
+    jdbc.jdbcTemplate.execute(
+        """
+        create index if not exists idx_flowlite_history_instance on flowlite_history(flow_id, flow_instance_id, occurred_at);
         """.trimIndent(),
     )
 }

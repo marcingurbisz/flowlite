@@ -2,6 +2,7 @@ package io.flowlite.test
 
 import io.flowlite.FlowEngine
 import io.flowlite.StatePersister
+import io.flowlite.impl.springdatajdbc.FlowLiteHistoryRepository
 import io.kotest.core.listeners.ProjectListener
 import org.springframework.beans.factory.getBean
 import org.springframework.context.ConfigurableApplicationContext
@@ -33,6 +34,9 @@ object TestApplicationExtension : ProjectListener {
 
     val employeeOnboardingActions: EmployeeOnboardingActions
         get() = context().getBean<EmployeeOnboardingActions>()
+
+    val historyRepository: FlowLiteHistoryRepository
+        get() = context().getBean<FlowLiteHistoryRepository>()
 
     override suspend fun beforeProject() {
         context()

@@ -67,10 +67,10 @@ stateDiagram-v2
 - **Join**: Converges control flow by pointing to an existing stage.
 - **Flow**: Immutable definition produced by `FlowBuilder<T>.build()` and held in-memory.
 - **StageStatus**: Lifecycle state of the single active stage:
-    - `PENDING` – Active stage awaiting action execution or matching event.
-    - `RUNNING` – Flow instance is currently being progressed by the engine. Remains `RUNNING` during the whole processing loop and is released back to `PENDING` when the instance needs to wait for an event.
-    - `COMPLETED` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `PENDING` rather than persisting completion of the previous stage.
-    - `ERROR` – Action failed; requires manual retry.
+    - `Pending` – Active stage awaiting action execution or matching event.
+    - `Running` – Flow instance is currently being progressed by the engine. Remains `Running` during the whole processing loop and is released back to `Pending` when the instance needs to wait for an event.
+    - `Completed` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `Pending` rather than persisting completion of the previous stage.
+    - `Error` – Action failed; requires manual retry.
 - **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
     - A tick carries no business payload;
     - Ticks are emitted on `startInstance`, `sendEvent`, and `retry`.
@@ -78,7 +78,7 @@ stateDiagram-v2
 - Single-token model: only one active stage at any moment (no parallelism within one flow).
 - Code-first definitions → diagrams are generated from code.
 - Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
-- Error handling: any exception marks stage `ERROR`; `retry` resets it back to `PENDING` and restarts from that stage.
+- Error handling: any exception marks stage `Error`; `retry` resets it back to `Pending` and restarts from that stage.
 - Migration: If the flow changes, migrations of existing instances are the responsibility of the application that uses FlowLite. No flow versioning nor migration support is planned in FlowLite.
 
 ### Stage Transitions
@@ -303,18 +303,18 @@ See [Contracts](#contracts) for the persistence/scheduler interfaces.
 1. Starting a flow instance persists instance data, calculates initial stage and enqueues a Tick. It's also possible to pre-create the flow instance earlier with your business data and later start processing by providing id.
 2. Tick processing loop:
     - Load flow instance state (stage + status) via `StatePersister`.
-    - If status `ERROR` → stop (await retry).
-    - If status `RUNNING` → another worker currently owns the instance; stop (tick delivered while the instance is already being processed).
-    - If status `PENDING`: atomically claim the instance by transitioning `PENDING -> RUNNING` (optimistic CAS in persistence).
-    - While `RUNNING`, the engine will keep advancing through automatic transitions and actions.
-        - If the current stage waits for events and no matching event exists: release the claim by setting status back to `PENDING`, enqueue a Tick, and stop.
-            - Why enqueue: an event may arrive while the instance is `RUNNING` and its Tick can be delivered and ignored; enqueueing after releasing to `PENDING` ensures the event store is re-checked.
-        - If the current stage consumes an event: advance to the next stage and continue (staying `RUNNING`).
-        - If the current stage executes an action: run it and advance to the next stage and continue (staying `RUNNING`), or mark `COMPLETED` if terminal.
-        - On failure: set `ERROR` (best-effort) and stop.
+    - If status `Error` → stop (await retry).
+    - If status `Running` → another worker currently owns the instance; stop (tick delivered while the instance is already being processed).
+    - If status `Pending`: atomically claim the instance by transitioning `Pending -> Running` (optimistic CAS in persistence).
+    - While `Running`, the engine will keep advancing through automatic transitions and actions.
+        - If the current stage waits for events and no matching event exists: release the claim by setting status back to `Pending`, enqueue a Tick, and stop.
+            - Why enqueue: an event may arrive while the instance is `Running` and its Tick can be delivered and ignored; enqueueing after releasing to `Pending` ensures the event store is re-checked.
+        - If the current stage consumes an event: advance to the next stage and continue (staying `Running`).
+        - If the current stage executes an action: run it and advance to the next stage and continue (staying `Running`), or mark `Completed` if terminal.
+        - On failure: set `Error` (best-effort) and stop.
 3. External events: `sendEvent(flowId, flowInstanceId, event)` inserts a event into `EventStore` and enqueues a Tick. The Tick will consume the event immediately if the instance is currently waiting for it; otherwise the event remains pending until eligible.
 
-`RUNNING` acts as a single-flight claim for tick processing. If a JVM crashes mid-loop, the instance may remain `RUNNING` until application-defined recovery resets it.
+`Running` acts as a single-flight claim for tick processing. If a JVM crashes mid-loop, the instance may remain `Running` until application-defined recovery resets it.
 
 ### Transaction Boundaries
 FlowLite does not start or manage transactions internally (to remain persistence-agnostic).
@@ -322,7 +322,7 @@ FlowLite does not start or manage transactions internally (to remain persistence
 Practical guidance (DB-backed implementations):
 - `startInstance`: persist the flow instance and enqueue a tick in the same transaction (or via an outbox) to avoid “flow instance created but never scheduled”.
 - `sendEvent`: append the pending event and enqueue a tick in the same transaction (or via an outbox) to avoid “event stored but never scheduled”.
-- `retry`: update `stage_status` to `PENDING` and enqueue a tick in the same transaction (or via an outbox).
+- `retry`: update `stage_status` to `Pending` and enqueue a tick in the same transaction (or via an outbox).
 - Tick handling (`processTick`): wrapping it into transaction is not recommended since this will create a big transaction that span over all transition and actions between start and first stage with event handler or terminal state.
 
 ### Persistence Approach
@@ -334,17 +334,22 @@ At minimum, an application needs three integration points:
 2. **One `TickScheduler`** (shared infrastructure that delivers “wake-ups” so the engine can progress instances)
 3. **One `EventStore`** (shared infrastructure that stores pending events until a stage can consume them)
 
+Optional (for observability/Cockpit):
+
+4. **One `HistoryStore`** (durable timeline of instance changes: stage/status transitions, errors, etc.)
+
 You can use the provided Spring Data JDBC reference implementations for `TickScheduler` and `EventStore` (see [Reference Implementations](#reference-implementations)), or provide your own implementations for either/both.
 
 See [Contracts](#contracts) for the persistence/scheduler interfaces.
 
 ### Contracts
 
-FlowLite depends on three application-provided interfaces and application-provided action functions:
+FlowLite depends on three required application-provided interfaces, one optional interface, and application-provided action functions:
 
 - `StatePersister<T>`: persists a flow instance’s domain state plus engine-owned `stage` / `stage_status`.
 - `EventStore`: stores pending events (mailbox semantics: events can arrive early and get consumed later).
 - `TickScheduler`: delivers ticks (“wake-ups”) that tell the engine to attempt progress for `(flowId, flowInstanceId)`.
+- `HistoryStore` (optional): stores durable history entries for observability (stage/status transitions, errors, and selected runtime events).
 - `(state: T) -> T?`: actions run when entering a stage.
 
 `StatePersister<T>`:

@@ -133,9 +133,9 @@ typealias EventlessFlowBuilder<T, S> = FlowBuilder<T, S, NoEvent>
  * Types of transitions between stages.
  */
 enum class TransitionType {
-    DIRECT,    // Direct stage-to-stage transition
-    EVENT,     // Event-based transition
-    CONDITION  // Conditional branching
+    Direct,    // Direct stage-to-stage transition
+    Event,     // Event-based transition
+    Condition  // Conditional branching
 }
 
 data class StageDefinition<T : Any, S : Stage, E : Event>(
@@ -148,9 +148,9 @@ data class StageDefinition<T : Any, S : Stage, E : Event>(
 
     fun hasConflictingTransitions(newTransitionType: TransitionType): Boolean {
         return when (newTransitionType) {
-            TransitionType.DIRECT -> eventHandlers.isNotEmpty() || conditionHandler != null
-            TransitionType.EVENT -> nextStage != null || conditionHandler != null
-            TransitionType.CONDITION -> nextStage != null || eventHandlers.isNotEmpty()
+            TransitionType.Direct -> eventHandlers.isNotEmpty() || conditionHandler != null
+            TransitionType.Event -> nextStage != null || conditionHandler != null
+            TransitionType.Condition -> nextStage != null || eventHandlers.isNotEmpty()
         }
     }
 
@@ -183,7 +183,7 @@ class StageBuilder<T : Any, S : Stage, E : Event>(
     val stageDefinition: StageDefinition<T, S, E>,
 ) {
     fun stage(stage: S, action: ((item: T) -> T?)? = null): StageBuilder<T, S, E> {
-        if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
+        if (stageDefinition.hasConflictingTransitions(TransitionType.Direct)) {
             error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
         stageDefinition.nextStage = stage
@@ -198,7 +198,7 @@ class StageBuilder<T : Any, S : Stage, E : Event>(
         onFalse: FlowBuilder<T, S, E>.() -> Unit,
         description: String
     ): FlowBuilder<T, S, E> {
-        if (stageDefinition.hasConflictingTransitions(TransitionType.CONDITION)) {
+        if (stageDefinition.hasConflictingTransitions(TransitionType.Condition)) {
             error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
         stageDefinition.conditionHandler = flowBuilder.createConditionHandler(predicate, onTrue, onFalse, description)
@@ -207,7 +207,7 @@ class StageBuilder<T : Any, S : Stage, E : Event>(
     }
 
     fun join(targetStage: S): FlowBuilder<T, S, E> {
-        if (stageDefinition.hasConflictingTransitions(TransitionType.DIRECT)) {
+        if (stageDefinition.hasConflictingTransitions(TransitionType.Direct)) {
             error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
         stageDefinition.nextStage = targetStage
@@ -222,7 +222,7 @@ class EventBuilder<T : Any, S : Stage, E : Event>(
     private val event: E
 ) {
     fun stage(stage: S, action: ((item: T) -> T?)? = null): StageBuilder<T, S, E> {
-        if (stageBuilder.stageDefinition.hasConflictingTransitions(TransitionType.EVENT)) {
+        if (stageBuilder.stageDefinition.hasConflictingTransitions(TransitionType.Event)) {
             error("Stage ${stageBuilder.stageDefinition.stage} already has transitions defined: ${stageBuilder.stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
         }
 

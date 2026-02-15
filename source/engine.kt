@@ -6,6 +6,7 @@ import java.util.UUID
 class FlowEngine(
     private val eventStore: EventStore,
     private val tickScheduler: TickScheduler,
+    private val historyStore: HistoryStore = NoopHistoryStore,
 ) {
     private companion object {
         private val log = KotlinLogging.logger {}
@@ -39,9 +40,10 @@ class FlowEngine(
             flowInstanceId = flowInstanceId,
             state = initialState,
             stage = initialStage,
-            stageStatus = StageStatus.PENDING,
+            stageStatus = StageStatus.Pending,
         )
         persister.save(data as InstanceData<Any>)
+        recordInstanceStarted(flowId, data as InstanceData<Any>)
         enqueueTick(flowId, flowInstanceId)
         return flowInstanceId
     }
@@ -51,7 +53,7 @@ class FlowEngine(
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val current = persister.load(flowInstanceId)
         log.info { "startInstance(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
-        if (current.stageStatus == StageStatus.COMPLETED) return flowInstanceId
+        if (current.stageStatus == StageStatus.Completed) return flowInstanceId
         enqueueTick(flowId, flowInstanceId)
         return flowInstanceId
     }
@@ -61,6 +63,14 @@ class FlowEngine(
         requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         log.info { "sendEvent(flowId=$flowId, flowInstanceId=$flowInstanceId, event=$event)" }
         eventStore.append(flowId, flowInstanceId, event)
+        recordHistory(
+            HistoryEntry(
+                flowId = flowId,
+                flowInstanceId = flowInstanceId,
+                type = HistoryEntryType.EventAppended,
+                event = historyValueOf(event),
+            ),
+        )
         enqueueTick(flowId, flowInstanceId)
     }
 
@@ -68,11 +78,12 @@ class FlowEngine(
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val current = persister.load(flowInstanceId)
         log.info { "retry(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
-        if (current.stageStatus != StageStatus.ERROR) {
+        if (current.stageStatus != StageStatus.Error) {
             error("Cannot retry $flowId/$flowInstanceId because status is ${current.stageStatus}")
         }
-        val reset = current.copy(stageStatus = StageStatus.PENDING)
+        val reset = current.copy(stageStatus = StageStatus.Pending)
         persister.save(reset)
+        recordStatusChanged(flowId, current, from = StageStatus.Error, to = StageStatus.Pending)
         enqueueTick(flowId, flowInstanceId)
     }
 
@@ -104,37 +115,106 @@ class FlowEngine(
         tickScheduler.scheduleTick(flowId, flowInstanceId)
     }
 
+    private fun recordHistory(entry: HistoryEntry) {
+        try {
+            historyStore.append(entry)
+        } catch (e: Exception) {
+            log.warn(e) { "HistoryStore.append failed for ${entry.flowId}/${entry.flowInstanceId} type=${entry.type}" }
+        }
+    }
+
+    private fun recordInstanceStarted(flowId: String, data: InstanceData<Any>) {
+        recordHistory(
+            HistoryEntry(
+                flowId = flowId,
+                flowInstanceId = data.flowInstanceId,
+                type = HistoryEntryType.InstanceStarted,
+                stage = historyValueOf(data.stage),
+                toStatus = data.stageStatus,
+            ),
+        )
+    }
+
+    private fun recordStatusChanged(flowId: String, data: InstanceData<Any>, from: StageStatus, to: StageStatus) {
+        recordHistory(
+            HistoryEntry(
+                flowId = flowId,
+                flowInstanceId = data.flowInstanceId,
+                type = HistoryEntryType.StatusChanged,
+                stage = historyValueOf(data.stage),
+                fromStatus = from,
+                toStatus = to,
+            ),
+        )
+    }
+
+    private fun recordStageChanged(
+        flowId: String,
+        data: InstanceData<Any>,
+        from: Stage,
+        to: Stage,
+        event: Event? = null,
+    ) {
+        recordHistory(
+            HistoryEntry(
+                flowId = flowId,
+                flowInstanceId = data.flowInstanceId,
+                type = HistoryEntryType.StageChanged,
+                fromStage = historyValueOf(from),
+                toStage = historyValueOf(to),
+                event = event?.let { historyValueOf(it) },
+            ),
+        )
+    }
+
+    private fun recordError(flowId: String, data: InstanceData<Any>, ex: Exception) {
+        recordHistory(
+            HistoryEntry(
+                flowId = flowId,
+                flowInstanceId = data.flowInstanceId,
+                type = HistoryEntryType.Error,
+                stage = historyValueOf(data.stage),
+                fromStatus = StageStatus.Running,
+                toStatus = StageStatus.Error,
+                errorType = ex::class.qualifiedName ?: ex::class.java.name,
+                errorMessage = ex.message ?: ex.toString(),
+                errorStackTrace = ex.stackTraceToString(),
+            ),
+        )
+    }
+
     private fun processTick(flowId: String, flowInstanceId: UUID) {
         val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
 
         val loaded = persister.load(flowInstanceId)
         when (loaded.stageStatus) {
-            StageStatus.ERROR -> {
+            StageStatus.Error -> {
                 log.info { "Tick when $flowId/$flowInstanceId is in ERROR at stage ${loaded.stage}; awaiting retry" }
                 return
             }
-            StageStatus.COMPLETED -> {
+            StageStatus.Completed -> {
                 log.info { "Tick when $flowId/$flowInstanceId already COMPLETED" }
                 return
             }
-            StageStatus.RUNNING -> {
+            StageStatus.Running -> {
                 // Tick delivered while another worker owns the RUNNING claim.
                 // This can happen, e.g. when an event arrives while the flow instance is already running and enqueues a tick.
                 log.info { "Tick when $flowId/$flowInstanceId is RUNNING at stage ${loaded.stage}; ignoring" }
                 return
             }
-            StageStatus.PENDING -> {
+            StageStatus.Pending -> {
                 val claimed = persister.tryTransitionStageStatus(
                     flowInstanceId = flowInstanceId,
                     expectedStage = loaded.stage,
-                    expectedStageStatus = StageStatus.PENDING,
-                    newStageStatus = StageStatus.RUNNING,
+                    expectedStageStatus = StageStatus.Pending,
+                    newStageStatus = StageStatus.Running,
                 )
                 if (!claimed) {
                     // Someone else advanced/claimed; tick is a duplicate.
                     return
                 }
+                recordStatusChanged(flowId, loaded, from = StageStatus.Pending, to = StageStatus.Running)
                 val running = persister.load(flowInstanceId)
                 processTickLoop(flowId, flow, persister, running)
             }
@@ -142,7 +222,7 @@ class FlowEngine(
     }
 
     private fun processTickLoop(flowId: String, flow: Flow<Any, Stage, Event>, persister: StatePersister<Any>, initial: InstanceData<Any>) {
-        require(initial.stageStatus == StageStatus.RUNNING) {
+        require(initial.stageStatus == StageStatus.Running) {
             "processTickLoop expects RUNNING but was ${initial.stageStatus}"
         }
 
@@ -163,7 +243,8 @@ class FlowEngine(
                         continue
                     }
                     // No matching event; release the RUNNING claim.
-                    persister.save(data.copy(stageStatus = StageStatus.PENDING))
+                    persister.save(data.copy(stageStatus = StageStatus.Pending))
+                    recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Pending)
                     // If an event arrived while we were RUNNING, its tick might have been delivered and ignored.
                     // Check the store and enqueue a tick in case event is there
                     if (eventStore.peek(flowId, flowInstanceId, def.eventHandlers.keys) != null) {
@@ -177,7 +258,8 @@ class FlowEngine(
                     val newState = result ?: data.state
 
                     if (def.isTerminal()) {
-                        persister.save(data.copy(state = newState, stageStatus = StageStatus.COMPLETED))
+                        persister.save(data.copy(state = newState, stageStatus = StageStatus.Completed))
+                        recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Completed)
                         log.info { "Stage ${def.stage} completed after action ($flowId/$flowInstanceId)" }
                         return
                     }
@@ -191,7 +273,9 @@ class FlowEngine(
                         ?: error("Non-terminal stage ${data.stage} has an action but no nextStage/condition")
 
                     val from = data.stage
+                    val before = data
                     data = persister.save(data.copy(state = newState, stage = nextStage))
+                    recordStageChanged(flowId, before, from = from, to = nextStage)
                     log.debug { "Action advanced $from -> $nextStage ($flowId/$flowInstanceId)" }
                     continue
                 }
@@ -200,20 +284,25 @@ class FlowEngine(
                     val from = data.stage
                     val target = resolveConditionInitialStage(cond, data.state)
                         ?: error("Condition did not resolve to a stage from ${data.stage}")
+                    val before = data
                     data = persister.save(data.copy(stage = target))
+                    recordStageChanged(flowId, before, from = from, to = target)
                     log.debug { "Condition transition $from -> $target ($flowId/$flowInstanceId)" }
                     continue
                 }
 
                 def.nextStage?.let { ns ->
                     val from = data.stage
+                    val before = data
                     data = persister.save(data.copy(stage = ns))
+                    recordStageChanged(flowId, before, from = from, to = ns)
                     log.debug { "Automatic transition $from -> $ns ($flowId/$flowInstanceId)" }
                     continue
                 }
 
                 if (def.isTerminal()) {
-                    persister.save(data.copy(stageStatus = StageStatus.COMPLETED))
+                    persister.save(data.copy(stageStatus = StageStatus.Completed))
+                    recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Completed)
                     log.info { "Stage ${data.stage} marked COMPLETED ($flowId/$flowInstanceId)" }
                     return
                 }
@@ -221,7 +310,8 @@ class FlowEngine(
                 error("Stage ${data.stage} has no transitions but is not terminal")
             } catch (ex: Exception) {
                 log.error(ex) { "Failure in $flowId/$flowInstanceId at stage ${data.stage}" }
-                persister.save(data.copy(stageStatus = StageStatus.ERROR))
+                persister.save(data.copy(stageStatus = StageStatus.Error))
+                recordError(flowId, data, ex)
                 throw ex
             }
         }
@@ -240,9 +330,11 @@ class FlowEngine(
             resolveConditionInitialStage(ch, data.state)
         }
             ?: error("Event handler did not resolve to a stage from ${data.stage}")
+        val from = data.stage
         val next = data.copy(stage = targetStage)
         val saved = persister.save(next)
         eventStore.delete(stored.id)
+        recordStageChanged(flowId, data, from = from, to = targetStage, event = stored.event)
         return saved
     }
 

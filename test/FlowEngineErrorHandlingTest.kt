@@ -11,7 +11,7 @@ private enum class ErrorFlowStage : Stage { Failing, Done }
 
 private data class ErrorFlowState(
     val stage: ErrorFlowStage,
-    val stageStatus: StageStatus = StageStatus.PENDING,
+    val stageStatus: StageStatus = StageStatus.Pending,
     val attempts: Int = 0,
 )
 
@@ -49,13 +49,13 @@ class FlowEngineErrorHandlingTest : BehaviorSpec({
             }
 
             then("it moves the stage to ERROR") {
-                engine.getStatus(flowId, flowInstanceId) shouldBe (ErrorFlowStage.Failing to StageStatus.ERROR)
+                engine.getStatus(flowId, flowInstanceId) shouldBe (ErrorFlowStage.Failing to StageStatus.Error)
             }
 
             then("retry enqueues and eventually completes when the action succeeds") {
                 engine.retry(flowId, flowInstanceId)
                 tickScheduler.drain()
-                engine.getStatus(flowId, flowInstanceId) shouldBe (ErrorFlowStage.Done to StageStatus.COMPLETED)
+                engine.getStatus(flowId, flowInstanceId) shouldBe (ErrorFlowStage.Done to StageStatus.Completed)
             }
         }
     }

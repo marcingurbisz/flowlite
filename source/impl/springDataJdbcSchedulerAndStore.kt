@@ -2,9 +2,12 @@ package io.flowlite.impl.springdatajdbc
 
 import io.flowlite.Event
 import io.flowlite.EventStore
+import io.flowlite.HistoryEntry
+import io.flowlite.HistoryStore
 import io.flowlite.StoredEvent
 import io.flowlite.TickScheduler
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.time.Instant
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -16,6 +19,8 @@ import org.springframework.data.annotation.Version
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.relational.core.mapping.Table
 import org.springframework.data.repository.CrudRepository
+
+// --- Tick scheduler ---
 
 @Table("FLOWLITE_TICK")
 data class FlowLiteTick(
@@ -152,7 +157,7 @@ class SpringDataJdbcTickScheduler(
     override fun isRunning(): Boolean = pollerThread != null && !shutdownInitiated.get()
 }
 
-// --- Event store sample ---
+// --- Event store ---
 
 data class PendingEvent(
     @Id val id: UUID? = null,
@@ -202,5 +207,62 @@ class SpringDataJdbcEventStore(
         val row = repo.findById(eventId).orElse(null) ?: return false
         repo.deleteById(row.id!!)
         return true
+    }
+}
+
+// --- History store ---
+
+@Table("FLOWLITE_HISTORY")
+data class FlowLiteHistoryRow(
+    @Id val id: UUID? = null,
+    val occurredAt: Instant,
+    val flowId: String,
+    val flowInstanceId: UUID,
+    val type: String,
+    val stage: String? = null,
+    val fromStage: String? = null,
+    val toStage: String? = null,
+    val fromStatus: String? = null,
+    val toStatus: String? = null,
+    val event: String? = null,
+    val errorType: String? = null,
+    val errorMessage: String? = null,
+    val errorStackTrace: String? = null,
+)
+
+interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
+    @Query(
+        """
+        select *
+        from flowlite_history
+        where flow_id = :flowId and flow_instance_id = :flowInstanceId
+        order by occurred_at asc, id asc
+        """,
+    )
+    fun findTimeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow>
+}
+
+class SpringDataJdbcHistoryStore(
+    private val repo: FlowLiteHistoryRepository,
+) : HistoryStore {
+    override fun append(entry: HistoryEntry) {
+        repo.save(
+            FlowLiteHistoryRow(
+                id = null,
+                occurredAt = entry.occurredAt,
+                flowId = entry.flowId,
+                flowInstanceId = entry.flowInstanceId,
+                type = entry.type.name,
+                stage = entry.stage,
+                fromStage = entry.fromStage,
+                toStage = entry.toStage,
+                fromStatus = entry.fromStatus?.name,
+                toStatus = entry.toStatus?.name,
+                event = entry.event,
+                errorType = entry.errorType,
+                errorMessage = entry.errorMessage,
+                errorStackTrace = entry.errorStackTrace,
+            ),
+        )
     }
 }

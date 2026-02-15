@@ -68,12 +68,13 @@ class OrderConfirmationTest : BehaviorSpec({
         }
 
         `when`("processing digital confirmation path (engine generates id)") {
+            val historyRepo = TestApplicationExtension.historyRepository
             val flowInstanceId = engine.startInstance(
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
                 initialState = OrderConfirmation(
                     stage = InitializingConfirmation,
                     orderNumber = "ORD-1",
-                    confirmationType = ConfirmationType.DIGITAL,
+                    confirmationType = ConfirmationType.Digital,
                     customerName = "Alice",
                 ),
             )
@@ -81,7 +82,7 @@ class OrderConfirmationTest : BehaviorSpec({
             then("it waits for confirmation event") {
                 awaitStatus(
                     fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
-                    expected = WaitingForConfirmation to StageStatus.PENDING,
+                    expected = WaitingForConfirmation to StageStatus.Pending,
                 )
             }
 
@@ -89,18 +90,25 @@ class OrderConfirmationTest : BehaviorSpec({
                 engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId, ConfirmedDigitally)
                 awaitStatus(
                     fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
-                    expected = InformingCustomer to StageStatus.COMPLETED,
+                    expected = InformingCustomer to StageStatus.Completed,
                 )
+
+                val timeline = historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
+                require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
+                require(timeline.any { it.type == HistoryEntryType.InstanceStarted.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended.name && it.event == ConfirmedDigitally.name })
+                require(timeline.any { it.type == HistoryEntryType.StageChanged.name && it.toStage == InformingCustomer.name })
             }
         }
 
         `when`("processing physical confirmation path (caller-supplied id)") {
+            val historyRepo = TestApplicationExtension.historyRepository
             val flowInstanceId = UUID.randomUUID()
             val prePersisted = OrderConfirmation(
                 id = flowInstanceId,
                 stage = InitializingConfirmation,
                 orderNumber = "ORD-2",
-                confirmationType = ConfirmationType.PHYSICAL,
+                confirmationType = ConfirmationType.Physical,
                 customerName = "Bob",
             )
             persister.save(
@@ -108,7 +116,7 @@ class OrderConfirmationTest : BehaviorSpec({
                     flowInstanceId = flowInstanceId,
                     state = prePersisted,
                     stage = InitializingConfirmation,
-                    stageStatus = StageStatus.PENDING,
+                    stageStatus = StageStatus.Pending,
                 ),
             )
 
@@ -122,8 +130,13 @@ class OrderConfirmationTest : BehaviorSpec({
             then("it informs customer and completes") {
                 awaitStatus(
                     fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
-                    expected = InformingCustomer to StageStatus.COMPLETED,
+                    expected = InformingCustomer to StageStatus.Completed,
                 )
+
+                val timeline = historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
+                require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
+                require(timeline.any { it.type == HistoryEntryType.EventAppended.name && it.event == ConfirmedPhysically.name })
+                require(timeline.any { it.type == HistoryEntryType.StageChanged.name && it.toStage == InformingCustomer.name })
             }
         }
     }
@@ -142,8 +155,8 @@ enum class OrderConfirmationEvent : Event {
 }
 
 enum class ConfirmationType {
-    DIGITAL, // Online payment, app confirmation, e-signature
-    PHYSICAL, // Phone confirmation, in-person payment, paper signature
+    Digital, // Online payment, app confirmation, e-signature
+    Physical, // Phone confirmation, in-person payment, paper signature
 }
 
 data class OrderConfirmation(
@@ -152,7 +165,7 @@ data class OrderConfirmation(
     @Version
     val version: Long = 0,
     val stage: OrderConfirmationStage,
-    val stageStatus: StageStatus = StageStatus.PENDING,
+    val stageStatus: StageStatus = StageStatus.Pending,
     val orderNumber: String,
     val confirmationType: ConfirmationType,
     val customerName: String,
@@ -230,8 +243,8 @@ fun removeFromConfirmationQueue(confirmation: OrderConfirmation): OrderConfirmat
 fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
     val method =
         when (confirmation.confirmationType) {
-            ConfirmationType.DIGITAL -> "app notification/email"
-            ConfirmationType.PHYSICAL -> "phone call"
+            ConfirmationType.Digital -> "app notification/email"
+            ConfirmationType.Physical -> "phone call"
         }
     log.info { "Informing customer ${confirmation.customerName} via $method that order ${confirmation.orderNumber} is being prepared" }
     return confirmation.copy(isCustomerInformed = true)

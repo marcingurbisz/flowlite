@@ -19,6 +19,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
     val engine = TestApplicationExtension.engine
     val repo = TestApplicationExtension.employeeOnboardingRepository
+    val historyRepo = TestApplicationExtension.historyRepository
 
     given("an employee onboarding flow") {
         `when`("generating a mermaid diagram") {
@@ -48,7 +49,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
         then("it starts at waiting for contract signature") {
             awaitStatus(
                 fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
-                expected = WaitingForContractSigned to StageStatus.PENDING,
+                expected = WaitingForContractSigned to StageStatus.Pending,
             )
         }
 
@@ -59,8 +60,13 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             then("it finishes in HR system update stage") {
                 awaitStatus(
                     fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
-                    expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
+                    expected = UpdateStatusInHRSystem to StageStatus.Completed,
                 )
+
+                val timeline = historyRepo.findTimeline(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId)
+                require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
+                require(timeline.any { it.type == HistoryEntryType.EventAppended.name && it.event == ContractSigned.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended.name && it.event == OnboardingComplete.name })
             }
         }
     }
@@ -93,7 +99,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                 EmployeeOnboarding(
                     id = id,
                     stage = CreateUserInSystem,
-                    stageStatus = StageStatus.PENDING,
+                    stageStatus = StageStatus.Pending,
                     isOnboardingAutomated = true,
                     isExecutiveRole = true,
                     isSecurityClearanceRequired = false,
@@ -116,7 +122,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
                     awaitStatus(
                         fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
+                        expected = UpdateStatusInHRSystem to StageStatus.Completed,
                     )
 
                     val final = repo.findById(id).orElseThrow()
@@ -151,7 +157,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                 EmployeeOnboarding(
                     id = id,
                     stage = CreateUserInSystem,
-                    stageStatus = StageStatus.PENDING,
+                    stageStatus = StageStatus.Pending,
                     isOnboardingAutomated = true,
                     isExecutiveRole = true,
                     isSecurityClearanceRequired = false,
@@ -173,7 +179,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
                     awaitStatus(
                         fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = UpdateStatusInHRSystem to StageStatus.COMPLETED,
+                        expected = UpdateStatusInHRSystem to StageStatus.Completed,
                     )
 
                     val final = repo.findById(id).orElseThrow()
@@ -215,7 +221,7 @@ data class EmployeeOnboarding(
     @Version
     val version: Long = 0,
     val stage: EmployeeStage,
-    val stageStatus: StageStatus = StageStatus.PENDING,
+    val stageStatus: StageStatus = StageStatus.Pending,
     val isOnboardingAutomated: Boolean = false,
     val isContractSigned: Boolean = false,
     val isExecutiveRole: Boolean = false,

@@ -1,15 +1,16 @@
 package io.flowlite
 
+import java.time.Instant
 import java.util.UUID
 
 /**
  * Runtime status of a single active stage for a flow instance.
  */
 enum class StageStatus {
-    PENDING,
-    RUNNING,
-    COMPLETED, // used only for terminal stages
-    ERROR,
+    Pending,
+    Running,
+    Completed, // used only for terminal stages
+    Error,
 }
 
 /**
@@ -79,3 +80,44 @@ interface TickScheduler {
     fun setTickHandler(handler: (String, UUID) -> Unit)
     fun scheduleTick(flowId: String, flowInstanceId: UUID)
 }
+
+/**
+ * Optional, application-provided store for durable history of flow instance changes.
+ *
+ * This is intended for building observability features (e.g. Cockpit): instance timelines,
+ * error details, and auditing of stage/status transitions.
+ */
+interface HistoryStore {
+    fun append(entry: HistoryEntry)
+}
+
+enum class HistoryEntryType {
+    InstanceStarted,
+    EventAppended,
+    StatusChanged,
+    StageChanged,
+    Error,
+}
+
+data class HistoryEntry(
+    val flowId: String,
+    val flowInstanceId: UUID,
+    val type: HistoryEntryType,
+    val occurredAt: Instant = Instant.now(),
+    val stage: String? = null,
+    val fromStage: String? = null,
+    val toStage: String? = null,
+    val fromStatus: StageStatus? = null,
+    val toStatus: StageStatus? = null,
+    val event: String? = null,
+    val errorType: String? = null,
+    val errorMessage: String? = null,
+    val errorStackTrace: String? = null,
+)
+
+object NoopHistoryStore : HistoryStore {
+    override fun append(entry: HistoryEntry) = Unit
+}
+
+internal fun historyValueOf(value: Any): String =
+    (value as? Enum<*>)?.name ?: value.toString()

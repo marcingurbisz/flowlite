@@ -4,6 +4,7 @@ import io.flowlite.*
 import io.flowlite.test.EmployeeEvent.*
 import io.flowlite.test.EmployeeStage.*
 import io.kotest.core.spec.style.BehaviorSpec
+import org.springframework.beans.factory.getBean
 import org.springframework.dao.OptimisticLockingFailureException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -17,13 +18,14 @@ const val EMPLOYEE_ONBOARDING_FLOW_ID = "employee-onboarding"
 class EmployeeOnboardingFlowTest : BehaviorSpec({
     extension(TestApplicationExtension)
 
-    val engine = TestApplicationExtension.engine
-    val repo = TestApplicationExtension.employeeOnboardingRepository
-    val historyRepo = TestApplicationExtension.historyRepository
+    val engine = TestApplicationExtension.context().getBean<FlowEngine>()
+    val repo = TestApplicationExtension.context().getBean<EmployeeOnboardingRepository>()
+    val historyRepo = TestApplicationExtension.context().getBean<FlowLiteHistoryRepository>()
 
     given("an employee onboarding flow") {
         `when`("generating a mermaid diagram") {
-            val flow = createEmployeeOnboardingFlow(TestApplicationExtension.employeeOnboardingActions)
+            val actions = TestApplicationExtension.context().getBean<EmployeeOnboardingActions>()
+            val flow = createEmployeeOnboardingFlow(actions)
             val generator = MermaidGenerator()
             val diagram = generator.generateDiagram(flow)
 

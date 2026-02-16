@@ -287,12 +287,14 @@ stateDiagram-v2
   * `StatePersister`
   * `EventStore`
   * `TickScheduler`
+  * `HistoryStore` (optional)
 
 See [Reference Implementations](#reference-implementations) for ready-to-use examples.
 
 ### Reference Implementations
-- `EventStore`: [source/impl/springDataJdbcSchedulerAndStore.kt](source/impl/springDataJdbcSchedulerAndStore.kt) (`SpringDataJdbcEventStore`).
-- `TickScheduler`: [source/impl/springDataJdbcSchedulerAndStore.kt](source/impl/springDataJdbcSchedulerAndStore.kt) (`SpringDataJdbcTickScheduler`, Spring Data JDBC-based polling scheduler).
+- `EventStore`: [source/springDataJdbc.kt](source/springDataJdbc.kt) (`SpringDataJdbcEventStore`).
+- `TickScheduler`: [source/springDataJdbc.kt](source/springDataJdbc.kt) (`SpringDataJdbcTickScheduler`, Spring Data JDBC-based polling scheduler).
+- `HistoryStore` (optional): [source/springDataJdbc.kt](source/springDataJdbc.kt) (`SpringDataJdbcHistoryStore`).
 - `StatePersister`: [test/OrderConfirmationTest.kt](test/OrderConfirmationTest.kt) (`SpringDataOrderConfirmationPersister`) and [test/employeeOnboardingFlowTest.kt](test/employeeOnboardingFlowTest.kt) (`SpringDataEmployeeOnboardingPersister`).
 - Wiring example: [test/TestApplication.kt](test/TestApplication.kt).
 
@@ -338,7 +340,7 @@ Optional (for observability/Cockpit):
 
 4. **One `HistoryStore`** (durable timeline of instance changes: stage/status transitions, errors, etc.)
 
-You can use the provided Spring Data JDBC reference implementations for `TickScheduler` and `EventStore` (see [Reference Implementations](#reference-implementations)), or provide your own implementations for either/both.
+You can use the provided Spring Data JDBC reference implementations for `TickScheduler`, `EventStore`, and `HistoryStore` (see [Reference Implementations](#reference-implementations)), or provide your own implementations for any/all.
 
 See [Contracts](#contracts) for the persistence/scheduler interfaces.
 
@@ -386,7 +388,7 @@ FlowLite depends on three required application-provided interfaces, one optional
 - An action may also return updated state without saving and rely on the engine calling `StatePersister.save(...)` for persistence. In this case, the persister must handle concurrency correctly (optimistic locking / merge rules). See the concurrency notes below.
 - If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances.
 
-See [source/impl/springDataJdbcSchedulerAndStore.kt](source/impl/springDataJdbcSchedulerAndStore.kt) for a minimal Spring Data JDBC-based polling scheduler.
+See [source/springDataJdbc.kt](source/springDataJdbc.kt) for a minimal Spring Data JDBC-based polling scheduler.
 
 Concurrency scenarios (cheat sheet):
 

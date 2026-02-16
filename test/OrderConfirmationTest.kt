@@ -12,14 +12,15 @@ import org.springframework.data.annotation.Version
 import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.repository.CrudRepository
 import java.util.UUID
+import org.springframework.beans.factory.getBean
 
 const val ORDER_CONFIRMATION_FLOW_ID = "order-confirmation"
 
 class OrderConfirmationTest : BehaviorSpec({
     extension(TestApplicationExtension)
 
-    val engine = TestApplicationExtension.engine
-    val persister = TestApplicationExtension.orderPersister
+    val engine = TestApplicationExtension.context().getBean<FlowEngine>()
+    val persister = TestApplicationExtension.context().getBean<SpringDataOrderConfirmationPersister>()
 
     given("an order confirmation flow") {
         val flow = createOrderConfirmationFlow()
@@ -68,7 +69,7 @@ class OrderConfirmationTest : BehaviorSpec({
         }
 
         `when`("processing digital confirmation path (engine generates id)") {
-            val historyRepo = TestApplicationExtension.historyRepository
+            val historyRepo = TestApplicationExtension.context().getBean<FlowLiteHistoryRepository>()
             val flowInstanceId = engine.startInstance(
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
                 initialState = OrderConfirmation(
@@ -102,7 +103,7 @@ class OrderConfirmationTest : BehaviorSpec({
         }
 
         `when`("processing physical confirmation path (caller-supplied id)") {
-            val historyRepo = TestApplicationExtension.historyRepository
+            val historyRepo = TestApplicationExtension.context().getBean<FlowLiteHistoryRepository>()
             val flowInstanceId = UUID.randomUUID()
             val prePersisted = OrderConfirmation(
                 id = flowInstanceId,

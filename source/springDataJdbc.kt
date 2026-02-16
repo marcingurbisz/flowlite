@@ -1,14 +1,8 @@
-package io.flowlite.impl.springdatajdbc
+package io.flowlite
 
-import io.flowlite.Event
-import io.flowlite.EventStore
-import io.flowlite.HistoryEntry
-import io.flowlite.HistoryStore
-import io.flowlite.StoredEvent
-import io.flowlite.TickScheduler
 import io.github.oshai.kotlinlogging.KotlinLogging
-import java.time.Instant
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import org.springframework.boot.task.SimpleAsyncTaskExecutorBuilder

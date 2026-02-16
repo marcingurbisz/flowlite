@@ -91,6 +91,114 @@ interface HistoryStore {
     fun append(entry: HistoryEntry)
 }
 
+internal fun HistoryStore.appendBestEffort(
+    entry: HistoryEntry,
+    onFailure: (Exception, HistoryEntry) -> Unit = { _, _ -> },
+) {
+    try {
+        append(entry)
+    } catch (e: Exception) {
+        onFailure(e, entry)
+    }
+}
+
+internal fun HistoryStore.recordInstanceStarted(
+    flowId: String,
+    data: InstanceData<Any>,
+    onFailure: (Exception, HistoryEntry) -> Unit = { _, _ -> },
+) {
+    appendBestEffort(
+        HistoryEntry(
+            flowId = flowId,
+            flowInstanceId = data.flowInstanceId,
+            type = HistoryEntryType.InstanceStarted,
+            stage = historyValueOf(data.stage),
+            toStatus = data.stageStatus,
+        ),
+        onFailure = onFailure,
+    )
+}
+
+internal fun HistoryStore.recordEventAppended(
+    flowId: String,
+    flowInstanceId: UUID,
+    event: Event,
+    onFailure: (Exception, HistoryEntry) -> Unit = { _, _ -> },
+) {
+    appendBestEffort(
+        HistoryEntry(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            type = HistoryEntryType.EventAppended,
+            event = historyValueOf(event),
+        ),
+        onFailure = onFailure,
+    )
+}
+
+internal fun HistoryStore.recordStatusChanged(
+    flowId: String,
+    data: InstanceData<Any>,
+    from: StageStatus,
+    to: StageStatus,
+    onFailure: (Exception, HistoryEntry) -> Unit = { _, _ -> },
+) {
+    appendBestEffort(
+        HistoryEntry(
+            flowId = flowId,
+            flowInstanceId = data.flowInstanceId,
+            type = HistoryEntryType.StatusChanged,
+            stage = historyValueOf(data.stage),
+            fromStatus = from,
+            toStatus = to,
+        ),
+        onFailure = onFailure,
+    )
+}
+
+internal fun HistoryStore.recordStageChanged(
+    flowId: String,
+    data: InstanceData<Any>,
+    from: Stage,
+    to: Stage,
+    event: Event? = null,
+    onFailure: (Exception, HistoryEntry) -> Unit = { _, _ -> },
+) {
+    appendBestEffort(
+        HistoryEntry(
+            flowId = flowId,
+            flowInstanceId = data.flowInstanceId,
+            type = HistoryEntryType.StageChanged,
+            fromStage = historyValueOf(from),
+            toStage = historyValueOf(to),
+            event = event?.let { historyValueOf(it) },
+        ),
+        onFailure = onFailure,
+    )
+}
+
+internal fun HistoryStore.recordError(
+    flowId: String,
+    data: InstanceData<Any>,
+    ex: Exception,
+    onFailure: (Exception, HistoryEntry) -> Unit = { _, _ -> },
+) {
+    appendBestEffort(
+        HistoryEntry(
+            flowId = flowId,
+            flowInstanceId = data.flowInstanceId,
+            type = HistoryEntryType.Error,
+            stage = historyValueOf(data.stage),
+            fromStatus = StageStatus.Running,
+            toStatus = StageStatus.Error,
+            errorType = ex::class.qualifiedName ?: ex::class.java.name,
+            errorMessage = ex.message ?: ex.toString(),
+            errorStackTrace = ex.stackTraceToString(),
+        ),
+        onFailure = onFailure,
+    )
+}
+
 enum class HistoryEntryType {
     InstanceStarted,
     EventAppended,

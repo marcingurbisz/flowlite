@@ -1,8 +1,7 @@
 ## TODO
 
 WIP: 
-* Stages in pascal case
-* Implement history of changes
+* Align existing filenames with convention (optional)
 
 Next:
 * do you see any improvments for flowlite API?

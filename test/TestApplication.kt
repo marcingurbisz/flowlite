@@ -1,12 +1,12 @@
 package io.flowlite.test
 
 import io.flowlite.FlowEngine
-import io.flowlite.impl.springdatajdbc.FlowLiteTickRepository
-import io.flowlite.impl.springdatajdbc.FlowLiteHistoryRepository
-import io.flowlite.impl.springdatajdbc.PendingEventRepository
-import io.flowlite.impl.springdatajdbc.SpringDataJdbcEventStore
-import io.flowlite.impl.springdatajdbc.SpringDataJdbcHistoryStore
-import io.flowlite.impl.springdatajdbc.SpringDataJdbcTickScheduler
+import io.flowlite.FlowLiteHistoryRepository
+import io.flowlite.FlowLiteTickRepository
+import io.flowlite.PendingEventRepository
+import io.flowlite.SpringDataJdbcEventStore
+import io.flowlite.SpringDataJdbcHistoryStore
+import io.flowlite.SpringDataJdbcTickScheduler
 import java.util.UUID
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistrarDsl
@@ -23,7 +23,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource
 import javax.sql.DataSource
 
 @SpringBootApplication
-@EnableJdbcRepositories(basePackages = ["io.flowlite.impl.springdatajdbc", "io.flowlite.test"])
+@EnableJdbcRepositories(basePackages = ["io.flowlite"])
 open class TestApplication
 
 object Beans {

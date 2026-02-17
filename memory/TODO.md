@@ -1,5 +1,12 @@
 # TODO
 
-This is the IEF-style TODO for FlowLite.
+## WIP
+- Align existing filenames with convention (optional)
 
-For now, the canonical FlowLite TODO is kept at [../TODO.md](../TODO.md).
+## Next
+- do you see any improvments for flowlite API?
+- Integrate Cockpit prototype
+- Expose test instance publicly available
+- Yet more coverage?
+- Optimistic locking based on modified fields?
+- Tick using Azure Service Bus emulator? Different persistence? Mongo? Redis?

@@ -146,8 +146,10 @@ private fun buildBlock(requestedId: String, docs: List<FlowDoc>): String {
             builder.append("### ").append(doc.title).append(newline).append(newline)
         }
         // Code first (matches existing README example), then mermaid diagram
-        builder.append("```kotlin").append(newline).append(doc.code).append(newline).append("```").append(newline).append(newline)
-        builder.append("```mermaid").append(newline).append(doc.diagram).append(newline).append("```").append(newline).append(newline)
+        builder.append("```kotlin").append(newline).append(doc.code).append(newline).append("```")
+            .append(newline).append(newline)
+        builder.append("```mermaid").append(newline).append(doc.diagram).append(newline).append("```")
+            .append(newline).append(newline)
     }
     return builder.toString()
 }
@@ -160,4 +162,3 @@ private fun normalizeId(id: String): String = id
     .trim('-')
 
 data class FlowDoc(val title: String, val diagram: String, val code: String, val id: String)
-

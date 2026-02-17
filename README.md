@@ -129,7 +129,7 @@ Reference already defined stages using `join()`:
 The examples below are generated from test flows. Each flow builder is wrapped with
 `// FLOW-DEFINITION-START` and `// FLOW-DEFINITION-END` markers in its test file.
 To document a new flow, add it to the `documentedFlows` list in
-`test/ReadmeUpdater.kt` with its id, title, source file path and factory
+`test/readmeUpdater.kt` with its id, title, source file path and factory
 function.
 
 Documentation refresh:
@@ -282,7 +282,7 @@ stateDiagram-v2
 * Defining flow - See [source/dsl.kt](source/dsl.kt):
   * `Stage`, `Event`
   * `FlowBuilder`, `StageBuilder`, `EventBuilder`, `Flow`.
-* Registering flows, starting flow instances, etc. - [source/engine.kt](source/engine.kt) (`FlowEngine`).
+* Registering flows, starting flow instances, etc. - [source/FlowEngine.kt](source/FlowEngine.kt) (`FlowEngine`).
 * Interfaces that must be implemented by client [source/persistance.kt](source/persistance.kt):
   * `StatePersister`
   * `EventStore`
@@ -296,7 +296,7 @@ See [Reference Implementations](#reference-implementations) for ready-to-use exa
 - `TickScheduler`: [source/springDataJdbc.kt](source/springDataJdbc.kt) (`SpringDataJdbcTickScheduler`, Spring Data JDBC-based polling scheduler).
 - `HistoryStore` (optional): [source/springDataJdbc.kt](source/springDataJdbc.kt) (`SpringDataJdbcHistoryStore`).
 - `StatePersister`: [test/OrderConfirmationTest.kt](test/OrderConfirmationTest.kt) (`SpringDataOrderConfirmationPersister`) and [test/employeeOnboardingFlowTest.kt](test/employeeOnboardingFlowTest.kt) (`SpringDataEmployeeOnboardingPersister`).
-- Wiring example: [test/TestApplication.kt](test/TestApplication.kt).
+- Wiring example: [test/testApplication.kt](test/testApplication.kt).
 
 See [Contracts](#contracts) for the persistence/scheduler interfaces.
 
@@ -445,6 +445,10 @@ FlowLite uses a **flat directory structure** to keep the codebase simple and org
 - `source/` - All main source code (flat structure, no subdirectories for main package)
 - `test/` - All test code (flat structure)
 - Resources are placed directly in source directory alongside code files, not in a separate resources directory
+
+File naming:
+- `PascalCase.kt` for type-centric files (one primary public type).
+- `camelCase.kt` for topic/feature files (multiple declarations).
 
 ### Development Notes
 - Uses Kotlin 2.3.10 with Java 25 toolchain

@@ -25,7 +25,7 @@ sourceSets {
     }
     test {
         kotlin {
-            setSrcDirs(listOf("test"))
+            setSrcDirs(listOf("test", "tools"))
         }
         resources {
             setSrcDirs(listOf("test"))
@@ -126,7 +126,7 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.register<JavaExec>("updateReadme") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.flowlite.test.ReadmeUpdaterKt")
+    mainClass.set("io.flowlite.tools.ReadmeUpdaterKt")
 }
 
 publishing {

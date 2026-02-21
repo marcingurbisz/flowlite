@@ -5,6 +5,7 @@ on:
     paths:
       - 'test/**'
       - 'source/**'
+      - 'tools/**'
       - 'build.gradle.kts'
       - '.github/workflows/update-readme.yml'
 

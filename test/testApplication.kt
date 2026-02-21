@@ -8,12 +8,14 @@ import io.flowlite.SpringDataJdbcEventStore
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.SpringDataJdbcTickScheduler
 import java.util.UUID
+import io.kotest.core.listeners.ProjectListener
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 import org.springframework.context.ApplicationContextInitializer
+import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories
 import org.springframework.data.relational.core.mapping.NamingStrategy
@@ -228,4 +230,32 @@ private fun createEmployeeOnboardingTable(jdbc: NamedParameterJdbcTemplate) {
         );
         """.trimIndent(),
     )
+}
+
+object TestApplicationExtension : ProjectListener {
+    @Volatile var context: ConfigurableApplicationContext? = null
+
+    fun context(): ConfigurableApplicationContext {
+        val existing = context
+        if (existing != null) return existing
+
+        return synchronized(this) {
+            val recheck = context
+            if (recheck != null) return recheck
+            val started = startTestApplication()
+            context = started
+            started
+        }
+    }
+
+    override suspend fun beforeProject() {
+        context()
+    }
+
+    override suspend fun afterProject() {
+        synchronized(this) {
+            context?.close()
+            context = null
+        }
+    }
 }

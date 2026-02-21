@@ -129,7 +129,7 @@ Reference already defined stages using `join()`:
 The examples below are generated from test flows. Each flow builder is wrapped with
 `// FLOW-DEFINITION-START` and `// FLOW-DEFINITION-END` markers in its test file.
 To document a new flow, add it to the `documentedFlows` list in
-`test/readmeUpdater.kt` with its id, title, source file path and factory
+`tools/readmeUpdater.kt` with its id, title, source file path and factory
 function.
 
 Documentation refresh:

@@ -1,9 +1,13 @@
-package io.flowlite.test
+package io.flowlite.tools
 
 import io.flowlite.Event
 import io.flowlite.Flow
 import io.flowlite.MermaidGenerator
 import io.flowlite.Stage
+import io.flowlite.test.EmployeeOnboardingActions
+import io.flowlite.test.createEmployeeOnboardingFlow
+import io.flowlite.test.createOrderConfirmationFlow
+import io.flowlite.test.startTestApplication
 import org.springframework.beans.factory.getBean
 import java.nio.file.Files
 import java.nio.file.Path
@@ -17,7 +21,7 @@ data class FlowSpec(
     val id: String,
     val title: String,
     val source: Path,
-    val factory: () -> Flow<*, *, *>
+    val factory: () -> Flow<*, *, *>,
 )
 
 private val documentedFlows = listOf(
@@ -25,20 +29,20 @@ private val documentedFlows = listOf(
         id = "employee-onboarding",
         title = "Employee Onboarding",
         source = Path.of("test/employeeOnboardingFlowTest.kt"),
-        factory = ::createEmployeeOnboardingFlowFromSpring
+        factory = ::createEmployeeOnboardingFlowFromSpring,
     ),
     FlowSpec(
         id = "order-confirmation",
         title = "Order Confirmation",
         source = Path.of("test/OrderConfirmationTest.kt"),
-        factory = ::createOrderConfirmationFlow
-    )
+        factory = ::createOrderConfirmationFlow,
+    ),
 )
 
 private fun createEmployeeOnboardingFlowFromSpring(): Flow<*, *, *> {
     val context = startTestApplication()
-    return context.use { context ->
-        val actions = context.getBean<EmployeeOnboardingActions>()
+    return context.use { ctx ->
+        val actions = ctx.getBean<EmployeeOnboardingActions>()
         createEmployeeOnboardingFlow(actions)
     }
 }

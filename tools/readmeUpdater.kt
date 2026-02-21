@@ -28,13 +28,13 @@ private val documentedFlows = listOf(
     FlowSpec(
         id = "employee-onboarding",
         title = "Employee Onboarding",
-        source = Path.of("test/employeeOnboardingFlowTest.kt"),
+        source = Path.of("test/employeeOnboardingDomain.kt"),
         factory = ::createEmployeeOnboardingFlowFromSpring,
     ),
     FlowSpec(
         id = "order-confirmation",
         title = "Order Confirmation",
-        source = Path.of("test/OrderConfirmationTest.kt"),
+        source = Path.of("test/orderConfirmationDomain.kt"),
         factory = ::createOrderConfirmationFlow,
     ),
 )

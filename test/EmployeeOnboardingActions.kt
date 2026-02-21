@@ -2,6 +2,8 @@ package io.flowlite.test
 
 import java.util.concurrent.TimeUnit
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 class EmployeeOnboardingActions(
     private val repo: EmployeeOnboardingRepository,
@@ -17,7 +19,7 @@ class EmployeeOnboardingActions(
 
         val savedEntity = repo.saveWithOptimisticLockRetry(
             id = id,
-            candidate = employee.copy(userCreatedInSystem = true),
+            initial = employee,
         ) { latest ->
             latest.copy(userCreatedInSystem = true)
         }
@@ -35,7 +37,7 @@ class EmployeeOnboardingActions(
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
-            candidate = employee.copy(employeeActivated = true),
+            initial = employee,
         ) { latest ->
             latest.copy(employeeActivated = true)
         }
@@ -46,7 +48,7 @@ class EmployeeOnboardingActions(
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
-            candidate = employee.copy(securityClearanceUpdated = true),
+            initial = employee,
         ) { latest ->
             latest.copy(securityClearanceUpdated = true)
         }
@@ -57,7 +59,7 @@ class EmployeeOnboardingActions(
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
-            candidate = employee.copy(departmentAccessSet = true),
+            initial = employee,
         ) { latest ->
             latest.copy(departmentAccessSet = true)
         }
@@ -68,7 +70,7 @@ class EmployeeOnboardingActions(
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
-            candidate = employee.copy(documentsGenerated = true),
+            initial = employee,
         ) { latest ->
             latest.copy(documentsGenerated = true)
         }
@@ -79,7 +81,7 @@ class EmployeeOnboardingActions(
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
-            candidate = employee.copy(contractSentForSigning = true),
+            initial = employee,
         ) { latest ->
             latest.copy(contractSentForSigning = true)
         }
@@ -90,11 +92,37 @@ class EmployeeOnboardingActions(
         val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
         return repo.saveWithOptimisticLockRetry(
             id = id,
-            candidate = employee.copy(statusUpdatedInHR = true),
+            initial = employee,
         ) { latest ->
             latest.copy(statusUpdatedInHR = true)
         }
     }
+}
+
+object EmployeeOnboardingTestHooks {
+    private val actionHooksByInstanceId = ConcurrentHashMap<UUID, EmployeeOnboardingActionHooks>()
+
+    fun set(instanceId: UUID, hooks: EmployeeOnboardingActionHooks) {
+        actionHooksByInstanceId[instanceId] = hooks
+    }
+
+    fun get(instanceId: UUID): EmployeeOnboardingActionHooks? = actionHooksByInstanceId[instanceId]
+
+    fun clear(instanceId: UUID) {
+        actionHooksByInstanceId.remove(instanceId)
+    }
+}
+
+class EmployeeOnboardingActionHooks {
+    @Volatile
+    var createUserInSystemHooks: CreateUserInSystemHooks? = null
+
+    class CreateUserInSystemHooks(
+        val entered: java.util.concurrent.CountDownLatch,
+        val allowProceedToSave: java.util.concurrent.CountDownLatch,
+        val saved: java.util.concurrent.CountDownLatch,
+        val allowReturnAfterSave: java.util.concurrent.CountDownLatch,
+    )
 }
 
 private val log = KotlinLogging.logger {}

@@ -23,7 +23,7 @@ fun awaitStatus(
 
 inline fun <T : Any, ID : Any> CrudRepository<T, ID>.saveWithOptimisticLockRetry(
     id: ID,
-    candidate: T? = null,
+    initial: T? = null,
     maxAttempts: Int = 5,
     crossinline updateFromLatest: (T) -> T,
 ): T {
@@ -32,10 +32,10 @@ inline fun <T : Any, ID : Any> CrudRepository<T, ID>.saveWithOptimisticLockRetry
     var attempt = 0
     var last: Throwable? = null
 
-    if (candidate != null) {
+    if (initial != null) {
         attempt++
         try {
-            return save(candidate)
+            return save(updateFromLatest(initial))
         } catch (ex: OptimisticLockingFailureException) {
             last = ex
         }

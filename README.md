@@ -127,7 +127,7 @@ Reference already defined stages using `join()`:
 ## More examples
 
 The examples below are generated from test flows. Each flow builder is wrapped with
-`// FLOW-DEFINITION-START` and `// FLOW-DEFINITION-END` markers in its test file.
+`// FLOW-DEFINITION-START` and `// FLOW-DEFINITION-END` markers in its source file.
 To document a new flow, add it to the `documentedFlows` list in
 `tools/readmeUpdater.kt` with its id, title, source file path and factory
 function.
@@ -145,8 +145,7 @@ Documentation refresh:
                 predicate = { it.isOnboardingAutomated },
                 description = "isOnboardingAutomated",
                 onTrue = {
-                    // Automated path
-                    stage(CreateUserInSystem, actions::createUserInSystem)
+                    stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
                         .condition(
                             { it.isExecutiveRole || it.isSecurityClearanceRequired },
                             description = "isExecutiveRole || isSecurityClearanceRequired",
@@ -194,7 +193,6 @@ Documentation refresh:
                         )
                 },
                 onFalse = {
-                    // Manual path
                     join(WaitingForContractSigned)
                 },
             )
@@ -295,7 +293,7 @@ See [Reference Implementations](#reference-implementations) for ready-to-use exa
 - `EventStore`: [source/springDataJdbc.kt](source/springDataJdbc.kt) (`SpringDataJdbcEventStore`).
 - `TickScheduler`: [source/springDataJdbc.kt](source/springDataJdbc.kt) (`SpringDataJdbcTickScheduler`, Spring Data JDBC-based polling scheduler).
 - `HistoryStore` (optional): [source/springDataJdbc.kt](source/springDataJdbc.kt) (`SpringDataJdbcHistoryStore`).
-- `StatePersister`: [test/OrderConfirmationTest.kt](test/OrderConfirmationTest.kt) (`SpringDataOrderConfirmationPersister`) and [test/employeeOnboardingFlowTest.kt](test/employeeOnboardingFlowTest.kt) (`SpringDataEmployeeOnboardingPersister`).
+- `StatePersister`: [test/orderConfirmationDomain.kt](test/orderConfirmationDomain.kt) (`SpringDataOrderConfirmationPersister`) and [test/employeeOnboardingDomain.kt](test/employeeOnboardingDomain.kt) (`SpringDataEmployeeOnboardingPersister`).
 - Wiring example: [test/testApplication.kt](test/testApplication.kt).
 
 See [Contracts](#contracts) for the persistence/scheduler interfaces.

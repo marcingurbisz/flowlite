@@ -28,18 +28,16 @@ See this [article](https://medium.com/@marcin.gurbisz/flowlite-a-tiny-workflow-e
 <!-- FlowDoc(order-confirmation) -->
 ```kotlin
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    return flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    return flow {
         stage(InitializingConfirmation, ::initializeOrderConfirmation)
-            .stage(WaitingForConfirmation, block = {
-                onEvent(ConfirmedDigitally) {
-                    stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-                    stage(InformingCustomer, ::informCustomer)
-                }
-                onEvent(ConfirmedPhysically) {
-                    joinTo(InformingCustomer)
-                }
-            })
-        }
+        stage(WaitingForConfirmation, block = {
+            onEvent(ConfirmedDigitally) {
+                stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+                stage(InformingCustomer, ::informCustomer)
+            }
+            onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
+        })
+    }
 }
 ```
 
@@ -47,12 +45,7 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStag
 stateDiagram-v2
     [*] --> InitializingConfirmation
     InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()
-    InitializingConfirmation --> WaitingForConfirmation
-    WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally
-    RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()
-    RemovingFromConfirmationQueue --> InformingCustomer
-    InformingCustomer: InformingCustomer informCustomer()
-    WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically
+    InitializingConfirmation --> [*]
     InformingCustomer --> [*]
 
 ```
@@ -241,18 +234,16 @@ stateDiagram-v2
 
 ```kotlin
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    return flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    return flow {
         stage(InitializingConfirmation, ::initializeOrderConfirmation)
-            .stage(WaitingForConfirmation, block = {
-                onEvent(ConfirmedDigitally) {
-                    stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-                    stage(InformingCustomer, ::informCustomer)
-                }
-                onEvent(ConfirmedPhysically) {
-                    joinTo(InformingCustomer)
-                }
-            })
-        }
+        stage(WaitingForConfirmation, block = {
+            onEvent(ConfirmedDigitally) {
+                stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+                stage(InformingCustomer, ::informCustomer)
+            }
+            onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
+        })
+    }
 }
 ```
 
@@ -260,12 +251,7 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStag
 stateDiagram-v2
     [*] --> InitializingConfirmation
     InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()
-    InitializingConfirmation --> WaitingForConfirmation
-    WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally
-    RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()
-    RemovingFromConfirmationQueue --> InformingCustomer
-    InformingCustomer: InformingCustomer informCustomer()
-    WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically
+    InitializingConfirmation --> [*]
     InformingCustomer --> [*]
 
 ```

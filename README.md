@@ -28,17 +28,18 @@ See this [article](https://medium.com/@marcin.gurbisz/flowlite-a-tiny-workflow-e
 <!-- FlowDoc(order-confirmation) -->
 ```kotlin
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    return FlowBuilder<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent>()
-        .stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        .stage(WaitingForConfirmation)
-        .apply {
-            waitFor(ConfirmedDigitally)
-                .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-                .stage(InformingCustomer, ::informCustomer)
-            waitFor(ConfirmedPhysically).join(InformingCustomer)
+    return flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+        stage(InitializingConfirmation, ::initializeOrderConfirmation)
+            .stage(WaitingForConfirmation, block = {
+                onEvent(ConfirmedDigitally) {
+                    stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+                    stage(InformingCustomer, ::informCustomer)
+                }
+                onEvent(ConfirmedPhysically) {
+                    joinTo(InformingCustomer)
+                }
+            })
         }
-        .end()
-        .build()
 }
 ```
 
@@ -240,17 +241,18 @@ stateDiagram-v2
 
 ```kotlin
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    return FlowBuilder<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent>()
-        .stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        .stage(WaitingForConfirmation)
-        .apply {
-            waitFor(ConfirmedDigitally)
-                .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-                .stage(InformingCustomer, ::informCustomer)
-            waitFor(ConfirmedPhysically).join(InformingCustomer)
+    return flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+        stage(InitializingConfirmation, ::initializeOrderConfirmation)
+            .stage(WaitingForConfirmation, block = {
+                onEvent(ConfirmedDigitally) {
+                    stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+                    stage(InformingCustomer, ::informCustomer)
+                }
+                onEvent(ConfirmedPhysically) {
+                    joinTo(InformingCustomer)
+                }
+            })
         }
-        .end()
-        .build()
 }
 ```
 

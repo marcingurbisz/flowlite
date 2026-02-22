@@ -2,11 +2,11 @@ package io.flowlite.test
 
 import io.flowlite.Event
 import io.flowlite.Flow
-import io.flowlite.FlowBuilder
 import io.flowlite.InstanceData
 import io.flowlite.Stage
 import io.flowlite.StageStatus
 import io.flowlite.StatePersister
+import io.flowlite.flow
 import io.flowlite.test.OrderConfirmationEvent.ConfirmedDigitally
 import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
 import io.flowlite.test.OrderConfirmationStage.InformingCustomer
@@ -132,17 +132,16 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
 
 // FLOW-DEFINITION-START
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    return FlowBuilder<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent>()
-        .stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        .stage(WaitingForConfirmation)
-        .apply {
-            waitFor(ConfirmedDigitally)
-                .stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-                .stage(InformingCustomer, ::informCustomer)
-            waitFor(ConfirmedPhysically).join(InformingCustomer)
-        }
-        .end()
-        .build()
+    return flow {
+        stage(InitializingConfirmation, ::initializeOrderConfirmation)
+        stage(WaitingForConfirmation, block = {
+            onEvent(ConfirmedDigitally) {
+                stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+                stage(InformingCustomer, ::informCustomer)
+            }
+            onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
+        })
+    }
 }
 // FLOW-DEFINITION-END
 

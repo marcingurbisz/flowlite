@@ -25,6 +25,20 @@ data class Flow<T : Any, S : Stage, E : Event>(
     }
 }
 
+internal fun inferConditionDescription(predicate: Any): String {
+    val asString = predicate.toString()
+    val rawName = when {
+        asString.startsWith("fun ") -> asString.substringAfter("fun ").substringBefore("(")
+        else -> asString.substringBefore("(").substringBefore("$")
+    }
+    val candidate = rawName.substringAfterLast(".")
+    val isLikelySynthetic = candidate.isBlank() ||
+        candidate.startsWith("Function") ||
+        candidate.contains("Lambda") ||
+        candidate.contains("$$")
+    return if (isLikelySynthetic) "condition" else candidate
+}
+
 class FlowBuilder<T : Any, S : Stage, E : Event> {
 
     internal val stages = mutableMapOf<S, StageDefinition<T, S, E>>()
@@ -51,7 +65,7 @@ class FlowBuilder<T : Any, S : Stage, E : Event> {
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T, S, E>.() -> Unit,
         onFalse: FlowBuilder<T, S, E>.() -> Unit,
-        description: String
+        description: String = inferConditionDescription(predicate)
     ): FlowBuilder<T, S, E> {
         initialCondition = createConditionHandler(predicate, onTrue, onFalse, description)
         return this
@@ -120,6 +134,56 @@ class FlowBuilder<T : Any, S : Stage, E : Event> {
                     )
                 }
             }
+        }
+
+        // Validate that all referenced stages exist.
+        initialStage?.let { stage ->
+            if (stage !in stages) error("Initial stage $stage is not defined in the flow")
+        }
+        initialCondition?.let { validateConditionResolvesToDefinedStages(it, "initialCondition") }
+
+        stages.values.forEach { def ->
+            def.nextStage?.let { next ->
+                if (next !in stages) error("Stage ${def.stage} references undefined nextStage $next")
+            }
+
+            def.conditionHandler?.let { ch ->
+                validateConditionResolvesToDefinedStages(ch, "condition from stage ${def.stage}")
+            }
+
+            def.eventHandlers.forEach { (_, handler) ->
+                handler.targetStage?.let { target ->
+                    if (target !in stages) error("Stage ${def.stage} has event transition to undefined stage $target")
+                }
+                handler.targetCondition?.let { ch ->
+                    validateConditionResolvesToDefinedStages(ch, "event-condition from stage ${def.stage}")
+                }
+            }
+        }
+    }
+
+    private fun validateConditionResolvesToDefinedStages(condition: ConditionHandler<T, S>, origin: String) {
+        val referenced = mutableSetOf<S>()
+        val visited = mutableSetOf<ConditionHandler<T, S>>()
+
+        fun walk(ch: ConditionHandler<T, S>) {
+            if (!visited.add(ch)) return
+
+            val trueHasTarget = ch.trueStage != null || ch.trueCondition != null
+            val falseHasTarget = ch.falseStage != null || ch.falseCondition != null
+            if (!trueHasTarget || !falseHasTarget) {
+                error("Condition ($origin) must resolve to a stage on both branches (description='${ch.description}')")
+            }
+
+            ch.trueStage?.let { referenced.add(it) }
+            ch.falseStage?.let { referenced.add(it) }
+            ch.trueCondition?.let { walk(it) }
+            ch.falseCondition?.let { walk(it) }
+        }
+
+        walk(condition)
+        referenced.forEach { stage ->
+            if (stage !in stages) error("Condition ($origin) references undefined stage $stage")
         }
     }
 
@@ -196,7 +260,7 @@ class StageBuilder<T : Any, S : Stage, E : Event>(
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T, S, E>.() -> Unit,
         onFalse: FlowBuilder<T, S, E>.() -> Unit,
-        description: String
+        description: String = inferConditionDescription(predicate)
     ): FlowBuilder<T, S, E> {
         if (stageDefinition.hasConflictingTransitions(TransitionType.Condition)) {
             error("Stage ${stageDefinition.stage} already has transitions defined: ${stageDefinition.getExistingTransitions()}. Use only one of: stage(), onEvent(), or condition().")
@@ -240,7 +304,7 @@ class EventBuilder<T : Any, S : Stage, E : Event>(
         predicate: (item: T) -> Boolean,
         onTrue: FlowBuilder<T, S, E>.() -> Unit,
         onFalse: FlowBuilder<T, S, E>.() -> Unit,
-        description: String
+        description: String = inferConditionDescription(predicate)
     ): FlowBuilder<T, S, E> {
         stageBuilder.stageDefinition.eventHandlers[event] = EventHandler(event, null,
             stageBuilder.flowBuilder.createConditionHandler(predicate, onTrue, onFalse, description))

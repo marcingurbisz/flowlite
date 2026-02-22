@@ -64,6 +64,35 @@ class FlowDslValidationTest : BehaviorSpec({
                 requireNotNull(ex.message) shouldContain "already has transitions defined"
             }
         }
+
+        `when`("a join references an undefined stage") {
+            then("it fails validation") {
+                val builder = FlowBuilder<DslState, DslStage, DslEvent>()
+                builder.stage(DslStage.Start).join(DslStage.Next)
+
+                val ex = shouldThrow<IllegalStateException> {
+                    builder.build()
+                }
+                requireNotNull(ex.message) shouldContain "undefined"
+            }
+        }
+
+        `when`("a condition branch does not resolve to a stage") {
+            then("it fails validation") {
+                val builder = FlowBuilder<DslState, DslStage, DslEvent>()
+                builder.condition(
+                    predicate = { it.value > 0 },
+                    description = "value > 0",
+                    onTrue = { /* missing stage/join */ },
+                    onFalse = { stage(DslStage.Start) },
+                )
+
+                val ex = shouldThrow<IllegalStateException> {
+                    builder.build()
+                }
+                requireNotNull(ex.message) shouldContain "must resolve to a stage"
+            }
+        }
     }
 })
 

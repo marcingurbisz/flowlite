@@ -5,6 +5,7 @@ import io.flowlite.FlowBuilder
 import io.flowlite.Stage
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 
 private enum class DslStage : Stage { Start, Next, Other }
@@ -93,7 +94,35 @@ class FlowDslValidationTest : BehaviorSpec({
                 requireNotNull(ex.message) shouldContain "must resolve to a stage"
             }
         }
+
+        `when`("condition description is omitted") {
+            then("it infers a name for function references") {
+                val flow = FlowBuilder<DslState, DslStage, DslEvent>()
+                    .condition(
+                        predicate = ::isPositive,
+                        onTrue = { stage(DslStage.Start) },
+                        onFalse = { stage(DslStage.Next) },
+                    )
+                    .build()
+
+                requireNotNull(flow.initialCondition).description shouldBe "isPositive"
+            }
+
+            then("it falls back to a stable default for lambdas") {
+                val flow = FlowBuilder<DslState, DslStage, DslEvent>()
+                    .condition(
+                        predicate = { it.value > 0 },
+                        onTrue = { stage(DslStage.Start) },
+                        onFalse = { stage(DslStage.Next) },
+                    )
+                    .build()
+
+                requireNotNull(flow.initialCondition).description shouldBe "condition"
+            }
+        }
     }
 })
 
 private fun identityAction(state: DslState): DslState = state
+
+private fun isPositive(state: DslState): Boolean = state.value > 0

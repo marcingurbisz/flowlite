@@ -74,66 +74,11 @@ data class EmployeeOnboarding(
     val statusUpdatedInHR: Boolean = false,
 )
 
-interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboarding, UUID>
-
-class SpringDataEmployeeOnboardingPersister(
-    private val repo: EmployeeOnboardingRepository,
-) : StatePersister<EmployeeOnboarding> {
-    override fun tryTransitionStageStatus(
-        flowInstanceId: UUID,
-        expectedStage: Stage,
-        expectedStageStatus: StageStatus,
-        newStageStatus: StageStatus,
-    ): Boolean {
-        val current = load(flowInstanceId)
-        if (current.stage != expectedStage) return false
-        if (current.stageStatus != expectedStageStatus) return false
-
-        return try {
-            repo.save(
-                current.state.copy(
-                    stageStatus = newStageStatus,
-                ),
-            )
-            true
-        } catch (_: OptimisticLockingFailureException) {
-            false
-        }
-    }
-
-    override fun save(instanceData: InstanceData<EmployeeOnboarding>): InstanceData<EmployeeOnboarding> {
-        val stage = instanceData.stage as? EmployeeStage
-            ?: error("Unexpected stage ${instanceData.stage}")
-
-        val saved = repo.saveWithOptimisticLockRetry(
-            id = instanceData.flowInstanceId,
-            initial = instanceData.state.copy(
-                id = instanceData.flowInstanceId,
-                stage = stage,
-                stageStatus = instanceData.stageStatus,
-            ),
-        ) { latest -> latest.copy(stage = stage, stageStatus = instanceData.stageStatus) }
-        return instanceData.copy(state = saved)
-    }
-
-    override fun load(flowInstanceId: UUID): InstanceData<EmployeeOnboarding> {
-        val entity = repo.findById(flowInstanceId).orElse(null)
-            ?: error("Flow instance '$flowInstanceId' not found")
-        return InstanceData(
-            flowInstanceId = flowInstanceId,
-            state = entity,
-            stage = entity.stage,
-            stageStatus = entity.stageStatus,
-        )
-    }
-}
-
 fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<EmployeeOnboarding, EmployeeStage, EmployeeEvent> {
     val flow = // FLOW-DEFINITION-START
         FlowBuilder<EmployeeOnboarding, EmployeeStage, EmployeeEvent>()
             .condition(
-                predicate = { it.isOnboardingAutomated },
-                description = "isOnboardingAutomated",
+                predicate = ::isOnboardingAutomated,
                 onTrue = {
                     stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
                         .condition(
@@ -164,12 +109,10 @@ fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<Emplo
                             onTrue = {
                                 stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
                                     .condition(
-                                        { it.isSecurityClearanceRequired },
-                                        description = "isSecurityClearanceRequired",
+                                        ::isSecurityClearanceRequired,
                                         onTrue = {
                                             condition(
-                                                { it.isFullOnboardingRequired },
-                                                description = "isFullOnboardingRequired",
+                                                predicate = ::isFullOnboardingRequired,
                                                 onTrue = {
                                                     stage(SetDepartmentAccess, actions::setDepartmentAccess)
                                                         .join(GenerateEmployeeDocuments)
@@ -190,6 +133,12 @@ fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<Emplo
     // FLOW-DEFINITION-END
     return flow
 }
+
+private fun isOnboardingAutomated(employee: EmployeeOnboarding): Boolean = employee.isOnboardingAutomated
+
+private fun isSecurityClearanceRequired(employee: EmployeeOnboarding): Boolean = employee.isSecurityClearanceRequired
+
+private fun isFullOnboardingRequired(employee: EmployeeOnboarding): Boolean = employee.isFullOnboardingRequired
 
 class EmployeeOnboardingActions(
     private val repo: EmployeeOnboardingRepository,
@@ -282,6 +231,60 @@ class EmployeeOnboardingActions(
         ) { latest ->
             latest.copy(statusUpdatedInHR = true)
         }
+    }
+}
+
+interface EmployeeOnboardingRepository : CrudRepository<EmployeeOnboarding, UUID>
+
+class SpringDataEmployeeOnboardingPersister(
+    private val repo: EmployeeOnboardingRepository,
+) : StatePersister<EmployeeOnboarding> {
+    override fun tryTransitionStageStatus(
+        flowInstanceId: UUID,
+        expectedStage: Stage,
+        expectedStageStatus: StageStatus,
+        newStageStatus: StageStatus,
+    ): Boolean {
+        val current = load(flowInstanceId)
+        if (current.stage != expectedStage) return false
+        if (current.stageStatus != expectedStageStatus) return false
+
+        return try {
+            repo.save(
+                current.state.copy(
+                    stageStatus = newStageStatus,
+                ),
+            )
+            true
+        } catch (_: OptimisticLockingFailureException) {
+            false
+        }
+    }
+
+    override fun save(instanceData: InstanceData<EmployeeOnboarding>): InstanceData<EmployeeOnboarding> {
+        val stage = instanceData.stage as? EmployeeStage
+            ?: error("Unexpected stage ${instanceData.stage}")
+
+        val saved = repo.saveWithOptimisticLockRetry(
+            id = instanceData.flowInstanceId,
+            initial = instanceData.state.copy(
+                id = instanceData.flowInstanceId,
+                stage = stage,
+                stageStatus = instanceData.stageStatus,
+            ),
+        ) { latest -> latest.copy(stage = stage, stageStatus = instanceData.stageStatus) }
+        return instanceData.copy(state = saved)
+    }
+
+    override fun load(flowInstanceId: UUID): InstanceData<EmployeeOnboarding> {
+        val entity = repo.findById(flowInstanceId).orElse(null)
+            ?: error("Flow instance '$flowInstanceId' not found")
+        return InstanceData(
+            flowInstanceId = flowInstanceId,
+            state = entity,
+            stage = entity.stage,
+            stageStatus = entity.stageStatus,
+        )
     }
 }
 

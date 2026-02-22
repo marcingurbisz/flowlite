@@ -53,6 +53,22 @@ class MermaidGeneratorTest : BehaviorSpec({
             }
         }
     }
+
+    given("a flow where condition description is inferred") {
+        val flow = createInferredDescriptionFlow()
+        val generator = MermaidGenerator()
+
+        `when`("generating a diagram") {
+            val diagram = generator.generateDiagram(flow)
+
+            then("it uses the inferred name for choice node and labels") {
+                diagram shouldContain "state if_isready <<choice>>"
+                diagram shouldContain "[*] --> if_isready"
+                diagram shouldContain "if_isready --> TrueStage: isReady"
+                diagram shouldContain "if_isready --> FalseStage: NOT (isReady)"
+            }
+        }
+    }
 })
 
 private fun createDiagramFlow(): Flow<DiagramState, DiagramStage, DiagramEvent> {
@@ -84,3 +100,17 @@ private fun createDiagramFlow(): Flow<DiagramState, DiagramStage, DiagramEvent> 
 }
 
 private fun actionForTrueStage(state: DiagramState): DiagramState = state
+
+private data class InferredState(val ready: Boolean)
+
+private fun isReady(state: InferredState): Boolean = state.ready
+
+private fun createInferredDescriptionFlow(): Flow<InferredState, DiagramStage, DiagramEvent> {
+    return FlowBuilder<InferredState, DiagramStage, DiagramEvent>()
+        .condition(
+            predicate = ::isReady,
+            onTrue = { stage(DiagramStage.TrueStage) },
+            onFalse = { stage(DiagramStage.FalseStage) },
+        )
+        .build()
+}

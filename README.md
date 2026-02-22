@@ -142,8 +142,7 @@ Documentation refresh:
 ```kotlin
         FlowBuilder<EmployeeOnboarding, EmployeeStage, EmployeeEvent>()
             .condition(
-                predicate = { it.isOnboardingAutomated },
-                description = "isOnboardingAutomated",
+                predicate = ::isOnboardingAutomated,
                 onTrue = {
                     stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
                         .condition(
@@ -174,12 +173,10 @@ Documentation refresh:
                             onTrue = {
                                 stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
                                     .condition(
-                                        { it.isSecurityClearanceRequired },
-                                        description = "isSecurityClearanceRequired",
+                                        ::isSecurityClearanceRequired,
                                         onTrue = {
                                             condition(
-                                                { it.isFullOnboardingRequired },
-                                                description = "isFullOnboardingRequired",
+                                                predicate = ::isFullOnboardingRequired,
                                                 onTrue = {
                                                     stage(SetDepartmentAccess, actions::setDepartmentAccess)
                                                         .join(GenerateEmployeeDocuments)

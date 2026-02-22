@@ -1,5 +1,7 @@
 package io.flowlite
 
+import kotlin.reflect.KFunction
+
 /**
  * Represents a stage within a workflow. Implementations should be enums to provide a finite set of possible stages.
  */
@@ -10,6 +12,9 @@ interface Stage
  * finite set of possible events.
  */
 interface Event
+
+@DslMarker
+annotation class FlowLiteDsl
 
 object NoEvent : Event
 
@@ -26,6 +31,12 @@ data class Flow<T : Any, S : Stage, E : Event>(
 }
 
 internal fun inferConditionDescription(predicate: Any): String {
+    val kFunction = predicate as? KFunction<*>
+    if (kFunction != null) {
+        val name = kFunction.name
+        if (name.isNotBlank() && name != "<anonymous>") return name
+    }
+
     val asString = predicate.toString()
     val rawName = when {
         asString.startsWith("fun ") -> asString.substringAfter("fun ").substringBefore("(")
@@ -34,11 +45,13 @@ internal fun inferConditionDescription(predicate: Any): String {
     val candidate = rawName.substringAfterLast(".")
     val isLikelySynthetic = candidate.isBlank() ||
         candidate.startsWith("Function") ||
-        candidate.contains("Lambda") ||
-        candidate.contains("$$")
+        asString.contains("$") ||
+        asString.contains("lambda", ignoreCase = true) ||
+        asString.contains("anonymous", ignoreCase = true)
     return if (isLikelySynthetic) "condition" else candidate
 }
 
+@FlowLiteDsl
 class FlowBuilder<T : Any, S : Stage, E : Event> {
 
     internal val stages = mutableMapOf<S, StageDefinition<T, S, E>>()
@@ -242,6 +255,7 @@ data class EventHandler<T : Any, S : Stage, E : Event>(
     val targetCondition: ConditionHandler<T, S>?,
 )
 
+@FlowLiteDsl
 class StageBuilder<T : Any, S : Stage, E : Event>(
     val flowBuilder: FlowBuilder<T, S, E>,
     val stageDefinition: StageDefinition<T, S, E>,
@@ -281,6 +295,7 @@ class StageBuilder<T : Any, S : Stage, E : Event>(
     fun end(): FlowBuilder<T, S, E> = flowBuilder
 }
 
+@FlowLiteDsl
 class EventBuilder<T : Any, S : Stage, E : Event>(
     private val stageBuilder: StageBuilder<T, S, E>,
     private val event: E

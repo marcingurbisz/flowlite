@@ -30,3 +30,6 @@ replay_pid*
 
 # Local configuration file
 local.properties
+
+/cockpit-ui/node_modules/
+/cockpit-ui/dist/

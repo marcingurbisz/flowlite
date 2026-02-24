@@ -30,6 +30,8 @@ class FlowEngine(
         persisters[flowId] = statePersister as StatePersister<Any>
     }
 
+    fun registeredFlows(): Map<String, Flow<Any, Stage, Event>> = flows.toMap()
+
     @Suppress("UNCHECKED_CAST")
     fun <T : Any> startInstance(flowId: String, initialState: T): UUID {
         val flowInstanceId = UUID.randomUUID()
@@ -44,7 +46,7 @@ class FlowEngine(
             stageStatus = StageStatus.Pending,
         )
         persister.save(data as InstanceData<Any>)
-        historyStore.recordInstanceStarted(flowId, data as InstanceData<Any>)
+        historyStore.recordStarted(flowId, data as InstanceData<Any>)
         enqueueTick(flowId, flowInstanceId)
         return flowInstanceId
     }
@@ -56,7 +58,7 @@ class FlowEngine(
         log.info {
             "startInstance(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}"
         }
-        if (current.stageStatus == StageStatus.Completed) return flowInstanceId
+        if (current.stageStatus == StageStatus.Completed || current.stageStatus == StageStatus.Cancelled) return flowInstanceId
         enqueueTick(flowId, flowInstanceId)
         return flowInstanceId
     }
@@ -80,6 +82,46 @@ class FlowEngine(
         val reset = current.copy(stageStatus = StageStatus.Pending)
         persister.save(reset)
         historyStore.recordStatusChanged(flowId, current, from = StageStatus.Error, to = StageStatus.Pending)
+        enqueueTick(flowId, flowInstanceId)
+    }
+
+    fun cancel(flowId: String, flowInstanceId: UUID) {
+        requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
+        val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
+        val current = persister.load(flowInstanceId)
+        log.info { "cancel(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
+        if (current.stageStatus == StageStatus.Completed || current.stageStatus == StageStatus.Cancelled) return
+
+        val cancelled = current.copy(stageStatus = StageStatus.Cancelled)
+        persister.save(cancelled)
+        historyStore.recordCancelled(flowId, current, from = current.stageStatus)
+    }
+
+    fun changeStage(flowId: String, flowInstanceId: UUID, targetStage: String) {
+        val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
+        val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
+
+        val resolvedTarget = flow.stages.keys.firstOrNull { historyValueOf(it) == targetStage }
+            ?: error("Stage '$targetStage' not found in flow '$flowId'")
+
+        var current = persister.load(flowInstanceId)
+        log.info {
+            "changeStage(flowId=$flowId, flowInstanceId=$flowInstanceId, targetStage=$targetStage) " +
+                "currentStatus=${current.stageStatus} currentStage=${current.stage}"
+        }
+
+        if (current.stage != resolvedTarget) {
+            val before = current
+            current = persister.save(current.copy(stage = resolvedTarget))
+            historyStore.recordStageChanged(flowId, before, from = before.stage, to = resolvedTarget)
+        }
+
+        if (current.stageStatus != StageStatus.Pending) {
+            val before = current
+            current = persister.save(current.copy(stageStatus = StageStatus.Pending))
+            historyStore.recordStatusChanged(flowId, before, from = before.stageStatus, to = StageStatus.Pending)
+        }
+
         enqueueTick(flowId, flowInstanceId)
     }
 
@@ -123,6 +165,10 @@ class FlowEngine(
             }
             StageStatus.Completed -> {
                 log.info { "Tick when $flowId/$flowInstanceId already COMPLETED" }
+                return
+            }
+            StageStatus.Cancelled -> {
+                log.info { "Tick when $flowId/$flowInstanceId already CANCELLED" }
                 return
             }
             StageStatus.Running -> {

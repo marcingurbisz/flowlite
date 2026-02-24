@@ -26,17 +26,17 @@ private data class ReceiverState(val flag: Boolean)
 class FlowReceiverDslTest : BehaviorSpec({
     given("receiver-lambda DSL") {
         `when`("building an event-driven flow") {
-            val built = flow<ReceiverState, ReceiverStage, ReceiverEvent> {
+            val built = flow {
                 stage(ReceiverStage.Start, ::noOp)
-                    .stage(ReceiverStage.Wait, block = {
-                        onEvent(ReceiverEvent.ConfirmedDigitally) {
-                            stage(ReceiverStage.Removing, ::noOp)
-                            stage(ReceiverStage.Informing, ::noOp)
-                        }
-                        onEvent(ReceiverEvent.ConfirmedPhysically) {
-                            joinTo(ReceiverStage.Informing)
-                        }
-                    })
+                stage(ReceiverStage.Wait) {
+                    onEvent(ReceiverEvent.ConfirmedDigitally) {
+                        stage(ReceiverStage.Removing, ::noOp)
+                        stage(ReceiverStage.Informing, ::noOp)
+                    }
+                    onEvent(ReceiverEvent.ConfirmedPhysically) {
+                        joinTo(ReceiverStage.Informing)
+                    }
+                }
             }
 
             then("it preserves direct and event transitions") {
@@ -94,6 +94,23 @@ class FlowReceiverDslTest : BehaviorSpec({
             }
         }
 
+        `when`("using trailing-lambda stage shorthand") {
+            val built = flow {
+                stage(ReceiverStage.Start, ::noOp)
+                stage(ReceiverStage.Wait) {
+                    onEvent(ReceiverEvent.ConfirmedDigitally) {
+                        stage(ReceiverStage.Done)
+                    }
+                }
+            }
+
+            then("it creates event transition without requiring block named argument") {
+                val wait = requireNotNull(built.stages[ReceiverStage.Wait])
+                wait.eventHandlers shouldContainKey ReceiverEvent.ConfirmedDigitally
+                wait.eventHandlers[ReceiverEvent.ConfirmedDigitally]?.targetStage shouldBe ReceiverStage.Done
+            }
+        }
+
         `when`("using joinTo on root DSL scope") {
             val built = flow<ReceiverState, ReceiverStage, ReceiverEvent> {
                 stage(ReceiverStage.Done)
@@ -107,8 +124,8 @@ class FlowReceiverDslTest : BehaviorSpec({
         }
 
         `when`("an event branch transitions to a condition") {
-            val built = flow<ReceiverState, ReceiverStage, ReceiverEvent> {
-                stage(ReceiverStage.Wait, block = {
+            val built = flow {
+                stage(ReceiverStage.Wait) {
                     onEvent(ReceiverEvent.ConfirmedDigitally) {
                         condition(
                             predicate = ::isFlagTrue,
@@ -116,7 +133,7 @@ class FlowReceiverDslTest : BehaviorSpec({
                             onFalse = { stage(ReceiverStage.Informing) },
                         )
                     }
-                })
+                }
             }
 
             then("it stores event handler with condition target and inferred description") {

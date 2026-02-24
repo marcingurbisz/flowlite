@@ -46,15 +46,17 @@ dependencies {
     compileOnly("org.springframework.boot:spring-boot:4.0.2")
     compileOnly("org.springframework:spring-context:7.0.3")
     compileOnly("org.springframework:spring-tx:7.0.3")
+    compileOnly("org.springframework:spring-webmvc:7.0.3")
 
     // Testing
     testImplementation(platform("io.kotest:kotest-bom:6.1.3"))
     testImplementation("io.kotest:kotest-runner-junit5-jvm")
     testImplementation("io.kotest:kotest-assertions-core-jvm")
     testImplementation("io.mockk:mockk:1.13.10")
-    testImplementation("org.springframework.boot:spring-boot-starter-test:4.0.2")
-    testImplementation("org.springframework.boot:spring-boot-starter-data-jdbc:4.0.2")
-    testImplementation("org.springframework.boot:spring-boot-starter-jdbc:4.0.2")
+    testImplementation("org.springframework.boot:spring-boot-starter-test:4.0.3")
+    testImplementation("org.springframework.boot:spring-boot-starter-data-jdbc:4.0.3")
+    testImplementation("org.springframework.boot:spring-boot-starter-jdbc:4.0.3")
+    testImplementation("org.springframework.boot:spring-boot-starter-web:4.0.3")
     testImplementation("com.h2database:h2:2.2.224")
     testImplementation("com.github.kagkarlsson:db-scheduler:16.7.0")
 }
@@ -127,6 +129,13 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.register<JavaExec>("updateReadme") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.flowlite.tools.ReadmeUpdaterKt")
+}
+
+tasks.register<JavaExec>("runTestApp") {
+    group = "application"
+    description = "Run the FlowLite test application with Cockpit routes on Tomcat."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.flowlite.test.TestApplicationMainKt")
 }
 
 publishing {

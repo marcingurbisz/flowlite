@@ -50,7 +50,7 @@ class FlowEngineHistoryTest : BehaviorSpec({
 
                 val types = history.entries.map { it.type }
                 types.shouldContainAll(
-                    HistoryEntryType.InstanceStarted,
+                    HistoryEntryType.Started,
                     HistoryEntryType.StatusChanged,
                     HistoryEntryType.StageChanged,
                 )

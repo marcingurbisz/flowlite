@@ -68,8 +68,8 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
                 val timeline = historyRepo.findTimeline(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId)
                 require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
-                require(timeline.any { it.type == HistoryEntryType.EventAppended.name && it.event == ContractSigned.name })
-                require(timeline.any { it.type == HistoryEntryType.EventAppended.name && it.event == OnboardingComplete.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ContractSigned.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == OnboardingComplete.name })
             }
         }
     }

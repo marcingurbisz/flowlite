@@ -14,7 +14,7 @@ FlowLite at a glance:
 - **Mailbox event semantics** via a pluggable `EventStore`
 - **Tick-based runtime** with a single-flight claim (`PENDING -> RUNNING`)
 - **Retries** via `retry(...)`
-- **Cockpit** [prototype](https://claude.ai/public/artifacts/b4d9ad11-6ee4-44ba-ac22-c879e9af2e17)
+- **Cockpit** [prototype](https://claude.ai/public/artifacts/b4d9ad11-6ee4-44ba-ac22-c879e9af2e17) (run locally: `./gradlew runTestApp`)
 
 FlowLite is intentionally biased toward the “single component owns the workflow” case. It focuses on:
 - explicit wait states,
@@ -30,13 +30,13 @@ See this [article](https://medium.com/@marcin.gurbisz/flowlite-a-tiny-workflow-e
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
     return flow {
         stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        stage(WaitingForConfirmation, block = {
+        stage(WaitingForConfirmation) {
             onEvent(ConfirmedDigitally) {
                 stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 stage(InformingCustomer, ::informCustomer)
             }
             onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
-        })
+        }
     }
 }
 ```
@@ -236,13 +236,13 @@ stateDiagram-v2
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
     return flow {
         stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        stage(WaitingForConfirmation, block = {
+        stage(WaitingForConfirmation) {
             onEvent(ConfirmedDigitally) {
                 stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 stage(InformingCustomer, ::informCustomer)
             }
             onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
-        })
+        }
     }
 }
 ```
@@ -408,6 +408,8 @@ External updates exist (GUI / notifications / other services):
 - `./gradlew build` - Build the entire project
 - `./gradlew test` - Run all tests
 - `./gradlew test jacocoTestReport` - Run tests and generate coverage report (HTML + XML)
+- `./gradlew runTestApp` - Run the test Spring Boot app with Cockpit UI served by Tomcat (http://localhost:8080)
+- `cd cockpit-ui && npm install && npm run dev` - Run the full React+TypeScript Cockpit prototype UI (from `flowlite-cockpit.jsx`)
 - `./gradlew clean` - Clean build artifacts
 - `./gradlew check` - Run all verification tasks
 

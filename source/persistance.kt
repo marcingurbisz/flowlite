@@ -11,6 +11,7 @@ enum class StageStatus {
     Pending,
     Running,
     Completed, // used only for terminal stages
+    Cancelled, // used when an instance is manually canceled
     Error,
 }
 
@@ -93,28 +94,131 @@ interface HistoryStore {
 }
 
 enum class HistoryEntryType {
-    InstanceStarted,
+    Started,
     EventAppended,
     StatusChanged,
     StageChanged,
+    Cancelled,
     Error,
 }
 
-data class HistoryEntry(
-    val flowId: String,
-    val flowInstanceId: UUID,
-    val type: HistoryEntryType,
-    val occurredAt: Instant = Instant.now(),
-    val stage: String? = null,
-    val fromStage: String? = null,
-    val toStage: String? = null,
-    val fromStatus: StageStatus? = null,
-    val toStatus: StageStatus? = null,
-    val event: String? = null,
-    val errorType: String? = null,
-    val errorMessage: String? = null,
-    val errorStackTrace: String? = null,
-)
+sealed class HistoryEntry(
+    open val flowId: String,
+    open val flowInstanceId: UUID,
+    open val type: HistoryEntryType,
+    open val occurredAt: Instant = Instant.now(),
+    open val stage: String? = null,
+    open val fromStage: String? = null,
+    open val toStage: String? = null,
+    open val fromStatus: StageStatus? = null,
+    open val toStatus: StageStatus? = null,
+    open val event: String? = null,
+    open val errorType: String? = null,
+    open val errorMessage: String? = null,
+    open val errorStackTrace: String? = null,
+) {
+    data class Started(
+        override val flowId: String,
+        override val flowInstanceId: UUID,
+        override val occurredAt: Instant = Instant.now(),
+        override val stage: String? = null,
+        override val toStatus: StageStatus? = null,
+    ) : HistoryEntry(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        type = HistoryEntryType.Started,
+        occurredAt = occurredAt,
+        stage = stage,
+        toStatus = toStatus,
+    )
+
+    data class EventAppended(
+        override val flowId: String,
+        override val flowInstanceId: UUID,
+        override val occurredAt: Instant = Instant.now(),
+        override val event: String? = null,
+    ) : HistoryEntry(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        type = HistoryEntryType.EventAppended,
+        occurredAt = occurredAt,
+        event = event,
+    )
+
+    data class StatusChanged(
+        override val flowId: String,
+        override val flowInstanceId: UUID,
+        override val occurredAt: Instant = Instant.now(),
+        override val stage: String? = null,
+        override val fromStatus: StageStatus? = null,
+        override val toStatus: StageStatus? = null,
+    ) : HistoryEntry(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        type = HistoryEntryType.StatusChanged,
+        occurredAt = occurredAt,
+        stage = stage,
+        fromStatus = fromStatus,
+        toStatus = toStatus,
+    )
+
+    data class StageChanged(
+        override val flowId: String,
+        override val flowInstanceId: UUID,
+        override val occurredAt: Instant = Instant.now(),
+        override val fromStage: String? = null,
+        override val toStage: String? = null,
+        override val event: String? = null,
+    ) : HistoryEntry(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        type = HistoryEntryType.StageChanged,
+        occurredAt = occurredAt,
+        fromStage = fromStage,
+        toStage = toStage,
+        event = event,
+    )
+
+    data class Cancelled(
+        override val flowId: String,
+        override val flowInstanceId: UUID,
+        override val occurredAt: Instant = Instant.now(),
+        override val stage: String? = null,
+        override val fromStatus: StageStatus? = null,
+        override val toStatus: StageStatus? = StageStatus.Cancelled,
+    ) : HistoryEntry(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        type = HistoryEntryType.Cancelled,
+        occurredAt = occurredAt,
+        stage = stage,
+        fromStatus = fromStatus,
+        toStatus = toStatus,
+    )
+
+    data class Error(
+        override val flowId: String,
+        override val flowInstanceId: UUID,
+        override val occurredAt: Instant = Instant.now(),
+        override val stage: String? = null,
+        override val fromStatus: StageStatus? = null,
+        override val toStatus: StageStatus? = null,
+        override val errorType: String? = null,
+        override val errorMessage: String? = null,
+        override val errorStackTrace: String? = null,
+    ) : HistoryEntry(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        type = HistoryEntryType.Error,
+        occurredAt = occurredAt,
+        stage = stage,
+        fromStatus = fromStatus,
+        toStatus = toStatus,
+        errorType = errorType,
+        errorMessage = errorMessage,
+        errorStackTrace = errorStackTrace,
+    )
+}
 
 object NoopHistoryStore : HistoryStore {
     override fun append(entry: HistoryEntry) = Unit
@@ -137,24 +241,33 @@ internal fun HistoryStore.appendBestEffort(entry: HistoryEntry) {
     }
 }
 
-internal fun HistoryStore.recordInstanceStarted(flowId: String, data: InstanceData<Any>) {
+internal fun HistoryStore.recordStarted(flowId: String, data: InstanceData<Any>) {
     appendBestEffort(
-        HistoryEntry(
+        HistoryEntry.Started(
             flowId = flowId,
             flowInstanceId = data.flowInstanceId,
-            type = HistoryEntryType.InstanceStarted,
             stage = historyValueOf(data.stage),
             toStatus = data.stageStatus,
         ),
     )
 }
 
+internal fun HistoryStore.recordCancelled(flowId: String, data: InstanceData<Any>, from: StageStatus) {
+    appendBestEffort(
+        HistoryEntry.Cancelled(
+            flowId = flowId,
+            flowInstanceId = data.flowInstanceId,
+            stage = historyValueOf(data.stage),
+            fromStatus = from,
+        ),
+    )
+}
+
 internal fun HistoryStore.recordEventAppended(flowId: String, flowInstanceId: UUID, event: Event) {
     appendBestEffort(
-        HistoryEntry(
+        HistoryEntry.EventAppended(
             flowId = flowId,
             flowInstanceId = flowInstanceId,
-            type = HistoryEntryType.EventAppended,
             event = historyValueOf(event),
         ),
     )
@@ -162,10 +275,9 @@ internal fun HistoryStore.recordEventAppended(flowId: String, flowInstanceId: UU
 
 internal fun HistoryStore.recordStatusChanged(flowId: String, data: InstanceData<Any>, from: StageStatus, to: StageStatus) {
     appendBestEffort(
-        HistoryEntry(
+        HistoryEntry.StatusChanged(
             flowId = flowId,
             flowInstanceId = data.flowInstanceId,
-            type = HistoryEntryType.StatusChanged,
             stage = historyValueOf(data.stage),
             fromStatus = from,
             toStatus = to,
@@ -175,10 +287,9 @@ internal fun HistoryStore.recordStatusChanged(flowId: String, data: InstanceData
 
 internal fun HistoryStore.recordStageChanged(flowId: String, data: InstanceData<Any>, from: Stage, to: Stage, event: Event? = null) {
     appendBestEffort(
-        HistoryEntry(
+        HistoryEntry.StageChanged(
             flowId = flowId,
             flowInstanceId = data.flowInstanceId,
-            type = HistoryEntryType.StageChanged,
             fromStage = historyValueOf(from),
             toStage = historyValueOf(to),
             event = event?.let { historyValueOf(it) },
@@ -188,10 +299,9 @@ internal fun HistoryStore.recordStageChanged(flowId: String, data: InstanceData<
 
 internal fun HistoryStore.recordError(flowId: String, data: InstanceData<Any>, ex: Exception) {
     appendBestEffort(
-        HistoryEntry(
+        HistoryEntry.Error(
             flowId = flowId,
             flowInstanceId = data.flowInstanceId,
-            type = HistoryEntryType.Error,
             stage = historyValueOf(data.stage),
             fromStatus = StageStatus.Running,
             toStatus = StageStatus.Error,

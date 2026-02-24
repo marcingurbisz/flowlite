@@ -7,6 +7,8 @@ import io.flowlite.PendingEventRepository
 import io.flowlite.SpringDataJdbcEventStore
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.SpringDataJdbcTickScheduler
+import io.flowlite.cockpit.CockpitService
+import io.flowlite.cockpit.cockpitRouter
 import java.util.UUID
 import io.kotest.core.listeners.ProjectListener
 import org.springframework.beans.factory.BeanRegistrar
@@ -22,6 +24,8 @@ import org.springframework.data.relational.core.mapping.NamingStrategy
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import org.springframework.web.servlet.function.RouterFunction
+import org.springframework.web.servlet.function.ServerResponse
 import javax.sql.DataSource
 
 @SpringBootApplication
@@ -77,6 +81,10 @@ object Beans {
             )
         }
 
+        registerBean {
+            io.flowlite.MermaidGenerator()
+        }
+
         registerBean<FlowEngine> {
             val eventStore = bean<SpringDataJdbcEventStore>()
             val tickScheduler = bean<SpringDataJdbcTickScheduler>()
@@ -90,11 +98,23 @@ object Beans {
                 engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(onboardingActions), onboardingPersister)
             }
         }
+
+        registerBean {
+            CockpitService(
+                engine = bean<FlowEngine>(),
+                mermaid = bean<io.flowlite.MermaidGenerator>(),
+                historyRepo = bean<FlowLiteHistoryRepository>(),
+            )
+        }
+
+        registerBean<RouterFunction<ServerResponse>> {
+            cockpitRouter(bean<CockpitService>())
+        }
     }
 }
 
-fun startTestApplication() = runApplication<TestApplication>(
-    "--spring.main.web-application-type=none",
+private fun startApplication(webType: String) = runApplication<TestApplication>(
+    "--spring.main.web-application-type=$webType",
 ) {
     addInitializers(
         ApplicationContextInitializer<GenericApplicationContext> { gac ->
@@ -103,6 +123,10 @@ fun startTestApplication() = runApplication<TestApplication>(
         },
     )
 }
+
+fun startTestApplication() = startApplication("none")
+
+fun startTestWebApplication() = startApplication("servlet")
 
 class SnakeCaseNamingStrategy : NamingStrategy {
     override fun getColumnName(property: RelationalPersistentProperty): String = property.name.toSnakeCase()

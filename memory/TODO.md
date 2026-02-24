@@ -1,36 +1,14 @@
 # TODO
 
 ## Kotlin DSL with receiver lambdas instead of builder chains
-
-Status (2026-02-22): initial implementation delivered (`flow {}` / `eventlessFlow {}`), tests added, and Order Confirmation migrated.
-Next incremental follow-ups:
-- Consider reducing overload ambiguity around `stage(..., block = { ... })` by introducing clearer names (e.g. `stageBlock(...)`) or signature tweaks.
-- Consider migrating Employee Onboarding flow to receiver DSL after readability review.
-
-The current API mixes method chaining with `apply` blocks (like in the order confirmation flow). A dedicated Kotlin DSL using `@DslMarker` and lambda-with-receiver could feel more natural:
-
-```kotlin
-val flow = flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    stage(InitializingConfirmation, ::initializeOrderConfirmation)
-    stage(WaitingForConfirmation) {
-        onEvent(ConfirmedDigitally) {
-            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-            stage(InformingCustomer, ::informCustomer)
-        }
-        onEvent(ConfirmedPhysically) {
-            joinTo(InformingCustomer)
-        }
-    }
-}
-```
-
-The nesting makes it visually clear which events belong to which stage. The `@DslMarker` annotation prevents accidentally calling outer-scope builders from inner lambdas (which is a real footgun with the current `apply` approach — nothing stops you from calling `stage()` on the wrong builder).
+- Migrate all test flows to DSL with lambas
+- Move reciverDsl.kt to dsl.kt. Hide/remove old builder chains API. I do not want anybody to use it.
+- Maybe without Builders exposed we have simplify the the implementation of DSL? Is it helpful to keep them?
 
 ## Enforce that stages are enums
+
 ## Context receivers (or extension function types) for actions
-
 Instead of `(T) -> T?`, actions could receive a richer context:
-
 ```kotlin
 fun interface StageAction<T> {
     context(ActionContext) // Kotlin context receivers
@@ -41,10 +19,26 @@ class ActionContext(
     val flowId: String,
 )
 ```
-
 This avoids the pattern where actions need the `flowInstanceId` but have to dig it out of the state object (as the employee onboarding actions currently do with `requireNotNull(employee.id)`). The context could provide it directly.
 
 ## Integrate Cockpit prototype
+Status (2026-02-23): Cockpit integration in progress.
+
+Follow ups:
+- Use FlowLiteHistoryRow instead CockpitHistoryEntryDto which is just duplicate
+- move cockpit/api to service
+ 
+## Showcase application
+Prepare showcase application (or find a better name). It should be startTestWebApplication with a logic that creates one order confirm. and one employee onbording flow instance on start and then every 5s so we can see cockpit in action.
+Check if cockpit is working fine. Do you have tools to test it? If not do you know what tools I can give you so you can verify how cockpit is working including visual inspection?
+
+## Review queries in history repository
+Can we simplify queries by some design change?
+
+## Implement playwright tests
+
 ## Expose test instance publicly available
+
 ## Yet more coverage?
+
 ## Optimistic locking based on modified fields?

@@ -134,13 +134,13 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
 fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
     return flow {
         stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        stage(WaitingForConfirmation, block = {
+        stage(WaitingForConfirmation) {
             onEvent(ConfirmedDigitally) {
                 stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
                 stage(InformingCustomer, ::informCustomer)
             }
             onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
-        })
+        }
     }
 }
 // FLOW-DEFINITION-END

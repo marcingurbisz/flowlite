@@ -212,7 +212,7 @@ data class FlowLiteHistoryRow(
     val occurredAt: Instant,
     val flowId: String,
     val flowInstanceId: UUID,
-    val type: String,
+    val type: HistoryEntryType,
     val stage: String? = null,
     val fromStage: String? = null,
     val toStage: String? = null,
@@ -234,6 +234,51 @@ interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
         """,
     )
     fun findTimeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow>
+
+    @Query(
+        """
+        select h.*
+        from flowlite_history h
+        join (
+            select id, row_number() over (partition by flow_id, flow_instance_id order by occurred_at desc, id desc) as rn
+            from flowlite_history
+            where (:flowId is null or flow_id = :flowId)
+              and type in ('Started', 'StageChanged', 'Error')
+        ) ranked on ranked.id = h.id
+        where ranked.rn = 1
+        """,
+    )
+    fun findLatestStageRows(flowId: String?): List<FlowLiteHistoryRow>
+
+    @Query(
+        """
+        select h.*
+        from flowlite_history h
+        join (
+            select id, row_number() over (partition by flow_id, flow_instance_id order by occurred_at desc, id desc) as rn
+            from flowlite_history
+            where (:flowId is null or flow_id = :flowId)
+              and type in ('Started', 'StatusChanged', 'Cancelled', 'Error')
+        ) ranked on ranked.id = h.id
+        where ranked.rn = 1
+        """,
+    )
+    fun findLatestStatusRows(flowId: String?): List<FlowLiteHistoryRow>
+
+    @Query(
+        """
+        select h.*
+        from flowlite_history h
+        join (
+            select id, row_number() over (partition by flow_id, flow_instance_id order by occurred_at desc, id desc) as rn
+            from flowlite_history
+            where (:flowId is null or flow_id = :flowId)
+              and type = 'Error'
+        ) ranked on ranked.id = h.id
+        where ranked.rn = 1
+        """,
+    )
+    fun findLatestErrorRows(flowId: String?): List<FlowLiteHistoryRow>
 }
 
 class SpringDataJdbcHistoryStore(
@@ -246,7 +291,7 @@ class SpringDataJdbcHistoryStore(
                 occurredAt = entry.occurredAt,
                 flowId = entry.flowId,
                 flowInstanceId = entry.flowInstanceId,
-                type = entry.type.name,
+                type = entry.type,
                 stage = entry.stage,
                 fromStage = entry.fromStage,
                 toStage = entry.toStage,
@@ -260,3 +305,55 @@ class SpringDataJdbcHistoryStore(
         )
     }
 }
+
+fun FlowLiteHistoryRow.toHistoryEntry(): HistoryEntry =
+    when (type) {
+        HistoryEntryType.Started -> HistoryEntry.Started(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            occurredAt = occurredAt,
+            stage = stage,
+            toStatus = toStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+        )
+        HistoryEntryType.EventAppended -> HistoryEntry.EventAppended(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            occurredAt = occurredAt,
+            event = event,
+        )
+        HistoryEntryType.StatusChanged -> HistoryEntry.StatusChanged(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            occurredAt = occurredAt,
+            stage = stage,
+            fromStatus = fromStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+            toStatus = toStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+        )
+        HistoryEntryType.StageChanged -> HistoryEntry.StageChanged(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            occurredAt = occurredAt,
+            fromStage = fromStage,
+            toStage = toStage,
+            event = event,
+        )
+        HistoryEntryType.Cancelled -> HistoryEntry.Cancelled(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            occurredAt = occurredAt,
+            stage = stage,
+            fromStatus = fromStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+            toStatus = toStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+        )
+        HistoryEntryType.Error -> HistoryEntry.Error(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            occurredAt = occurredAt,
+            stage = stage,
+            fromStatus = fromStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+            toStatus = toStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+            errorType = errorType,
+            errorMessage = errorMessage,
+            errorStackTrace = errorStackTrace,
+        )
+    }

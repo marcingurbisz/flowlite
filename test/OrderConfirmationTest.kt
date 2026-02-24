@@ -89,9 +89,9 @@ class OrderConfirmationTest : BehaviorSpec({
 
                 val timeline = historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
                 require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
-                require(timeline.any { it.type == HistoryEntryType.InstanceStarted.name })
-                require(timeline.any { it.type == HistoryEntryType.EventAppended.name && it.event == ConfirmedDigitally.name })
-                require(timeline.any { it.type == HistoryEntryType.StageChanged.name && it.toStage == InformingCustomer.name })
+                require(timeline.any { it.type == HistoryEntryType.Started })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ConfirmedDigitally.name })
+                require(timeline.any { it.type == HistoryEntryType.StageChanged && it.toStage == InformingCustomer.name })
             }
         }
 
@@ -129,8 +129,8 @@ class OrderConfirmationTest : BehaviorSpec({
 
                 val timeline = historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
                 require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
-                require(timeline.any { it.type == HistoryEntryType.EventAppended.name && it.event == ConfirmedPhysically.name })
-                require(timeline.any { it.type == HistoryEntryType.StageChanged.name && it.toStage == InformingCustomer.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ConfirmedPhysically.name })
+                require(timeline.any { it.type == HistoryEntryType.StageChanged && it.toStage == InformingCustomer.name })
             }
         }
     }

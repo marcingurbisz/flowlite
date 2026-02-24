@@ -1,18 +1,44 @@
 package io.flowlite
 
+import kotlin.reflect.KFunction1
+
 @FlowLiteDsl
 class FlowDslScope<T : Any, S : Stage, E : Event>(
     private val flowBuilder: FlowBuilder<T, S, E>,
 ) {
-    fun stage(stage: S, action: ((item: T) -> T?)? = null): StageDslScope<T, S, E> {
-        val stageBuilder = flowBuilder.stage(stage, action)
+    private var lastTopLevelStageBuilder: StageBuilder<T, S, E>? = null
+
+    fun stage(stage: S): StageDslScope<T, S, E> {
+        val stageBuilder = if (canAutoChainFromLast()) {
+            requireNotNull(lastTopLevelStageBuilder).stage(stage)
+        } else {
+            flowBuilder.stage(stage)
+        }
+        lastTopLevelStageBuilder = stageBuilder
         return StageDslScope(flowBuilder, stageBuilder)
     }
 
-    fun stage(stage: S, action: ((item: T) -> T?)? = null, block: StageDslScope<T, S, E>.() -> Unit): StageDslScope<T, S, E> {
-        val stageScope = stage(stage, action)
-        stageScope.block()
-        return stageScope
+    fun stage(stage: S, action: KFunction1<T, T?>): StageDslScope<T, S, E> {
+        val stageBuilder = if (canAutoChainFromLast()) {
+            requireNotNull(lastTopLevelStageBuilder).stage(stage, action)
+        } else {
+            flowBuilder.stage(stage, action)
+        }
+        lastTopLevelStageBuilder = stageBuilder
+        return StageDslScope(flowBuilder, stageBuilder)
+    }
+
+    @JvmName("stageWithBlock")
+    fun stage(stage: S, block: StageDslScope<T, S, E>.() -> Unit): StageDslScope<T, S, E> {
+        val scoped = stage(stage).apply(block)
+        lastTopLevelStageBuilder = scoped.currentStageBuilder()
+        return scoped
+    }
+
+    fun stage(stage: S, action: KFunction1<T, T?>, block: StageDslScope<T, S, E>.() -> Unit): StageDslScope<T, S, E> {
+        val scoped = stage(stage, action).apply(block)
+        lastTopLevelStageBuilder = scoped.currentStageBuilder()
+        return scoped
     }
 
     fun condition(
@@ -31,15 +57,25 @@ class FlowDslScope<T : Any, S : Stage, E : Event>(
                 FlowDslScope(this).apply(onFalse)
             },
         )
+        lastTopLevelStageBuilder = null
         return this
     }
 
     fun joinTo(targetStage: S): FlowDslScope<T, S, E> {
         flowBuilder.join(targetStage)
+        lastTopLevelStageBuilder = null
         return this
     }
 
     fun build(): Flow<T, S, E> = flowBuilder.build()
+
+    private fun canAutoChainFromLast(): Boolean {
+        val previous = lastTopLevelStageBuilder ?: return false
+        val definition = previous.stageDefinition
+        return definition.nextStage == null &&
+            definition.eventHandlers.isEmpty() &&
+            definition.conditionHandler == null
+    }
 }
 
 @FlowLiteDsl
@@ -47,15 +83,23 @@ class StageDslScope<T : Any, S : Stage, E : Event>(
     private val flowBuilder: FlowBuilder<T, S, E>,
     private var currentStageBuilder: StageBuilder<T, S, E>,
 ) {
-    fun stage(stage: S, action: ((item: T) -> T?)? = null): StageDslScope<T, S, E> {
+    fun stage(stage: S): StageDslScope<T, S, E> {
+        currentStageBuilder = currentStageBuilder.stage(stage)
+        return this
+    }
+
+    fun stage(stage: S, action: KFunction1<T, T?>): StageDslScope<T, S, E> {
         currentStageBuilder = currentStageBuilder.stage(stage, action)
         return this
     }
 
-    fun stage(stage: S, action: ((item: T) -> T?)? = null, block: StageDslScope<T, S, E>.() -> Unit): StageDslScope<T, S, E> {
-        stage(stage, action)
-        block()
-        return this
+    @JvmName("stageWithBlock")
+    fun stage(stage: S, block: StageDslScope<T, S, E>.() -> Unit): StageDslScope<T, S, E> {
+        return stage(stage).apply(block)
+    }
+
+    fun stage(stage: S, action: KFunction1<T, T?>, block: StageDslScope<T, S, E>.() -> Unit): StageDslScope<T, S, E> {
+        return stage(stage, action).apply(block)
     }
 
     fun onEvent(event: E, block: EventTransitionDslScope<T, S, E>.() -> Unit): StageDslScope<T, S, E> {
@@ -94,6 +138,8 @@ class StageDslScope<T : Any, S : Stage, E : Event>(
     }
 
     fun build(): Flow<T, S, E> = flowBuilder.build()
+
+    internal fun currentStageBuilder(): StageBuilder<T, S, E> = currentStageBuilder
 }
 
 @FlowLiteDsl
@@ -102,14 +148,29 @@ class EventTransitionDslScope<T : Any, S : Stage, E : Event>(
 ) {
     private var currentStageBuilder: StageBuilder<T, S, E>? = null
 
-    fun stage(stage: S, action: ((item: T) -> T?)? = null): EventTransitionDslScope<T, S, E> {
+    fun stage(stage: S): EventTransitionDslScope<T, S, E> {
+        currentStageBuilder =
+            if (currentStageBuilder == null) eventBuilder.stage(stage)
+            else currentStageBuilder!!.stage(stage)
+        return this
+    }
+
+    fun stage(stage: S, action: KFunction1<T, T?>): EventTransitionDslScope<T, S, E> {
         currentStageBuilder =
             if (currentStageBuilder == null) eventBuilder.stage(stage, action)
             else currentStageBuilder!!.stage(stage, action)
         return this
     }
 
-    fun stage(stage: S, action: ((item: T) -> T?)? = null, block: StageDslScope<T, S, E>.() -> Unit): EventTransitionDslScope<T, S, E> {
+    @JvmName("stageWithBlock")
+    fun stage(stage: S, block: StageDslScope<T, S, E>.() -> Unit): EventTransitionDslScope<T, S, E> {
+        return stage(stage).apply {
+            val stageBuilder = requireNotNull(currentStageBuilder)
+            StageDslScope(stageBuilder.flowBuilder, stageBuilder).apply(block)
+        }
+    }
+
+    fun stage(stage: S, action: KFunction1<T, T?>, block: StageDslScope<T, S, E>.() -> Unit): EventTransitionDslScope<T, S, E> {
         stage(stage, action)
         val stageBuilder = requireNotNull(currentStageBuilder)
         StageDslScope(stageBuilder.flowBuilder, stageBuilder).apply(block)

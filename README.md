@@ -45,7 +45,12 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStag
 stateDiagram-v2
     [*] --> InitializingConfirmation
     InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()
-    InitializingConfirmation --> [*]
+    InitializingConfirmation --> WaitingForConfirmation
+    WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally
+    RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()
+    RemovingFromConfirmationQueue --> InformingCustomer
+    InformingCustomer: InformingCustomer informCustomer()
+    WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically
     InformingCustomer --> [*]
 
 ```
@@ -251,7 +256,12 @@ fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStag
 stateDiagram-v2
     [*] --> InitializingConfirmation
     InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()
-    InitializingConfirmation --> [*]
+    InitializingConfirmation --> WaitingForConfirmation
+    WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally
+    RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()
+    RemovingFromConfirmationQueue --> InformingCustomer
+    InformingCustomer: InformingCustomer informCustomer()
+    WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically
     InformingCustomer --> [*]
 
 ```

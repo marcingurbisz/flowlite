@@ -1,14 +1,14 @@
 package io.flowlite.test
 
 import io.flowlite.Event
-import io.flowlite.EventlessFlowBuilder
-import io.flowlite.FlowBuilder
 import io.flowlite.FlowEngine
 import io.flowlite.HistoryEntry
 import io.flowlite.HistoryEntryType
 import io.flowlite.HistoryStore
 import io.flowlite.Stage
 import io.flowlite.StageStatus
+import io.flowlite.eventlessFlow
+import io.flowlite.flow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
@@ -27,11 +27,10 @@ class FlowEngineHistoryTest : BehaviorSpec({
 
     given("history store integration") {
         `when`("a flow auto-transitions and completes") {
-            val flow = EventlessFlowBuilder<HistAutoState, HistAutoStage>()
-                .stage(HistAutoStage.Start)
-                .stage(HistAutoStage.Done)
-                .end()
-                .build()
+            val flow = eventlessFlow<HistAutoState, HistAutoStage> {
+                stage(HistAutoStage.Start)
+                stage(HistAutoStage.Done)
+            }
 
             val eventStore = HistoryInMemoryEventStore()
             val tickScheduler = HistoryManualTickScheduler()
@@ -65,12 +64,11 @@ class FlowEngineHistoryTest : BehaviorSpec({
         }
 
         `when`("a flow waits for an event and none is present") {
-            val flow = FlowBuilder<HistWaitState, HistWaitStage, HistWaitEvent>()
-                .stage(HistWaitStage.Wait)
-                .waitFor(HistWaitEvent.Go)
-                .stage(HistWaitStage.Done)
-                .end()
-                .build()
+            val flow = flow<HistWaitState, HistWaitStage, HistWaitEvent> {
+                stage(HistWaitStage.Wait)
+                onEvent(HistWaitEvent.Go)
+                stage(HistWaitStage.Done)
+            }
 
             val eventStore = HistoryInMemoryEventStore()
             val tickScheduler = HistoryManualTickScheduler()
@@ -95,11 +93,10 @@ class FlowEngineHistoryTest : BehaviorSpec({
         }
 
         `when`("the history store throws") {
-            val flow = EventlessFlowBuilder<HistThrowState, HistThrowStage>()
-                .stage(HistThrowStage.Start)
-                .stage(HistThrowStage.Terminal)
-                .end()
-                .build()
+            val flow = eventlessFlow<HistThrowState, HistThrowStage> {
+                stage(HistThrowStage.Start)
+                stage(HistThrowStage.Terminal)
+            }
 
             val eventStore = HistoryInMemoryEventStore()
             val tickScheduler = HistoryManualTickScheduler()
@@ -177,7 +174,7 @@ private class HistoryInMemoryStatePersister<T : Any> : io.flowlite.StatePersiste
         return instanceData
     }
 
-    override fun load(flowInstanceId: java.util.UUID): io.flowlite.InstanceData<T> =
+    override fun load(flowInstanceId: java.util.UUID) =
         data[flowInstanceId] ?: error("Flow instance '$flowInstanceId' not found")
 }
 
@@ -203,5 +200,5 @@ private class HistoryInMemoryEventStore : io.flowlite.EventStore {
         return io.flowlite.StoredEvent(id = match.key, event = match.value.event)
     }
 
-    override fun delete(eventId: java.util.UUID): Boolean = rows.remove(eventId) != null
+    override fun delete(eventId: java.util.UUID) = rows.remove(eventId) != null
 }

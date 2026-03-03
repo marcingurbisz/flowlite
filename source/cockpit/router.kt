@@ -2,11 +2,10 @@ package io.flowlite.cockpit
 
 import java.util.UUID
 import org.springframework.http.HttpStatus
-import org.springframework.web.servlet.function.RouterFunction
 import org.springframework.web.servlet.function.ServerResponse
 import org.springframework.web.servlet.function.router
 
-fun cockpitRouter(service: CockpitService): RouterFunction<ServerResponse> =
+fun cockpitRouter(service: CockpitService) =
     router {
         GET("/api/flows") {
             ServerResponse.ok().body(service.listFlows())

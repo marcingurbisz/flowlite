@@ -151,7 +151,7 @@ class CockpitService(
 
     private fun FlowLiteHistoryRow.asKey() = InstanceKey(flowId = flowId, flowInstanceId = flowInstanceId)
 
-    private fun FlowLiteHistoryRow.stageValue(): String? = toStage ?: stage
+    private fun FlowLiteHistoryRow.stageValue() = toStage ?: stage
 
     private fun FlowLiteHistoryRow.statusValue(): StageStatus? {
         val entry = toHistoryEntry()

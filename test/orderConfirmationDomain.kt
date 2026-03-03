@@ -1,7 +1,6 @@
 package io.flowlite.test
 
 import io.flowlite.Event
-import io.flowlite.Flow
 import io.flowlite.InstanceData
 import io.flowlite.Stage
 import io.flowlite.StageStatus
@@ -131,16 +130,14 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
 }
 
 // FLOW-DEFINITION-START
-fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    return flow {
-        stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        stage(WaitingForConfirmation) {
-            onEvent(ConfirmedDigitally) {
-                stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-                stage(InformingCustomer, ::informCustomer)
-            }
-            onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
+fun createOrderConfirmationFlow() = flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    stage(InitializingConfirmation, ::initializeOrderConfirmation)
+    stage(WaitingForConfirmation) {
+        onEvent(ConfirmedDigitally) {
+            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+            stage(InformingCustomer, ::informCustomer)
         }
+        onEvent(ConfirmedPhysically) { goTo(InformingCustomer) }
     }
 }
 // FLOW-DEFINITION-END

@@ -9,7 +9,7 @@ Note: FlowLite is actively evolving. Breaking changes may be introduced and back
 ## Why FlowLite?
 
 FlowLite at a glance:
-- **Type-safe DSL** for stages, events, conditions, and joins
+- **Type-safe DSL** for stages, events, conditions, and transitions
 - **Mermaid diagrams from code** (no separate model to maintain)
 - **Mailbox event semantics** via a pluggable `EventStore`
 - **Tick-based runtime** with a single-flight claim (`PENDING -> RUNNING`)
@@ -27,16 +27,14 @@ See this [article](https://medium.com/@marcin.gurbisz/flowlite-a-tiny-workflow-e
 
 <!-- FlowDoc(order-confirmation) -->
 ```kotlin
-fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    return flow {
-        stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        stage(WaitingForConfirmation) {
-            onEvent(ConfirmedDigitally) {
-                stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-                stage(InformingCustomer, ::informCustomer)
-            }
-            onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
+fun createOrderConfirmationFlow() = flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    stage(InitializingConfirmation, ::initializeOrderConfirmation)
+    stage(WaitingForConfirmation) {
+        onEvent(ConfirmedDigitally) {
+            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+            stage(InformingCustomer, ::informCustomer)
         }
+        onEvent(ConfirmedPhysically) { goTo(InformingCustomer) }
     }
 }
 ```
@@ -60,11 +58,11 @@ stateDiagram-v2
 ## Key concepts and assumptions
 
 - **Stage**: A named step (enum implementing `Stage` interface). Represents “we are doing X” - activity-oriented naming (e.g. `InitializingPayment`).
-- **Action**: Function executed when entering a stage `.stage(InitializingConfirmation, ::initializeOrderConfirmation)` (optional for stage).
+- **Action**: Function executed when entering a stage `stage(InitializingConfirmation, ::initializeOrderConfirmation)` (optional for stage).
 - **Event**: External trigger causing a transition (implements `Event`). Submitted through engine API.
 - **Condition**: Binary branching with a predicate. Renders as a choice node on diagram.
-- **Join**: Converges control flow by pointing to an existing stage.
-- **Flow**: Immutable definition produced by `FlowBuilder<T>.build()` and held in-memory.
+- **Join via `goTo(...)`**: Converges control flow by pointing to an existing stage.
+- **Flow**: Immutable definition produced by `flow { ... }` and held in-memory.
 - **StageStatus**: Lifecycle state of the single active stage:
     - `Pending` – Active stage awaiting action execution or matching event.
     - `Running` – Flow instance is currently being progressed by the engine. Remains `Running` during the whole processing loop and is released back to `Pending` when the instance needs to wait for an event.
@@ -82,38 +80,69 @@ stateDiagram-v2
 
 ### Stage Transitions
 
-FlowLite supports 2 types of stage transitions:
+FlowLite supports 3 transition styles:
 
-1. **Automatic Progression**: Sequential stages automatically flow to the next stage
+1. **Automatic progression** (`stage(...)` then next `stage(...)`):
    ```kotlin
-   flow
-       .stage(InitializingConfirmation, ::initializeOrderConfirmation)
-       .stage(WaitingForConfirmation) // Automatic progression
+   flow<Order, OrderStage, OrderEvent> {
+       stage(OrderStage.Initializing, ::initialize)
+       stage(OrderStage.WaitingForConfirmation)
+   }
    ```
 
-2. **Event-Based Transitions**: Explicit events trigger transitions
+2. **Event-based transition** (`onEvent(...)`):
    ```kotlin
-   flow.waitFor(PaymentConfirmed).stage(ProcessingPayment, ::processPayment)
+   flow<Order, OrderStage, OrderEvent> {
+       stage(OrderStage.WaitingForConfirmation)
+       onEvent(OrderEvent.Confirmed)
+       stage(OrderStage.Processing, ::process)
+   }
    ```
 
-Event waiting semantics (`waitFor`):
-- A stage that calls `waitFor(EventX)` will transition when `EventX` is received.
-- If `EventX` was emitted earlier (before the workflow reached this stage), it is persisted and delivered immediately when the stage is entered.
+3. **Conditional transition** (`condition { onTrue / onFalse }`):
+   ```kotlin
+   flow<Order, OrderStage, OrderEvent> {
+       condition(::isManualReviewRequired) {
+           onTrue { stage(OrderStage.ManualReview) }
+           onFalse { stage(OrderStage.Processing) }
+       }
+   }
+   ```
+
+Event waiting semantics:
+- A stage with `onEvent(EventX)` transition moves forward when `EventX` is received.
+- If `EventX` was emitted earlier (before workflow reached this stage), it is persisted and consumed once the stage becomes eligible.
 
 ### Conditional Branching
-   ```kotlin
-   flow.condition(
-       predicate = { it.paymentMethod == PaymentMethod.CASH },
-       onTrue = { /* true flow */ },
-       onFalse = { /* false flow */ }
-   )
-   ```
-### Join Operations
+```kotlin
+condition(::isManualReviewRequired) {
+    onTrue { stage(OrderStage.ManualReview) }
+    onFalse { stage(OrderStage.Processing) }
+}
+```
 
-Reference already defined stages using `join()`:
-   ```kotlin
-   flow.waitFor(PaymentCompleted).join(ProcessingOrder)
-   ```
+### Joining branches
+
+Point a branch to an existing stage using `goTo(...)`:
+```kotlin
+condition(::needsEscalation) {
+    onTrue {
+        stage(OrderStage.Escalation)
+        goTo(OrderStage.Finalize)
+    }
+    onFalse { goTo(OrderStage.Finalize) }
+}
+```
+
+### DSL style conventions
+
+- Prefer linear event style when a stage has a single simple event transition:
+    ```kotlin
+    stage(WaitingForApproval)
+    onEvent(Approved)
+    stage(Finalized)
+    ```
+- Use `onEvent(EventX) { ... }` primarily when one stage handles multiple events and each event has its own branch.
 
 ### Action functions
 
@@ -139,60 +168,59 @@ Documentation refresh:
 ### Employee Onboarding
 
 ```kotlin
-        FlowBuilder<EmployeeOnboarding, EmployeeStage, EmployeeEvent>()
-            .condition(
-                predicate = ::isOnboardingAutomated,
-                onTrue = {
-                    stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
-                        .condition(
+    flow<EmployeeOnboarding, EmployeeStage, EmployeeEvent> {
+        condition(::isOnboardingAutomated) {
+            onTrue {
+                stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
+                condition(
+                    { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                    description = "isExecutiveRole || isSecurityClearanceRequired",
+                ) {
+                    onFalse {
+                        stage(ActivateStandardEmployee, actions::activateEmployee)
+                        stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
+                        stage(SendContractForSigning, actions::sendContractForSigning)
+                        stage(WaitingForEmployeeDocumentsSigned)
+                        onEvent(EmployeeDocumentsSigned)
+                        stage(WaitingForContractSigned)
+                        onEvent(ContractSigned)
+                        condition(
                             { it.isExecutiveRole || it.isSecurityClearanceRequired },
                             description = "isExecutiveRole || isSecurityClearanceRequired",
-                            onFalse = {
-                                stage(ActivateStandardEmployee, actions::activateEmployee)
-                                    .stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
-                                    .stage(SendContractForSigning, actions::sendContractForSigning)
-                                    .stage(WaitingForEmployeeDocumentsSigned)
-                                    .waitFor(EmployeeDocumentsSigned)
-                                    .stage(WaitingForContractSigned)
-                                    .waitFor(ContractSigned)
-                                    .condition(
-                                        { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                                        description = "isExecutiveRole || isSecurityClearanceRequired",
-                                        onTrue = {
-                                            stage(ActivateSpecializedEmployee, actions::activateEmployee)
-                                                .stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
-                                        },
-                                        onFalse = {
-                                            stage(WaitingForOnboardingCompletion)
-                                                .waitFor(OnboardingComplete)
-                                                .join(UpdateStatusInHRSystem)
-                                        },
-                                    )
-                            },
-                            onTrue = {
-                                stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
-                                    .condition(
-                                        ::isSecurityClearanceRequired,
-                                        onTrue = {
-                                            condition(
-                                                predicate = ::isFullOnboardingRequired,
-                                                onTrue = {
-                                                    stage(SetDepartmentAccess, actions::setDepartmentAccess)
-                                                        .join(GenerateEmployeeDocuments)
-                                                },
-                                                onFalse = { join(GenerateEmployeeDocuments) },
-                                            )
-                                        },
-                                        onFalse = { join(WaitingForContractSigned) },
-                                    )
-                            },
-                        )
-                },
-                onFalse = {
-                    join(WaitingForContractSigned)
-                },
-            )
-            .build()
+                        ) {
+                            onTrue {
+                                stage(ActivateSpecializedEmployee, actions::activateEmployee)
+                                stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
+                            }
+                            onFalse {
+                                stage(WaitingForOnboardingCompletion)
+                                onEvent(OnboardingComplete)
+                                goTo(UpdateStatusInHRSystem)
+                            }
+                        }
+                    }
+                    onTrue {
+                        stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
+                        condition(::isSecurityClearanceRequired) {
+                            onTrue {
+                                condition(predicate = ::isFullOnboardingRequired) {
+                                    onTrue {
+                                        stage(SetDepartmentAccess, actions::setDepartmentAccess)
+                                        goTo(GenerateEmployeeDocuments)
+                                    }
+                                    onFalse { goTo(GenerateEmployeeDocuments) }
+                                }
+                            }
+                            onFalse { goTo(WaitingForContractSigned) }
+                        }
+                    }
+                }
+            }
+            onFalse {
+                goTo(WaitingForContractSigned)
+            }
+        }
+    }
 ```
 
 ```mermaid
@@ -238,16 +266,14 @@ stateDiagram-v2
 ### Order Confirmation
 
 ```kotlin
-fun createOrderConfirmationFlow(): Flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-    return flow {
-        stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        stage(WaitingForConfirmation) {
-            onEvent(ConfirmedDigitally) {
-                stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-                stage(InformingCustomer, ::informCustomer)
-            }
-            onEvent(ConfirmedPhysically) { joinTo(InformingCustomer) }
+fun createOrderConfirmationFlow() = flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+    stage(InitializingConfirmation, ::initializeOrderConfirmation)
+    stage(WaitingForConfirmation) {
+        onEvent(ConfirmedDigitally) {
+            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+            stage(InformingCustomer, ::informCustomer)
         }
+        onEvent(ConfirmedPhysically) { goTo(InformingCustomer) }
     }
 }
 ```
@@ -273,8 +299,8 @@ stateDiagram-v2
 ### API
 
 * Defining flow - See [source/dsl.kt](source/dsl.kt):
-  * `Stage`, `Event`
-  * `FlowBuilder`, `StageBuilder`, `EventBuilder`, `Flow`.
+    * `Stage`, `Event`, `Flow`
+    * `flow { ... }`, `eventlessFlow { ... }`, `stage(...)`, `onEvent(...)`, `condition(...)`, `goTo(...)`.
 * Registering flows, starting flow instances, etc. - [source/FlowEngine.kt](source/FlowEngine.kt) (`FlowEngine`).
 * Interfaces that must be implemented by client [source/persistance.kt](source/persistance.kt):
   * `StatePersister`
@@ -388,7 +414,7 @@ Concurrency scenarios (cheat sheet):
 | Scenario                                                        | Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                                        |
 |-----------------------------------------------------------------|--------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | Two ticks processed concurrently for same instance              | No (if correctly implemented) | Double action execution; double stage advance; inconsistent state                            | Use an atomic `PENDING -> RUNNING` claim using CAS (`tryTransitionStageStatus(...)`) in persistence                           |
-| Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one `waitFor(...)`), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth                                             |
+| Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one `onEvent(...)` source stage), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth                                             |
 | External writer updates the same row while engine is processing |                                   Yes (GUI, notifications) | Potential lost updates; optimistic lock conflicts                                            | Options in case of JDBC persistence: 1) use optimistic locking (with merge or retries) 2) move engine state to separate table |
 
 

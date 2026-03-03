@@ -28,11 +28,10 @@ class FlowEngineErrorHandlingTest : BehaviorSpec({
             return s.copy(attempts = n)
         }
 
-        val flow = EventlessFlowBuilder<ErrorFlowState, ErrorFlowStage>()
-            .stage(ErrorFlowStage.Failing, ::flakyAction)
-            .stage(ErrorFlowStage.Done)
-            .end()
-            .build()
+        val flow = eventlessFlow<ErrorFlowState, ErrorFlowStage> {
+            stage(ErrorFlowStage.Failing, ::flakyAction)
+            stage(ErrorFlowStage.Done)
+        }
 
         val eventStore = InMemoryEventStore()
         val tickScheduler = ManualTickScheduler()
@@ -105,7 +104,7 @@ private class InMemoryStatePersister<T : Any> : StatePersister<T> {
         return instanceData
     }
 
-    override fun load(flowInstanceId: UUID): InstanceData<T> =
+    override fun load(flowInstanceId: UUID) =
         data[flowInstanceId] ?: error("Flow instance '$flowInstanceId' not found")
 }
 
@@ -127,5 +126,5 @@ private class InMemoryEventStore : EventStore {
         return StoredEvent(id = match.key, event = match.value.event)
     }
 
-    override fun delete(eventId: UUID): Boolean = rows.remove(eventId) != null
+    override fun delete(eventId: UUID) = rows.remove(eventId) != null
 }

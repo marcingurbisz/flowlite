@@ -1,12 +1,11 @@
 package io.flowlite.test
 
 import io.flowlite.Event
-import io.flowlite.Flow
-import io.flowlite.FlowBuilder
 import io.flowlite.InstanceData
 import io.flowlite.Stage
 import io.flowlite.StageStatus
 import io.flowlite.StatePersister
+import io.flowlite.flow
 import io.flowlite.test.EmployeeEvent.ContractSigned
 import io.flowlite.test.EmployeeEvent.EmployeeDocumentsSigned
 import io.flowlite.test.EmployeeEvent.OnboardingComplete
@@ -74,71 +73,67 @@ data class EmployeeOnboarding(
     val statusUpdatedInHR: Boolean = false,
 )
 
-fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions): Flow<EmployeeOnboarding, EmployeeStage, EmployeeEvent> {
-    val flow = // FLOW-DEFINITION-START
-        FlowBuilder<EmployeeOnboarding, EmployeeStage, EmployeeEvent>()
-            .condition(
-                predicate = ::isOnboardingAutomated,
-                onTrue = {
-                    stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
-                        .condition(
+fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions) = // FLOW-DEFINITION-START
+    flow<EmployeeOnboarding, EmployeeStage, EmployeeEvent> {
+        condition(::isOnboardingAutomated) {
+            onTrue {
+                stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
+                condition(
+                    { it.isExecutiveRole || it.isSecurityClearanceRequired },
+                    description = "isExecutiveRole || isSecurityClearanceRequired",
+                ) {
+                    onFalse {
+                        stage(ActivateStandardEmployee, actions::activateEmployee)
+                        stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
+                        stage(SendContractForSigning, actions::sendContractForSigning)
+                        stage(WaitingForEmployeeDocumentsSigned)
+                        onEvent(EmployeeDocumentsSigned)
+                        stage(WaitingForContractSigned)
+                        onEvent(ContractSigned)
+                        condition(
                             { it.isExecutiveRole || it.isSecurityClearanceRequired },
                             description = "isExecutiveRole || isSecurityClearanceRequired",
-                            onFalse = {
-                                stage(ActivateStandardEmployee, actions::activateEmployee)
-                                    .stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
-                                    .stage(SendContractForSigning, actions::sendContractForSigning)
-                                    .stage(WaitingForEmployeeDocumentsSigned)
-                                    .waitFor(EmployeeDocumentsSigned)
-                                    .stage(WaitingForContractSigned)
-                                    .waitFor(ContractSigned)
-                                    .condition(
-                                        { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                                        description = "isExecutiveRole || isSecurityClearanceRequired",
-                                        onTrue = {
-                                            stage(ActivateSpecializedEmployee, actions::activateEmployee)
-                                                .stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
-                                        },
-                                        onFalse = {
-                                            stage(WaitingForOnboardingCompletion)
-                                                .waitFor(OnboardingComplete)
-                                                .join(UpdateStatusInHRSystem)
-                                        },
-                                    )
-                            },
-                            onTrue = {
-                                stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
-                                    .condition(
-                                        ::isSecurityClearanceRequired,
-                                        onTrue = {
-                                            condition(
-                                                predicate = ::isFullOnboardingRequired,
-                                                onTrue = {
-                                                    stage(SetDepartmentAccess, actions::setDepartmentAccess)
-                                                        .join(GenerateEmployeeDocuments)
-                                                },
-                                                onFalse = { join(GenerateEmployeeDocuments) },
-                                            )
-                                        },
-                                        onFalse = { join(WaitingForContractSigned) },
-                                    )
-                            },
-                        )
-                },
-                onFalse = {
-                    join(WaitingForContractSigned)
-                },
-            )
-            .build()
-    // FLOW-DEFINITION-END
-    return flow
-}
+                        ) {
+                            onTrue {
+                                stage(ActivateSpecializedEmployee, actions::activateEmployee)
+                                stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
+                            }
+                            onFalse {
+                                stage(WaitingForOnboardingCompletion)
+                                onEvent(OnboardingComplete)
+                                goTo(UpdateStatusInHRSystem)
+                            }
+                        }
+                    }
+                    onTrue {
+                        stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
+                        condition(::isSecurityClearanceRequired) {
+                            onTrue {
+                                condition(predicate = ::isFullOnboardingRequired) {
+                                    onTrue {
+                                        stage(SetDepartmentAccess, actions::setDepartmentAccess)
+                                        goTo(GenerateEmployeeDocuments)
+                                    }
+                                    onFalse { goTo(GenerateEmployeeDocuments) }
+                                }
+                            }
+                            onFalse { goTo(WaitingForContractSigned) }
+                        }
+                    }
+                }
+            }
+            onFalse {
+                goTo(WaitingForContractSigned)
+            }
+        }
+    }
+// FLOW-DEFINITION-END
 
-private fun isOnboardingAutomated(employee: EmployeeOnboarding): Boolean = employee.isOnboardingAutomated
+private fun isOnboardingAutomated(employee: EmployeeOnboarding) = employee.isOnboardingAutomated
 
-private fun isSecurityClearanceRequired(employee: EmployeeOnboarding): Boolean = employee.isSecurityClearanceRequired
+private fun isSecurityClearanceRequired(employee: EmployeeOnboarding) = employee.isSecurityClearanceRequired
 
-private fun isFullOnboardingRequired(employee: EmployeeOnboarding): Boolean = employee.isFullOnboardingRequired
+private fun isFullOnboardingRequired(employee: EmployeeOnboarding) = employee.isFullOnboardingRequired
 
 class EmployeeOnboardingActions(
     private val repo: EmployeeOnboardingRepository,
@@ -295,7 +290,7 @@ object EmployeeOnboardingTestHooks {
         actionHooksByInstanceId[instanceId] = hooks
     }
 
-    fun get(instanceId: UUID): EmployeeOnboardingActionHooks? = actionHooksByInstanceId[instanceId]
+    fun get(instanceId: UUID) = actionHooksByInstanceId[instanceId]
 
     fun clear(instanceId: UUID) {
         actionHooksByInstanceId.remove(instanceId)

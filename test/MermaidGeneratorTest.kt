@@ -1,10 +1,9 @@
 package io.flowlite.test
 
 import io.flowlite.Event
-import io.flowlite.Flow
-import io.flowlite.FlowBuilder
 import io.flowlite.MermaidGenerator
 import io.flowlite.Stage
+import io.flowlite.flow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain
 
@@ -71,46 +70,49 @@ class MermaidGeneratorTest : BehaviorSpec({
     }
 })
 
-private fun createDiagramFlow(): Flow<DiagramState, DiagramStage, DiagramEvent> {
-    return FlowBuilder<DiagramState, DiagramStage, DiagramEvent>()
-        .condition(
+private fun createDiagramFlow() =
+    flow<DiagramState, DiagramStage, DiagramEvent> {
+        condition(
             predicate = { it.flag },
             description = "Is Ready",
-            onTrue = {
+        ) {
+            onTrue {
                 stage(DiagramStage.TrueStage, ::actionForTrueStage)
-                    .condition(
-                        predicate = { it.duplicate },
-                        description = "Is VIP",
-                        onTrue = { stage(DiagramStage.End) },
-                        onFalse = { stage(DiagramStage.AltEndTrue) },
-                    )
-            },
-            onFalse = {
+                condition(
+                    predicate = { it.duplicate },
+                    description = "Is VIP",
+                ) {
+                    onTrue { stage(DiagramStage.End) }
+                    onFalse { stage(DiagramStage.AltEndTrue) }
+                }
+            }
+            onFalse {
                 stage(DiagramStage.FalseStage)
-                    .waitFor(DiagramEvent.Trigger)
-                    .condition(
+                onEvent(DiagramEvent.Trigger) {
+                    condition(
                         predicate = { it.vip },
                         description = "Is VIP",
-                        onTrue = { stage(DiagramStage.AfterEvent) },
-                        onFalse = { stage(DiagramStage.AltEndFalse) },
-                    )
-            },
-        )
-        .build()
-}
+                    ) {
+                        onTrue { stage(DiagramStage.AfterEvent) }
+                        onFalse { stage(DiagramStage.AltEndFalse) }
+                    }
+                }
+            }
+        }
+    }
 
-private fun actionForTrueStage(state: DiagramState): DiagramState = state
+private fun actionForTrueStage(state: DiagramState) = state
 
 private data class InferredState(val ready: Boolean)
 
-private fun isReady(state: InferredState): Boolean = state.ready
+private fun isReady(state: InferredState) = state.ready
 
-private fun createInferredDescriptionFlow(): Flow<InferredState, DiagramStage, DiagramEvent> {
-    return FlowBuilder<InferredState, DiagramStage, DiagramEvent>()
-        .condition(
+private fun createInferredDescriptionFlow() =
+    flow<InferredState, DiagramStage, DiagramEvent> {
+        condition(
             predicate = ::isReady,
-            onTrue = { stage(DiagramStage.TrueStage) },
-            onFalse = { stage(DiagramStage.FalseStage) },
-        )
-        .build()
-}
+        ) {
+            onTrue { stage(DiagramStage.TrueStage) }
+            onFalse { stage(DiagramStage.FalseStage) }
+        }
+    }

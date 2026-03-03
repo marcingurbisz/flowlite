@@ -20,11 +20,11 @@ class FlowEngine(
     private val persisters = mutableMapOf<String, StatePersister<Any>>()
 
     @Suppress("UNCHECKED_CAST")
-    fun <T : Any, S : Stage, E : Event> registerFlow(
+    fun <T : Any, S, E : Event> registerFlow(
         flowId: String,
         flow: Flow<T, S, E>,
         statePersister: StatePersister<T>,
-    ) {
+    ) where S : Enum<S>, S : Stage {
         log.info { "registerFlow(flowId=$flowId)" }
         flows[flowId] = flow as Flow<Any, Stage, Event>
         persisters[flowId] = statePersister as StatePersister<Any>

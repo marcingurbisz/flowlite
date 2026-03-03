@@ -1,10 +1,6 @@
 package io.flowlite.test
 
 import io.flowlite.Event
-import io.flowlite.EventlessFlow
-import io.flowlite.EventlessFlowBuilder
-import io.flowlite.Flow
-import io.flowlite.FlowBuilder
 import io.flowlite.FlowEngine
 import io.flowlite.InstanceData
 import io.flowlite.Stage
@@ -12,6 +8,8 @@ import io.flowlite.StageStatus
 import io.flowlite.StatePersister
 import io.flowlite.StoredEvent
 import io.flowlite.TickScheduler
+import io.flowlite.eventlessFlow
+import io.flowlite.flow
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
@@ -171,7 +169,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
             val engine = FlowEngine(eventStore, tickScheduler).also {
-                it.registerFlow("event-join-condition", eventJoinToConditionOnlyFlow(), persister)
+                it.registerFlow("event-join-condition", eventGoToConditionOnlyFlow(), persister)
             }
 
             val id = engine.startInstance("event-join-condition", EngineState(flag = false))
@@ -324,7 +322,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             return instanceData
         }
 
-        override fun load(flowInstanceId: UUID): InstanceData<T> =
+        override fun load(flowInstanceId: UUID) =
             data[flowInstanceId] ?: error("Flow instance '$flowInstanceId' not found")
     }
 
@@ -356,77 +354,72 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             return StoredEvent(id = match.key, event = match.value.event)
         }
 
-        override fun delete(eventId: UUID): Boolean = rows.remove(eventId) != null
+        override fun delete(eventId: UUID) = rows.remove(eventId) != null
     }
 
     private companion object {
-        fun terminalFlow(): EventlessFlow<EngineState, EngineStage> =
-            EventlessFlowBuilder<EngineState, EngineStage>()
-            .stage(EngineStage.Start)
-            .end()
-            .build()
+        fun terminalFlow() =
+            eventlessFlow<EngineState, EngineStage> {
+                stage(EngineStage.Start)
+            }
 
-        fun eventConditionFlow(): Flow<EngineState, EngineStage, EngineEvent> =
-            FlowBuilder<EngineState, EngineStage, EngineEvent>()
-            .stage(EngineStage.Wait)
-            .waitFor(EngineEvent.Go)
-            .condition(
-                predicate = { it.flag },
-                description = "flag",
-                onTrue = { stage(EngineStage.TrueStage) },
-                onFalse = { stage(EngineStage.FalseStage) },
-            )
-            .build()
-
-        fun waitingFlow(): Flow<EngineState, EngineStage, EngineEvent> =
-            FlowBuilder<EngineState, EngineStage, EngineEvent>()
-            .stage(EngineStage.Wait)
-            .waitFor(EngineEvent.Go)
-            .stage(EngineStage.Done)
-            .end()
-            .build()
-
-        fun terminalNoActionFlow(): EventlessFlow<EngineState, EngineStage> =
-            EventlessFlowBuilder<EngineState, EngineStage>()
-            .stage(EngineStage.Terminal)
-            .end()
-            .build()
-
-        fun automaticTransitionFlow(): EventlessFlow<EngineState, EngineStage> =
-            EventlessFlowBuilder<EngineState, EngineStage>()
-            .stage(EngineStage.Start)
-            .stage(EngineStage.Done)
-            .end()
-            .build()
-
-        fun conditionOnlyFlow(): EventlessFlow<EngineState, EngineStage> =
-            EventlessFlowBuilder<EngineState, EngineStage>()
-            .stage(EngineStage.Start)
-            .condition(
-                predicate = { it.flag },
-                description = "flag",
-                onTrue = { stage(EngineStage.TrueStage) },
-                onFalse = { stage(EngineStage.FalseStage) },
-            )
-            .build()
-
-        fun eventJoinToConditionOnlyFlow(): Flow<EngineState, EngineStage, EngineEvent> {
-            val b = FlowBuilder<EngineState, EngineStage, EngineEvent>()
-
-            b.stage(EngineStage.Wait)
-                .waitFor(EngineEvent.Go)
-                .join(EngineStage.Conditional)
-
-            b.stage(EngineStage.Conditional)
-                .condition(
+        fun eventConditionFlow() =
+            flow<EngineState, EngineStage, EngineEvent> {
+                stage(EngineStage.Wait)
+                onEvent(EngineEvent.Go)
+                condition(
                     predicate = { it.flag },
                     description = "flag",
-                    onTrue = { stage(EngineStage.TrueStage) },
-                    onFalse = { stage(EngineStage.FalseStage) },
-                )
+                ) {
+                    onTrue { stage(EngineStage.TrueStage) }
+                    onFalse { stage(EngineStage.FalseStage) }
+                }
+            }
 
-            return b.build()
-        }
+        fun waitingFlow() =
+            flow<EngineState, EngineStage, EngineEvent> {
+                stage(EngineStage.Wait)
+                onEvent(EngineEvent.Go)
+                stage(EngineStage.Done)
+            }
+
+        fun terminalNoActionFlow() =
+            eventlessFlow<EngineState, EngineStage> {
+                stage(EngineStage.Terminal)
+            }
+
+        fun automaticTransitionFlow() =
+            eventlessFlow<EngineState, EngineStage> {
+                stage(EngineStage.Start)
+                stage(EngineStage.Done)
+            }
+
+        fun conditionOnlyFlow() =
+            eventlessFlow<EngineState, EngineStage> {
+                stage(EngineStage.Start)
+                condition(
+                    predicate = { it.flag },
+                    description = "flag",
+                ) {
+                    onTrue { stage(EngineStage.TrueStage) }
+                    onFalse { stage(EngineStage.FalseStage) }
+                }
+            }
+
+        fun eventGoToConditionOnlyFlow() =
+            flow<EngineState, EngineStage, EngineEvent> {
+                stage(EngineStage.Wait)
+                onEvent(EngineEvent.Go) { goTo(EngineStage.Conditional) }
+
+                stage(EngineStage.Conditional)
+                condition(
+                    predicate = { it.flag },
+                    description = "flag",
+                ) {
+                    onTrue { stage(EngineStage.TrueStage) }
+                    onFalse { stage(EngineStage.FalseStage) }
+                }
+            }
 
         fun removePersisterRegistration(engine: FlowEngine, flowId: String) {
             val field = engine.javaClass.getDeclaredField("persisters").apply { isAccessible = true }

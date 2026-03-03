@@ -224,7 +224,7 @@ object NoopHistoryStore : HistoryStore {
     override fun append(entry: HistoryEntry) = Unit
 }
 
-internal fun historyValueOf(value: Any): String =
+internal fun historyValueOf(value: Any) =
     (value as? Enum<*>)?.name ?: value.toString()
 
 private val historyLog = KotlinLogging.logger {}

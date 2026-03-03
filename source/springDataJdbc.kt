@@ -146,9 +146,9 @@ class SpringDataJdbcTickScheduler(
             }
     }
 
-    override fun isAutoStartup(): Boolean = true
+    override fun isAutoStartup() = true
 
-    override fun isRunning(): Boolean = pollerThread != null && !shutdownInitiated.get()
+    override fun isRunning() = pollerThread != null && !shutdownInitiated.get()
 }
 
 // --- Event store ---
@@ -306,7 +306,7 @@ class SpringDataJdbcHistoryStore(
     }
 }
 
-fun FlowLiteHistoryRow.toHistoryEntry(): HistoryEntry =
+fun FlowLiteHistoryRow.toHistoryEntry() =
     when (type) {
         HistoryEntryType.Started -> HistoryEntry.Started(
             flowId = flowId,

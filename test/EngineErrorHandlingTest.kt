@@ -15,7 +15,7 @@ private data class ErrorFlowState(
     val attempts: Int = 0,
 )
 
-class FlowEngineErrorHandlingTest : BehaviorSpec({
+class EngineErrorHandlingTest : BehaviorSpec({
 
     given("a flow with an action that fails once") {
         val flowId = "error-handling"

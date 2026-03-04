@@ -23,7 +23,7 @@ private enum class ReceiverEvent : Event {
 
 private data class ReceiverState(val flag: Boolean)
 
-class FlowReceiverDslTest : BehaviorSpec({
+class DslTest : BehaviorSpec({
     given("receiver-lambda DSL") {
         `when`("building an event-driven flow") {
             val built = flow<ReceiverState, ReceiverStage, ReceiverEvent> {

@@ -29,7 +29,7 @@ private enum class EngineStage : Stage {
 private enum class EngineEvent : Event { Go }
 private data class EngineState(val flag: Boolean)
 
-class FlowEngineBehaviorTest : BehaviorSpec({
+class EngineBehaviorTest : BehaviorSpec({
     given("flow engine tick handling") {
         `when`("the flow consists of a terminal stage without action") {
             val eventStore = InMemoryEventStore()

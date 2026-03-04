@@ -23,7 +23,7 @@ private data class HistWaitState(val x: Int = 0)
 private enum class HistThrowStage : Stage { Start, Terminal }
 private data class HistThrowState(val x: Int = 0)
 
-class FlowEngineHistoryTest : BehaviorSpec({
+class EngineHistoryTest : BehaviorSpec({
 
     given("history store integration") {
         `when`("a flow auto-transitions and completes") {

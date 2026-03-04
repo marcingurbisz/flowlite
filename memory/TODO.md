@@ -104,9 +104,20 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Remove Flow as perfix in test files/classes. Also FlowReceiverDslTest -> DslTest
+## [DONE 2026-03-04] Remove Flow as perfix in test files/classes. Also FlowReceiverDslTest -> DslTest
+Completed changes:
+- Renamed flow-prefixed test files/classes:
+	- `FlowDslValidationTest` -> `DslValidationTest`
+	- `FlowActionContextTest` -> `ActionContextTest`
+	- `FlowEngineBehaviorTest` -> `EngineBehaviorTest`
+	- `FlowEngineErrorHandlingTest` -> `EngineErrorHandlingTest`
+	- `FlowEngineHistoryTest` -> `EngineHistoryTest`
+	- `FlowReceiverDslTest` -> `DslTest`
 
-## Worth to keep FlowActionContextTest as separate file? Don't they fit to FlowActionContextTest or other file?
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
+
+## Worth to keep ActionContextTest as separate file? Don't they fit to ActionContextTest or other file?
 
 ## Rewrite playwright test to Kotlin
 Add taking screenshots on error + recording video (always)

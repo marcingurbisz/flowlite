@@ -12,7 +12,7 @@ private enum class DslStage : Stage { Start, Next, Other }
 private enum class DslEvent : Event { Go }
 private data class DslState(val value: Int = 0)
 
-class FlowDslValidationTest : BehaviorSpec({
+class DslValidationTest : BehaviorSpec({
     given("flow DSL validation") {
         `when`("building a flow with no initial stage or condition") {
             then("it fails") {

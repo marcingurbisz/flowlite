@@ -29,7 +29,7 @@ private class ContextAwareActions {
     }
 }
 
-class FlowActionContextTest : BehaviorSpec({
+class ActionContextTest : BehaviorSpec({
     given("a stage action defined with ActionContext receiver") {
         val flowId = "context-aware-action"
         val actions = ContextAwareActions()

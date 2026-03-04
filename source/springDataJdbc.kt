@@ -243,42 +243,12 @@ interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
             select id, row_number() over (partition by flow_id, flow_instance_id order by occurred_at desc, id desc) as rn
             from flowlite_history
             where (:flowId is null or flow_id = :flowId)
-              and type in ('Started', 'StageChanged', 'Error')
+              and type in (:types)
         ) ranked on ranked.id = h.id
         where ranked.rn = 1
         """,
     )
-    fun findLatestStageRows(flowId: String?): List<FlowLiteHistoryRow>
-
-    @Query(
-        """
-        select h.*
-        from flowlite_history h
-        join (
-            select id, row_number() over (partition by flow_id, flow_instance_id order by occurred_at desc, id desc) as rn
-            from flowlite_history
-            where (:flowId is null or flow_id = :flowId)
-              and type in ('Started', 'StatusChanged', 'Cancelled', 'Error')
-        ) ranked on ranked.id = h.id
-        where ranked.rn = 1
-        """,
-    )
-    fun findLatestStatusRows(flowId: String?): List<FlowLiteHistoryRow>
-
-    @Query(
-        """
-        select h.*
-        from flowlite_history h
-        join (
-            select id, row_number() over (partition by flow_id, flow_instance_id order by occurred_at desc, id desc) as rn
-            from flowlite_history
-            where (:flowId is null or flow_id = :flowId)
-              and type = 'Error'
-        ) ranked on ranked.id = h.id
-        where ranked.rn = 1
-        """,
-    )
-    fun findLatestErrorRows(flowId: String?): List<FlowLiteHistoryRow>
+    fun findLatestRows(flowId: String?, types: Collection<String>): List<FlowLiteHistoryRow>
 }
 
 class SpringDataJdbcHistoryStore(

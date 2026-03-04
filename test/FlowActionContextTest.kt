@@ -1,66 +1,66 @@
 package io.flowlite.test
 
-import io.flowlite.*
+import io.flowlite.ActionContext
+import io.flowlite.Event
+import io.flowlite.Engine
+import io.flowlite.InstanceData
+import io.flowlite.Stage
+import io.flowlite.StageStatus
+import io.flowlite.StatePersister
+import io.flowlite.StoredEvent
+import io.flowlite.TickScheduler
+import io.flowlite.eventlessFlow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.assertions.throwables.shouldThrow
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicInteger
 
-private enum class ErrorFlowStage : Stage { Failing, Done }
+private enum class ActionContextStage : Stage {
+    Start,
+    Done,
+}
 
-private data class ErrorFlowState(
-    val stage: ErrorFlowStage,
-    val stageStatus: StageStatus = StageStatus.Pending,
-    val attempts: Int = 0,
+private data class ActionContextState(
+    val seenFlowInstanceId: UUID? = null,
 )
 
-class FlowEngineErrorHandlingTest : BehaviorSpec({
+private class ContextAwareActions {
+    fun captureFlowInstanceId(context: ActionContext, state: ActionContextState): ActionContextState {
+        return state.copy(seenFlowInstanceId = context.flowInstanceId)
+    }
+}
 
-    given("a flow with an action that fails once") {
-        val flowId = "error-handling"
+class FlowActionContextTest : BehaviorSpec({
+    given("a stage action defined with ActionContext receiver") {
+        val flowId = "context-aware-action"
+        val actions = ContextAwareActions()
 
-        val attempts = AtomicInteger(0)
-
-        fun flakyAction(s: ErrorFlowState): ErrorFlowState {
-            val n = attempts.incrementAndGet()
-            if (n == 1) error("boom")
-            return s.copy(attempts = n)
+        val flow = eventlessFlow<ActionContextState, ActionContextStage> {
+            stage(ActionContextStage.Start, actions::captureFlowInstanceId)
+            stage(ActionContextStage.Done)
         }
 
-        val flow = eventlessFlow<ErrorFlowState, ErrorFlowStage> {
-            stage(ErrorFlowStage.Failing, ::flakyAction)
-            stage(ErrorFlowStage.Done)
-        }
-
-        val eventStore = InMemoryEventStore()
-        val tickScheduler = ManualTickScheduler()
-        val persister = InMemoryStatePersister<ErrorFlowState>()
-
-        val engine = Engine(eventStore = eventStore, tickScheduler = tickScheduler).also {
+        val eventStore = ContextInMemoryEventStore()
+        val tickScheduler = ContextManualTickScheduler()
+        val persister = ContextInMemoryStatePersister<ActionContextState>()
+        val engine = Engine(eventStore, tickScheduler).also {
             it.registerFlow(flowId, flow, persister)
         }
 
-        `when`("processing the first tick") {
-            val flowInstanceId = engine.startInstance(flowId, ErrorFlowState(stage = ErrorFlowStage.Failing))
-            shouldThrow<IllegalStateException> {
-                tickScheduler.drain()
-            }
+        `when`("processing ticks") {
+            val flowInstanceId = engine.startInstance(flowId, ActionContextState())
+            tickScheduler.drain()
 
-            then("it moves the stage to ERROR") {
-                engine.getStatus(flowId, flowInstanceId) shouldBe (ErrorFlowStage.Failing to StageStatus.Error)
-            }
-
-            then("retry enqueues and eventually completes when the action succeeds") {
-                engine.retry(flowId, flowInstanceId)
-                tickScheduler.drain()
-                engine.getStatus(flowId, flowInstanceId) shouldBe (ErrorFlowStage.Done to StageStatus.Completed)
+            then("it exposes the active flow instance id inside action context") {
+                val saved = persister.load(flowInstanceId)
+                saved.stage shouldBe ActionContextStage.Done
+                saved.stageStatus shouldBe StageStatus.Completed
+                saved.state.seenFlowInstanceId shouldBe flowInstanceId
             }
         }
     }
 })
 
-private class ManualTickScheduler : TickScheduler {
+private class ContextManualTickScheduler : TickScheduler {
     private var handler: ((String, UUID) -> Unit)? = null
     private val queue = ArrayDeque<Pair<String, UUID>>()
 
@@ -83,7 +83,7 @@ private class ManualTickScheduler : TickScheduler {
     }
 }
 
-private class InMemoryStatePersister<T : Any> : StatePersister<T> {
+private class ContextInMemoryStatePersister<T : Any> : StatePersister<T> {
     private val data = mutableMapOf<UUID, InstanceData<T>>()
 
     override fun tryTransitionStageStatus(
@@ -108,8 +108,12 @@ private class InMemoryStatePersister<T : Any> : StatePersister<T> {
         data[flowInstanceId] ?: error("Flow instance '$flowInstanceId' not found")
 }
 
-private class InMemoryEventStore : EventStore {
-    private data class Row(val flowId: String, val flowInstanceId: UUID, val event: Event)
+private class ContextInMemoryEventStore : io.flowlite.EventStore {
+    private data class Row(
+        val flowId: String,
+        val flowInstanceId: UUID,
+        val event: Event,
+    )
 
     private val rows = linkedMapOf<UUID, Row>()
 

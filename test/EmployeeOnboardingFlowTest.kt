@@ -1,6 +1,6 @@
 package io.flowlite.test
 
-import io.flowlite.FlowEngine
+import io.flowlite.Engine
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.HistoryEntryType
 import io.flowlite.MermaidGenerator
@@ -19,7 +19,7 @@ import org.springframework.beans.factory.getBean
 class EmployeeOnboardingFlowTest : BehaviorSpec({
     extension(TestApplicationExtension)
 
-    val engine = TestApplicationExtension.context().getBean<FlowEngine>()
+    val engine = TestApplicationExtension.context().getBean<Engine>()
     val repo = TestApplicationExtension.context().getBean<EmployeeOnboardingRepository>()
     val historyRepo = TestApplicationExtension.context().getBean<FlowLiteHistoryRepository>()
 

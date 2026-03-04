@@ -12,7 +12,7 @@ import org.springframework.beans.factory.getBean
 class OrderConfirmationTest : BehaviorSpec({
     extension(TestApplicationExtension)
 
-    val engine = TestApplicationExtension.context().getBean<FlowEngine>()
+    val engine = TestApplicationExtension.context().getBean<Engine>()
     val persister = TestApplicationExtension.context().getBean<SpringDataOrderConfirmationPersister>()
 
     given("an order confirmation flow") {

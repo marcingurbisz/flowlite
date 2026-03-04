@@ -1,6 +1,7 @@
 package io.flowlite.test
 
 import io.flowlite.Event
+import io.flowlite.ActionContext
 import io.flowlite.InstanceData
 import io.flowlite.Stage
 import io.flowlite.StageStatus
@@ -138,9 +139,9 @@ private fun isFullOnboardingRequired(employee: EmployeeOnboarding) = employee.is
 class EmployeeOnboardingActions(
     private val repo: EmployeeOnboardingRepository,
 ) {
-    fun createUserInSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
+    fun createUserInSystem(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
         employeeOnboardingLog.info { "Creating user account in system" }
-        val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
+        val id = context.flowInstanceId
 
         EmployeeOnboardingTestHooks.get(id)?.createUserInSystemHooks?.let { hooks ->
             hooks.entered.countDown()
@@ -162,9 +163,9 @@ class EmployeeOnboardingActions(
         return savedEntity
     }
 
-    fun activateEmployee(employee: EmployeeOnboarding): EmployeeOnboarding {
+    fun activateEmployee(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
         employeeOnboardingLog.info { "Activating employee account" }
-        val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
+        val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
             id = id,
             initial = employee,
@@ -173,9 +174,9 @@ class EmployeeOnboardingActions(
         }
     }
 
-    fun updateSecurityClearanceLevels(employee: EmployeeOnboarding): EmployeeOnboarding {
+    fun updateSecurityClearanceLevels(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
         employeeOnboardingLog.info { "Updating security clearance levels" }
-        val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
+        val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
             id = id,
             initial = employee,
@@ -184,9 +185,9 @@ class EmployeeOnboardingActions(
         }
     }
 
-    fun setDepartmentAccess(employee: EmployeeOnboarding): EmployeeOnboarding {
+    fun setDepartmentAccess(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
         employeeOnboardingLog.info { "Setting department access permissions" }
-        val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
+        val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
             id = id,
             initial = employee,
@@ -195,9 +196,9 @@ class EmployeeOnboardingActions(
         }
     }
 
-    fun generateEmployeeDocuments(employee: EmployeeOnboarding): EmployeeOnboarding {
+    fun generateEmployeeDocuments(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
         employeeOnboardingLog.info { "Generating employee documents" }
-        val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
+        val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
             id = id,
             initial = employee,
@@ -206,9 +207,9 @@ class EmployeeOnboardingActions(
         }
     }
 
-    fun sendContractForSigning(employee: EmployeeOnboarding): EmployeeOnboarding {
+    fun sendContractForSigning(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
         employeeOnboardingLog.info { "Sending contract for signing" }
-        val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
+        val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
             id = id,
             initial = employee,
@@ -217,9 +218,9 @@ class EmployeeOnboardingActions(
         }
     }
 
-    fun updateStatusInHRSystem(employee: EmployeeOnboarding): EmployeeOnboarding {
+    fun updateStatusInHRSystem(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
         employeeOnboardingLog.info { "Updating status in HR system" }
-        val id = requireNotNull(employee.id) { "EmployeeOnboarding.id must be set when action is executed" }
+        val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
             id = id,
             initial = employee,

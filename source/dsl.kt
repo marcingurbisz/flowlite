@@ -2,6 +2,7 @@ package io.flowlite
 
 import kotlin.reflect.KFunction
 import kotlin.reflect.KFunction1
+import java.util.UUID
 
 interface Stage
 
@@ -11,6 +12,13 @@ interface Event
 annotation class FlowLiteDsl
 
 enum class NoEvent : Event
+
+data class ActionContext(
+    val flowId: String,
+    val flowInstanceId: UUID,
+)
+
+typealias StageAction<T> = (ActionContext, T) -> T?
 
 internal enum class ScopeKind {
     Root,
@@ -50,6 +58,21 @@ internal fun inferConditionDescription(predicate: Any): String {
     return if (isLikelySynthetic) "condition" else candidate
 }
 
+internal fun inferActionName(action: Any): String {
+    val asString = action.toString()
+    val rawName = when {
+        asString.startsWith("fun ") -> asString.substringAfter("fun ").substringBefore("(")
+        else -> asString.substringBefore("(").substringBefore("$")
+    }
+    val candidate = rawName.substringAfterLast(".")
+    val isLikelySynthetic = candidate.isBlank() ||
+        candidate.startsWith("Function") ||
+        asString.contains("$") ||
+        asString.contains("lambda", ignoreCase = true) ||
+        asString.contains("anonymous", ignoreCase = true)
+    return if (isLikelySynthetic) "action" else candidate
+}
+
 @FlowLiteDsl
 class FlowDslScope<T : Any, S, E>
 internal constructor(
@@ -67,7 +90,11 @@ internal constructor(
     }
 
     fun stage(stage: S, action: KFunction1<T, T?>) {
-        stageInternal(stage, action as ((T) -> T?))
+        stageInternal(stage, { _, state -> action(state) }, action.name)
+    }
+
+    fun stage(stage: S, action: StageAction<T>) {
+        stageInternal(stage, action, inferActionName(action))
     }
 
     @JvmName("stageWithBlock")
@@ -97,7 +124,20 @@ internal constructor(
         }
     }
 
-    private fun stageInternal(stage: S, action: ((item: T) -> T?)?) {
+    fun stage(stage: S, action: StageAction<T>, block: FlowDslScope<T, S, E>.() -> Unit) {
+        stage(stage, action)
+        val source = requireNotNull(currentStageDefinition)
+        stageBlockSource = source
+        try {
+            block()
+        } finally {
+            stageBlockSource = null
+            flatEventContext = null
+            currentStageDefinition = source
+        }
+    }
+
+    private fun stageInternal(stage: S, action: StageAction<T>?, actionName: String? = null) {
         val flat = flatEventContext
         val definition = if (flat == null) {
             val current = currentStageDefinition
@@ -108,9 +148,9 @@ internal constructor(
                 )
             }
             val linkFrom = current?.takeIf { isStageClean(it) }
-            state.defineStage(stage, action, linkFrom)
+            state.defineStage(stage, action, actionName, linkFrom)
         } else {
-            val branchDefinition = state.applyEventStage(flat, stage, action)
+            val branchDefinition = state.applyEventStage(flat, stage, action, actionName)
             flatEventContext = flat.copy(currentBranchDefinition = branchDefinition)
             branchDefinition
         }
@@ -226,11 +266,19 @@ internal constructor(
         flowScope.stage(stage, action)
     }
 
+    fun stage(stage: S, action: StageAction<T>) {
+        flowScope.stage(stage, action)
+    }
+
     fun stage(stage: S, block: EventBranchDslScope<T, S, E>.() -> Unit) {
-        flowScope.stage(stage) { EventBranchDslScope(this).apply(block) }
+        flowScope.stage(stage, block = { EventBranchDslScope(this).apply(block) })
     }
 
     fun stage(stage: S, action: KFunction1<T, T?>, block: EventBranchDslScope<T, S, E>.() -> Unit) {
+        flowScope.stage(stage, action) { EventBranchDslScope(this).apply(block) }
+    }
+
+    fun stage(stage: S, action: StageAction<T>, block: EventBranchDslScope<T, S, E>.() -> Unit) {
         flowScope.stage(stage, action) { EventBranchDslScope(this).apply(block) }
     }
 
@@ -281,7 +329,8 @@ enum class TransitionType {
 
 data class StageDefinition<T : Any, S : Stage, E : Event>(
     val stage: S,
-    val action: ((item: T) -> T?)? = null,
+    val action: StageAction<T>? = null,
+    val actionName: String? = null,
 ) {
     val eventHandlers = mutableMapOf<E, EventHandler<T, S, E>>()
     var conditionHandler: ConditionHandler<T, S>? = null
@@ -332,7 +381,8 @@ internal class MutableFlowDefinition<T : Any, S, E> where S : Enum<S>, S : Stage
 
     fun defineStage(
         stage: S,
-        action: ((item: T) -> T?)?,
+        action: StageAction<T>?,
+        actionName: String?,
         linkFrom: StageDefinition<T, S, E>?,
     ): StageDefinition<T, S, E> {
         linkFrom?.let {
@@ -348,7 +398,7 @@ internal class MutableFlowDefinition<T : Any, S, E> where S : Enum<S>, S : Stage
             error("Stage $stage already defined - each stage should be defined only once")
         }
 
-        return StageDefinition<T, S, E>(stage, action).also {
+        return StageDefinition<T, S, E>(stage, action, actionName).also {
             stages[stage] = it
         }
     }
@@ -356,16 +406,17 @@ internal class MutableFlowDefinition<T : Any, S, E> where S : Enum<S>, S : Stage
     fun applyEventStage(
         flat: FlatEventContext<T, S, E>,
         stage: S,
-        action: ((item: T) -> T?)?,
+        action: StageAction<T>?,
+        actionName: String?,
     ): StageDefinition<T, S, E> {
         if (flat.currentBranchDefinition == null) {
             ensureCanUseTransition(flat.sourceStageDefinition, TransitionType.Event)
-            val target = defineStage(stage, action, null)
+            val target = defineStage(stage, action, actionName, null)
             flat.sourceStageDefinition.eventHandlers[flat.event] = EventHandler(flat.event, stage, null)
             return target
         }
 
-        return defineStage(stage, action, flat.currentBranchDefinition)
+        return defineStage(stage, action, actionName, flat.currentBranchDefinition)
     }
 
     fun applyEventJoin(flat: FlatEventContext<T, S, E>, targetStage: S) {

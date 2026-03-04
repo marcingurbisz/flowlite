@@ -1,6 +1,6 @@
 package io.flowlite.test
 
-import io.flowlite.FlowEngine
+import io.flowlite.Engine
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteTickRepository
 import io.flowlite.PendingEventRepository
@@ -10,6 +10,9 @@ import io.flowlite.SpringDataJdbcTickScheduler
 import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.cockpitRouter
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import io.kotest.core.listeners.ProjectListener
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistrarDsl
@@ -19,6 +22,7 @@ import org.springframework.boot.runApplication
 import org.springframework.context.ApplicationContextInitializer
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.support.GenericApplicationContext
+import org.springframework.core.env.Environment
 import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories
 import org.springframework.data.relational.core.mapping.NamingStrategy
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty
@@ -85,7 +89,7 @@ object Beans {
             io.flowlite.MermaidGenerator()
         }
 
-        registerBean<FlowEngine> {
+        registerBean<Engine> {
             val eventStore = bean<SpringDataJdbcEventStore>()
             val tickScheduler = bean<SpringDataJdbcTickScheduler>()
             val historyStore = bean<SpringDataJdbcHistoryStore>()
@@ -93,15 +97,22 @@ object Beans {
             val onboardingPersister = bean<SpringDataEmployeeOnboardingPersister>()
             val onboardingActions = bean<EmployeeOnboardingActions>()
 
-            FlowEngine(eventStore = eventStore, tickScheduler = tickScheduler, historyStore = historyStore).also { engine ->
+            Engine(eventStore = eventStore, tickScheduler = tickScheduler, historyStore = historyStore).also { engine ->
                 engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)
                 engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(onboardingActions), onboardingPersister)
             }
         }
 
         registerBean {
+            ShowcaseFlowSeeder(
+                engine = bean<Engine>(),
+                enabled = bean<Environment>().getProperty("flowlite.showcase.enabled", Boolean::class.java, false),
+            )
+        }
+
+        registerBean {
             CockpitService(
-                engine = bean<FlowEngine>(),
+                engine = bean<Engine>(),
                 mermaid = bean<io.flowlite.MermaidGenerator>(),
                 historyRepo = bean<FlowLiteHistoryRepository>(),
             )
@@ -115,6 +126,7 @@ object Beans {
 
 private fun startApplication(webType: String) = runApplication<TestApplication>(
     "--spring.main.web-application-type=$webType",
+    "--flowlite.showcase.enabled=${webType == "servlet"}",
 ) {
     addInitializers(
         ApplicationContextInitializer<GenericApplicationContext> { gac ->
@@ -122,6 +134,67 @@ private fun startApplication(webType: String) = runApplication<TestApplication>(
                 .register(Beans.registrar())
         },
     )
+}
+
+private class ShowcaseFlowSeeder(
+    private val engine: Engine,
+    enabled: Boolean,
+) : AutoCloseable {
+    private val sequence = AtomicLong(0)
+    private val executor =
+        if (enabled) {
+            Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "flowlite-showcase-seeder").apply { isDaemon = true }
+            }
+        } else {
+            null
+        }
+
+    init {
+        if (enabled) {
+            seedOnce()
+            executor?.scheduleAtFixedRate(::seedOnceSafely, 5, 5, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun seedOnceSafely() {
+        runCatching { seedOnce() }
+    }
+
+    private fun seedOnce() {
+        val index = sequence.incrementAndGet()
+        val confirmationType = if (index % 2L == 0L) ConfirmationType.Digital else ConfirmationType.Physical
+
+        val order = OrderConfirmation(
+            stage = OrderConfirmationStage.InitializingConfirmation,
+            orderNumber = "SHOW-$index",
+            confirmationType = confirmationType,
+            customerName = "Showcase Customer $index",
+        )
+        val orderId = engine.startInstance(ORDER_CONFIRMATION_FLOW_ID, order)
+        val orderEvent =
+            if (confirmationType == ConfirmationType.Digital) {
+                OrderConfirmationEvent.ConfirmedDigitally
+            } else {
+                OrderConfirmationEvent.ConfirmedPhysically
+            }
+        engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, orderId, orderEvent)
+
+        val employee = EmployeeOnboarding(
+            stage = EmployeeStage.CreateUserInSystem,
+            isOnboardingAutomated = true,
+            isExecutiveRole = false,
+            isSecurityClearanceRequired = false,
+        )
+        val employeeId = engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, employee)
+        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.EmployeeDocumentsSigned)
+        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.ContractSigned)
+        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.OnboardingComplete)
+    }
+
+    override fun close() {
+        executor?.shutdownNow()
+    }
 }
 
 fun startTestApplication() = startApplication("none")

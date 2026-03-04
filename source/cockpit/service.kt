@@ -1,6 +1,6 @@
 package io.flowlite.cockpit
 
-import io.flowlite.FlowEngine
+import io.flowlite.Engine
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
 import io.flowlite.HistoryEntryType
@@ -8,13 +8,63 @@ import io.flowlite.MermaidGenerator
 import io.flowlite.StageStatus
 import io.flowlite.historyValueOf
 import io.flowlite.toHistoryEntry
+import java.time.Instant
 import java.util.UUID
 
+data class CockpitFlowDto(
+    val flowId: String,
+    val diagram: String,
+    val stages: List<String>,
+    val notCompletedCount: Int,
+    val errorCount: Int,
+    val activeCount: Int,
+    val completedCount: Int,
+)
+
+data class CockpitInstanceDto(
+    val flowId: String,
+    val flowInstanceId: UUID,
+    val stage: String?,
+    val status: StageStatus?,
+    val lastUpdatedAt: Instant,
+    val lastErrorMessage: String? = null,
+)
+
+data class CockpitErrorGroupDto(
+    val flowId: String,
+    val stage: String?,
+    val count: Int,
+    val instanceIds: List<UUID>,
+)
+
+enum class CockpitInstanceBucket {
+    Active,
+    Error,
+    Completed,
+}
+
 class CockpitService(
-    private val engine: FlowEngine,
+    private val engine: Engine,
     private val mermaid: MermaidGenerator,
     private val historyRepo: FlowLiteHistoryRepository,
 ) {
+    private companion object {
+        val STAGE_ROW_TYPES = listOf(
+            HistoryEntryType.Started.name,
+            HistoryEntryType.StageChanged.name,
+            HistoryEntryType.Error.name,
+        )
+
+        val STATUS_ROW_TYPES = listOf(
+            HistoryEntryType.Started.name,
+            HistoryEntryType.StatusChanged.name,
+            HistoryEntryType.Cancelled.name,
+            HistoryEntryType.Error.name,
+        )
+
+        val ERROR_ROW_TYPES = listOf(HistoryEntryType.Error.name)
+    }
+
     fun listFlows(): List<CockpitFlowDto> {
         val registered = engine.registeredFlows()
         val counts = countsByFlow(registered.keys)
@@ -35,9 +85,9 @@ class CockpitService(
     }
 
     fun listInstances(flowId: String? = null, bucket: CockpitInstanceBucket? = null): List<CockpitInstanceDto> {
-        val stageByKey = historyRepo.findLatestStageRows(flowId).associateBy { it.asKey() }
-        val statusByKey = historyRepo.findLatestStatusRows(flowId).associateBy { it.asKey() }
-        val lastErrorByKey = historyRepo.findLatestErrorRows(flowId).associateBy { it.asKey() }
+        val stageByKey = historyRepo.findLatestRows(flowId, STAGE_ROW_TYPES).associateBy { it.asKey() }
+        val statusByKey = historyRepo.findLatestRows(flowId, STATUS_ROW_TYPES).associateBy { it.asKey() }
+        val lastErrorByKey = historyRepo.findLatestRows(flowId, ERROR_ROW_TYPES).associateBy { it.asKey() }
 
         val keys = (stageByKey.keys + statusByKey.keys + lastErrorByKey.keys).toSet()
 
@@ -92,24 +142,8 @@ class CockpitService(
             .sortedWith(compareBy<CockpitErrorGroupDto> { it.flowId }.thenBy { it.stage ?: "" })
     }
 
-    fun timeline(flowId: String, flowInstanceId: UUID): List<CockpitHistoryEntryDto> {
+    fun timeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow> {
         return historyRepo.findTimeline(flowId = flowId, flowInstanceId = flowInstanceId)
-            .map { it.toHistoryEntry() }
-            .map {
-                CockpitHistoryEntryDto(
-                    occurredAt = it.occurredAt,
-                    type = it.type,
-                    stage = it.stage,
-                    fromStage = it.fromStage,
-                    toStage = it.toStage,
-                    fromStatus = it.fromStatus?.name,
-                    toStatus = it.toStatus?.name,
-                    event = it.event,
-                    errorType = it.errorType,
-                    errorMessage = it.errorMessage,
-                    errorStackTrace = it.errorStackTrace,
-                )
-            }
     }
 
     fun retry(flowId: String, flowInstanceId: UUID) {

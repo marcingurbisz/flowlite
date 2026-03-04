@@ -1,7 +1,7 @@
 package io.flowlite.test
 
 import io.flowlite.Event
-import io.flowlite.FlowEngine
+import io.flowlite.Engine
 import io.flowlite.InstanceData
 import io.flowlite.Stage
 import io.flowlite.StageStatus
@@ -35,7 +35,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("terminal-no-action", terminalNoActionFlow(), persister)
             }
 
@@ -51,7 +51,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("auto-transition", automaticTransitionFlow(), persister)
             }
 
@@ -67,7 +67,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("condition-only", conditionOnlyFlow(), persister)
             }
 
@@ -83,7 +83,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("running-flow", terminalFlow(), persister)
             }
 
@@ -109,7 +109,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = ClaimRejectingPersister(InMemoryStatePersister<EngineState>())
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("claim-flow", terminalFlow(), persister)
             }
 
@@ -135,7 +135,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("event-condition-flow", eventConditionFlow(), persister)
             }
 
@@ -152,7 +152,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("wait-flow", waitingFlow(), persister)
             }
 
@@ -168,7 +168,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("event-join-condition", eventGoToConditionOnlyFlow(), persister)
             }
 
@@ -185,7 +185,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("undefined-stage", terminalNoActionFlow(), persister)
             }
 
@@ -213,7 +213,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow("retry-not-error", terminalNoActionFlow(), persister)
             }
 
@@ -229,7 +229,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
         `when`("calling sendEvent and startInstance for an unregistered flow") {
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
-            val engine = FlowEngine(eventStore, tickScheduler)
+            val engine = Engine(eventStore, tickScheduler)
             val id = UUID.randomUUID()
 
             then("they throw") {
@@ -247,7 +247,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
             val persister = InMemoryStatePersister<EngineState>()
-            val engine = FlowEngine(eventStore, tickScheduler).also {
+            val engine = Engine(eventStore, tickScheduler).also {
                 it.registerFlow(flowId, terminalNoActionFlow(), persister)
             }
 
@@ -267,7 +267,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
         `when`("getting status for an unregistered flow") {
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
-            val engine = FlowEngine(eventStore, tickScheduler)
+            val engine = Engine(eventStore, tickScheduler)
             val id = UUID.randomUUID()
 
             then("it throws") {
@@ -421,7 +421,7 @@ class FlowEngineBehaviorTest : BehaviorSpec({
                 }
             }
 
-        fun removePersisterRegistration(engine: FlowEngine, flowId: String) {
+        fun removePersisterRegistration(engine: Engine, flowId: String) {
             val field = engine.javaClass.getDeclaredField("persisters").apply { isAccessible = true }
             @Suppress("UNCHECKED_CAST")
             val map = field.get(engine) as MutableMap<String, Any>

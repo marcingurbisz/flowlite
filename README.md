@@ -146,7 +146,8 @@ condition(::needsEscalation) {
 
 ### Action functions
 
-- Signature: `(state: T) -> T?`
+- Signature: `(context: ActionContext, state: T) -> T?` (state-only function references like `::myAction` are still supported)
+    - `ActionContext` exposes `flowId` and `flowInstanceId` for runtime metadata.
     - Return a new state to persist or `null` to indicate no state changes.
     - Any changes to engine managed fields will be overridden before engine persist them.
 - Guidelines:
@@ -301,7 +302,7 @@ stateDiagram-v2
 * Defining flow - See [source/dsl.kt](source/dsl.kt):
     * `Stage`, `Event`, `Flow`
     * `flow { ... }`, `eventlessFlow { ... }`, `stage(...)`, `onEvent(...)`, `condition(...)`, `goTo(...)`.
-* Registering flows, starting flow instances, etc. - [source/FlowEngine.kt](source/FlowEngine.kt) (`FlowEngine`).
+* Registering flows, starting flow instances, etc. - [source/Engine.kt](source/Engine.kt) (`Engine`).
 * Interfaces that must be implemented by client [source/persistance.kt](source/persistance.kt):
   * `StatePersister`
   * `EventStore`
@@ -371,7 +372,7 @@ FlowLite depends on three required application-provided interfaces, one optional
 - `EventStore`: stores pending events (mailbox semantics: events can arrive early and get consumed later).
 - `TickScheduler`: delivers ticks (“wake-ups”) that tell the engine to attempt progress for `(flowId, flowInstanceId)`.
 - `HistoryStore` (optional): stores durable history entries for observability (stage/status transitions, errors, and selected runtime events).
-- `(state: T) -> T?`: actions run when entering a stage.
+- `(context: ActionContext, state: T) -> T?` (or state-only `::action` function reference): actions run when entering a stage.
 
 `StatePersister<T>`:
 - `load(flowInstanceId)` → current state (including engine fields); throws if the flow instance does not exist
@@ -393,7 +394,7 @@ FlowLite depends on three required application-provided interfaces, one optional
 
 `TickScheduler` contract:
 - `setTickHandler(handler)`
-    - Called once by the engine during `FlowEngine` initialization to register the function that processes ticks.
+    - Called once by the engine during `Engine` initialization to register the function that processes ticks.
 - `scheduleTick(flowId, flowInstanceId)`
     - Enqueues a tick for `(flowId, flowInstanceId)`.
     - At-least-once delivery is required; duplicates are allowed.
@@ -402,7 +403,7 @@ FlowLite depends on three required application-provided interfaces, one optional
 - Error handling:
     - If the tick handler throws, the scheduler should log and continue delivering future ticks (optionally with backoff). It must not crash permanently.
 
-`(state: T) -> T?`:
+`(context: ActionContext, state: T) -> T?` (or state-only `::action` function reference):
 - If an action needs to persist business changes (i.e. has side effects on the flow instance business data), it is recommended that the action persists those changes itself and then returns the updated state to the engine.
 - An action may also return updated state without saving and rely on the engine calling `StatePersister.save(...)` for persistence. In this case, the persister must handle concurrency correctly (optimistic locking / merge rules). See the concurrency notes below.
 - If the action returns `null` engine will call `StatePersister.save(...)` with last loaded copy (before action execution) of data updated with stage advances.

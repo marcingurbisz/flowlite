@@ -178,7 +178,7 @@ class MermaidGenerator {
         
         // Add stage description with action if present
         stageDefinition.action?.let { action ->
-            val actionName = extractActionName(action)
+            val actionName = stageDefinition.actionName ?: extractActionName(action)
             sb.append("    $currentStage: $currentStage $actionName()\n")
         }
         

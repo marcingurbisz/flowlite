@@ -3,7 +3,7 @@ package io.flowlite
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
 
-class FlowEngine(
+class Engine(
     private val eventStore: EventStore,
     private val tickScheduler: TickScheduler,
     private val historyStore: HistoryStore = NoopHistoryStore,
@@ -228,7 +228,7 @@ class FlowEngine(
                 }
 
                 if (def.action != null) {
-                    val result = def.action(data.state)
+                    val result = def.action(ActionContext(flowId = flowId, flowInstanceId = flowInstanceId), data.state)
                     val newState = result ?: data.state
 
                     if (def.isTerminal()) {

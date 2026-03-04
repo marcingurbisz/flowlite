@@ -33,3 +33,5 @@ local.properties
 
 /cockpit-ui/node_modules/
 /cockpit-ui/dist/
+/cockpit-ui/playwright-report/
+/cockpit-ui/test-results/

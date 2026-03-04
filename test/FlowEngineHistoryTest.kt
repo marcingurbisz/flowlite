@@ -1,7 +1,7 @@
 package io.flowlite.test
 
 import io.flowlite.Event
-import io.flowlite.FlowEngine
+import io.flowlite.Engine
 import io.flowlite.HistoryEntry
 import io.flowlite.HistoryEntryType
 import io.flowlite.HistoryStore
@@ -37,7 +37,7 @@ class FlowEngineHistoryTest : BehaviorSpec({
             val persister = HistoryInMemoryStatePersister<HistAutoState>()
             val history = CapturingHistoryStore()
 
-            val engine = FlowEngine(eventStore, tickScheduler, history).also {
+            val engine = Engine(eventStore, tickScheduler, history).also {
                 it.registerFlow("hist-auto", flow, persister)
             }
 
@@ -75,7 +75,7 @@ class FlowEngineHistoryTest : BehaviorSpec({
             val persister = HistoryInMemoryStatePersister<HistWaitState>()
             val history = CapturingHistoryStore()
 
-            val engine = FlowEngine(eventStore, tickScheduler, history).also {
+            val engine = Engine(eventStore, tickScheduler, history).also {
                 it.registerFlow("hist-wait", flow, persister)
             }
 
@@ -108,7 +108,7 @@ class FlowEngineHistoryTest : BehaviorSpec({
                 }
             }
 
-            val engine = FlowEngine(eventStore, tickScheduler, throwingHistory).also {
+            val engine = Engine(eventStore, tickScheduler, throwingHistory).also {
                 it.registerFlow("hist-throw", flow, persister)
             }
 

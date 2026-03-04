@@ -240,7 +240,7 @@ interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
         select h.*
         from flowlite_history h
         join (
-            select id, row_number() over (partition by flow_id, flow_instance_id order by occurred_at desc, id desc) as rn
+            select id, row_number() over (partition by flow_id, flow_instance_id, type order by occurred_at desc, id desc) as rn
             from flowlite_history
             where (:flowId is null or flow_id = :flowId)
               and type in (:types)
@@ -248,7 +248,7 @@ interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
         where ranked.rn = 1
         """,
     )
-    fun findLatestRows(flowId: String?, types: Collection<String>): List<FlowLiteHistoryRow>
+    fun findLatestRowsPerType(flowId: String?, types: Collection<String>): List<FlowLiteHistoryRow>
 }
 
 class SpringDataJdbcHistoryStore(

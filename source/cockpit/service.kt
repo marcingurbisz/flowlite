@@ -49,20 +49,26 @@ class CockpitService(
     private val historyRepo: FlowLiteHistoryRepository,
 ) {
     private companion object {
-        val STAGE_ROW_TYPES = listOf(
-            HistoryEntryType.Started.name,
-            HistoryEntryType.StageChanged.name,
-            HistoryEntryType.Error.name,
+        val STAGE_ROW_TYPES = setOf(
+            HistoryEntryType.Started,
+            HistoryEntryType.StageChanged,
+            HistoryEntryType.Error,
         )
 
-        val STATUS_ROW_TYPES = listOf(
-            HistoryEntryType.Started.name,
-            HistoryEntryType.StatusChanged.name,
-            HistoryEntryType.Cancelled.name,
-            HistoryEntryType.Error.name,
+        val STATUS_ROW_TYPES = setOf(
+            HistoryEntryType.Started,
+            HistoryEntryType.StatusChanged,
+            HistoryEntryType.Cancelled,
+            HistoryEntryType.Error,
         )
 
-        val ERROR_ROW_TYPES = listOf(HistoryEntryType.Error.name)
+        val ERROR_ROW_TYPES = setOf(HistoryEntryType.Error)
+
+        val INSTANCE_SUMMARY_ROW_TYPES = (STAGE_ROW_TYPES + STATUS_ROW_TYPES + ERROR_ROW_TYPES)
+            .map { it.name }
+
+        val ROW_RECENCY = compareBy<FlowLiteHistoryRow> { it.occurredAt }
+            .thenBy { it.id?.toString() ?: "" }
     }
 
     fun listFlows(): List<CockpitFlowDto> {
@@ -85,16 +91,13 @@ class CockpitService(
     }
 
     fun listInstances(flowId: String? = null, bucket: CockpitInstanceBucket? = null): List<CockpitInstanceDto> {
-        val stageByKey = historyRepo.findLatestRows(flowId, STAGE_ROW_TYPES).associateBy { it.asKey() }
-        val statusByKey = historyRepo.findLatestRows(flowId, STATUS_ROW_TYPES).associateBy { it.asKey() }
-        val lastErrorByKey = historyRepo.findLatestRows(flowId, ERROR_ROW_TYPES).associateBy { it.asKey() }
+        val rowsByKey = historyRepo.findLatestRowsPerType(flowId, INSTANCE_SUMMARY_ROW_TYPES)
+            .groupBy { it.asKey() }
 
-        val keys = (stageByKey.keys + statusByKey.keys + lastErrorByKey.keys).toSet()
-
-        val summaries = keys.mapNotNull { key ->
-            val stage = stageByKey[key]
-            val status = statusByKey[key]
-            val error = lastErrorByKey[key]
+        val summaries = rowsByKey.mapNotNull { (key, rows) ->
+            val stage = rows.latestOfType(STAGE_ROW_TYPES)
+            val status = rows.latestOfType(STATUS_ROW_TYPES)
+            val error = rows.latestOfType(ERROR_ROW_TYPES)
 
             val lastUpdated = listOfNotNull(stage?.occurredAt, status?.occurredAt, error?.occurredAt)
                 .maxOrNull()
@@ -186,6 +189,10 @@ class CockpitService(
     private fun FlowLiteHistoryRow.asKey() = InstanceKey(flowId = flowId, flowInstanceId = flowInstanceId)
 
     private fun FlowLiteHistoryRow.stageValue() = toStage ?: stage
+
+    private fun List<FlowLiteHistoryRow>.latestOfType(types: Set<HistoryEntryType>) = asSequence()
+        .filter { it.type in types }
+        .maxWithOrNull(ROW_RECENCY)
 
     private fun FlowLiteHistoryRow.statusValue(): StageStatus? {
         val entry = toHistoryEntry()

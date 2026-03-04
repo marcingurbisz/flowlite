@@ -78,10 +78,14 @@ Validation:
 - Full run: `./gradlew test` → BUILD SUCCESSFUL.
 - Coverage snapshot after tests: total line coverage `76%` and `io.flowlite.cockpit` line coverage `68%`.
 
-## Why we query for all this separatelly?
-    val stageByKey = historyRepo.findLatestRows(flowId, STAGE_ROW_TYPES).associateBy { it.asKey() }
-    val statusByKey = historyRepo.findLatestRows(flowId, STATUS_ROW_TYPES).associateBy { it.asKey() }
-    val lastErrorByKey = historyRepo.findLatestRows(flowId, ERROR_ROW_TYPES).associateBy { it.asKey() }
+## [DONE 2026-03-04] Why we query for all this separatelly?
+Completed changes:
+- Reworked cockpit instance summary loading to use one repository call instead of three.
+- Added `FlowLiteHistoryRepository.findLatestRowsPerType(flowId, types)` that ranks latest rows per `(flow_id, flow_instance_id, type)`.
+- Updated `CockpitService.listInstances(...)` to group once-fetched rows by instance key and derive latest stage/status/error rows in memory.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Remove duplication between inferActionName and inferConditionDescription
 

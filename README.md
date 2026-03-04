@@ -450,6 +450,23 @@ External updates exist (GUI / notifications / other services):
 - `./gradlew clean` - Clean build artifacts
 - `./gradlew check` - Run all verification tasks
 
+### Public test instance deployment (free/cheap)
+
+Recommendation: use **Render** free web service with this repo's `render.yaml` + `Dockerfile`.
+
+- Why not GitHub-only hosting: GitHub Pages is static-only, so it cannot run this Spring/JVM app.
+- Is GitHub still an option: yes, as source control + CI/CD trigger (Render can deploy directly from a GitHub repo).
+- Trade-off: Render free services can sleep when idle, so expect cold starts.
+
+Quick start:
+- Push this repo to GitHub.
+- In Render, create a **Blueprint** from the repo (it will pick up `render.yaml`).
+- Deploy the created `flowlite-test-instance` service.
+- Open `/cockpit` on the generated `onrender.com` URL.
+
+Alternative low-cost option:
+- Railway works well too, but after trial it has a monthly minimum charge.
+
 ### Coverage (Local + GitHub)
 
 Local coverage output:

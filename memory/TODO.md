@@ -137,5 +137,18 @@ Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 - Note: Playwright host dependency warnings were emitted in this container, but test execution succeeded.
 
-## Expose test instance publicly available - part 2
-By exposing test instance I meant finding some provider that we can use to deploy and expose (not serve it from localhost). I'd like to be free (or very cheap). Is github an option here?
+## [DONE 2026-03-04] Expose test instance publicly available - part 2
+Completed changes:
+- Selected **Render free web service** as the default provider for a public test instance.
+- Added deploy blueprint: `render.yaml`.
+- Added container runtime definition: `Dockerfile`.
+- Added `.dockerignore` for faster/smaller image builds.
+- Documented provider decision and quick-start deployment steps in `README.md`.
+
+Decision summary:
+- GitHub Pages is static-only, so it is **not** suitable for hosting this JVM/Spring service.
+- GitHub is still a good option for repository hosting and CI/CD trigger (Render deploy from GitHub repo).
+- Render free tier is suitable for demo exposure with expected idle sleep/cold-start trade-off.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.

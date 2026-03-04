@@ -125,8 +125,17 @@ Rationale:
 - It validates one focused contract (`ActionContext` propagation into stage actions) independent of broader engine behavior.
 - Keeping it isolated avoids mixing low-level contract checks into larger scenario suites and keeps failure diagnosis faster.
 
-## Rewrite playwright test to Kotlin
-Add taking screenshots on error + recording video (always)
+## [DONE 2026-03-04] Rewrite playwright test to Kotlin
+Completed changes:
+- Added Kotlin Playwright E2E test: `test/CockpitPlaywrightTest.kt`.
+- Added test dependency: `com.microsoft.playwright:playwright:1.58.0`.
+- Implemented screenshot capture on failure (`build/reports/playwright/screenshots`).
+- Enabled always-on video recording via Playwright context (`build/reports/playwright/videos`).
+
+Validation:
+- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
+- `./gradlew test` → BUILD SUCCESSFUL.
+- Note: Playwright host dependency warnings were emitted in this container, but test execution succeeded.
 
 ## Expose test instance publicly available - part 2
 By exposing test instance I meant finding some provider that we can use to deploy and expose (not serve it from localhost). I'd like to be free (or very cheap). Is github an option here?

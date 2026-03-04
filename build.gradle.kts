@@ -57,6 +57,7 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-data-jdbc:4.0.3")
     testImplementation("org.springframework.boot:spring-boot-starter-jdbc:4.0.3")
     testImplementation("org.springframework.boot:spring-boot-starter-web:4.0.3")
+    testImplementation("com.microsoft.playwright:playwright:1.58.0")
     testImplementation("com.h2database:h2:2.2.224")
     testImplementation("com.github.kagkarlsson:db-scheduler:16.7.0")
 }

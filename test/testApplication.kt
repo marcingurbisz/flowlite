@@ -7,6 +7,7 @@ import io.flowlite.PendingEventRepository
 import io.flowlite.SpringDataJdbcEventStore
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.SpringDataJdbcTickScheduler
+import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.cockpitRouter
 import java.util.UUID
@@ -116,6 +117,10 @@ object Beans {
                 mermaid = bean<io.flowlite.MermaidGenerator>(),
                 historyRepo = bean<FlowLiteHistoryRepository>(),
             )
+        }
+
+        registerBean {
+            CockpitUiStaticConfig()
         }
 
         registerBean<RouterFunction<ServerResponse>> {

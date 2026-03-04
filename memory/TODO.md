@@ -95,7 +95,14 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## CockpitUiStaticConfig - move under source/cockpit? This may be usefull for library clients I guess.
+## [DONE 2026-03-04] CockpitUiStaticConfig - move under source/cockpit? This may be usefull for library clients I guess.
+Completed changes:
+- Moved `CockpitUiStaticConfig` from `test/` to `source/cockpit/CockpitUiStaticConfig.kt`.
+- Kept behavior unchanged (`/cockpit`, root files, and `/assets/**` mappings).
+- Wired the reusable config bean from `test/testApplication.kt`.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Remove Flow as perfix in test files/classes. Also FlowReceiverDslTest -> DslTest
 

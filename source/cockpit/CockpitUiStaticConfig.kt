@@ -1,16 +1,17 @@
-package io.flowlite.test
+package io.flowlite.cockpit
 
+import java.nio.file.Path
 import java.nio.file.Paths
-import org.springframework.context.annotation.Configuration
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
-@Configuration(proxyBeanMethods = false)
-class CockpitUiStaticConfig : WebMvcConfigurer {
+class CockpitUiStaticConfig(
+    private val distPath: Path = Paths.get("cockpit-ui", "dist"),
+) : WebMvcConfigurer {
     override fun addResourceHandlers(registry: ResourceHandlerRegistry) {
-        val distPath = Paths.get("cockpit-ui", "dist").toAbsolutePath().normalize()
-        val distAssetsPath = distPath.resolve("assets")
-        val distLocation = distPath.toUri().toString().let { if (it.endsWith("/")) it else "$it/" }
+        val normalizedDistPath = distPath.toAbsolutePath().normalize()
+        val distAssetsPath = normalizedDistPath.resolve("assets")
+        val distLocation = normalizedDistPath.toUri().toString().let { if (it.endsWith("/")) it else "$it/" }
         val distAssetsLocation = distAssetsPath.toUri().toString().let { if (it.endsWith("/")) it else "$it/" }
 
         registry.addResourceHandler("/cockpit", "/cockpit/**")

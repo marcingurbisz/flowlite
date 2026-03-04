@@ -38,13 +38,21 @@ data class Flow<T : Any, S : Stage, E : Event>(
 }
 
 internal fun inferConditionDescription(predicate: Any): String {
-    val kFunction = predicate as? KFunction<*>
+    return inferCallableName(predicate, fallback = "condition")
+}
+
+internal fun inferActionName(action: Any): String {
+    return inferCallableName(action, fallback = "action")
+}
+
+private fun inferCallableName(value: Any, fallback: String): String {
+    val kFunction = value as? KFunction<*>
     if (kFunction != null) {
         val name = kFunction.name
         if (name.isNotBlank() && name != "<anonymous>") return name
     }
 
-    val asString = predicate.toString()
+    val asString = value.toString()
     val rawName = when {
         asString.startsWith("fun ") -> asString.substringAfter("fun ").substringBefore("(")
         else -> asString.substringBefore("(").substringBefore("$")
@@ -55,22 +63,7 @@ internal fun inferConditionDescription(predicate: Any): String {
         asString.contains("$") ||
         asString.contains("lambda", ignoreCase = true) ||
         asString.contains("anonymous", ignoreCase = true)
-    return if (isLikelySynthetic) "condition" else candidate
-}
-
-internal fun inferActionName(action: Any): String {
-    val asString = action.toString()
-    val rawName = when {
-        asString.startsWith("fun ") -> asString.substringAfter("fun ").substringBefore("(")
-        else -> asString.substringBefore("(").substringBefore("$")
-    }
-    val candidate = rawName.substringAfterLast(".")
-    val isLikelySynthetic = candidate.isBlank() ||
-        candidate.startsWith("Function") ||
-        asString.contains("$") ||
-        asString.contains("lambda", ignoreCase = true) ||
-        asString.contains("anonymous", ignoreCase = true)
-    return if (isLikelySynthetic) "action" else candidate
+    return if (isLikelySynthetic) fallback else candidate
 }
 
 @FlowLiteDsl

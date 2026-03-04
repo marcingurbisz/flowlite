@@ -87,7 +87,13 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Remove duplication between inferActionName and inferConditionDescription
+## [DONE 2026-03-04] Remove duplication between inferActionName and inferConditionDescription
+Completed changes:
+- Introduced shared helper `inferCallableName(value, fallback)` in `source/dsl.kt`.
+- Reused the helper from both `inferConditionDescription(...)` and `inferActionName(...)`.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## CockpitUiStaticConfig - move under source/cockpit? This may be usefull for library clients I guess.
 

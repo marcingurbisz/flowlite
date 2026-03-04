@@ -117,7 +117,13 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Worth to keep ActionContextTest as separate file? Don't they fit to ActionContextTest or other file?
+## [DONE 2026-03-04] Worth to keep ActionContextTest as separate file? Don't they fit to ActionContextTest or other file?
+Decision:
+- Keep `ActionContextTest` as a separate file.
+
+Rationale:
+- It validates one focused contract (`ActionContext` propagation into stage actions) independent of broader engine behavior.
+- Keeping it isolated avoids mixing low-level contract checks into larger scenario suites and keeps failure diagnosis faster.
 
 ## Rewrite playwright test to Kotlin
 Add taking screenshots on error + recording video (always)

@@ -1,23 +1,52 @@
 # Interaction Log
 
 Template:
-- Date – [What was done]. Outcome: [Result].
+- Date – [Short description of item].
+  - Outcome: [What was done].
+  - Learning (optional): [What was discovered].
 
 ## Entries
 
-- 2026-03-04 – Executed one IEF loop on highest-priority TODO (action context for stage actions): added `ActionContext` to DSL/runtime, migrated onboarding actions to context-aware form, added `FlowActionContextTest`, updated docs (`README.md`, `AGENTS.md`) and memory (`TODO.md`, `LEARNINGS.md`). Outcome: implementation completed and validated with `./gradlew test` (BUILD SUCCESSFUL).
-- 2026-03-04 – Executed next IEF loop item (history model deduplication): removed `CockpitHistoryEntryDto` and made cockpit timeline API return `FlowLiteHistoryRow` directly. Outcome: duplicate mapping removed and full test suite passed (`./gradlew test`).
-- 2026-03-04 – Executed next IEF loop item (engine rename): renamed `FlowEngine` to `Engine`, moved file to `source/Engine.kt`, and updated source/test/docs references. Outcome: rename completed and full suite passed (`./gradlew test`).
-- 2026-03-04 – Executed next IEF loop item (cockpit file move): moved cockpit API DTO/enum declarations from `source/cockpit/api.kt` into `source/cockpit/service.kt` and deleted `api.kt`. Outcome: structure simplified and tests passed (`./gradlew test`).
-- 2026-03-04 – Executed next IEF loop item (showcase app): added servlet-only demo seeding in `test/testApplication.kt` to create order-confirmation and employee-onboarding instances on startup and every 5s; verified with tests and live runtime checks. Outcome: `runTestApp` now drives visible cockpit activity and API/visual smoke checks passed.
-- 2026-03-04 – Executed next IEF loop item (history query review): simplified `FlowLiteHistoryRepository` by replacing three near-identical latest-row queries with one parameterized query (`findLatestRows(flowId, types)`), and updated cockpit service type groups. Outcome: query surface reduced and full tests passed.
-- 2026-03-04 – Executed next IEF loop item (Playwright tests): added E2E setup/tests in `cockpit-ui`, fixed static asset routing in `CockpitUiStaticConfig` for proper UI rendering, and verified both frontend and backend suites. Outcome: `npm run test:e2e` passed (2 tests), and `./gradlew test` remained green.
-- 2026-03-04 – Executed next IEF loop item (public exposure): finalized and validated `tools/exposeTestInstance.sh` to automate `runTestApp` startup, readiness wait, localhost.run tunnel creation, and cleanup. Outcome: script produced a public HTTPS URL in dry-run and correctly released port `8080` after termination.
-- 2026-03-04 – Executed next IEF loop item (more coverage): added `CockpitServiceTest` covering instance aggregation, bucket filtering, error grouping, flow counters/diagrams, and timeline projection. Outcome: focused suite and full suite passed (`./gradlew test --tests io.flowlite.test.CockpitServiceTest`, `./gradlew test`), raising cockpit package coverage substantially.
-- 2026-03-04 – Executed next IEF loop item (query consolidation): replaced the three separate latest-row cockpit reads with one per-type latest-row query (`findLatestRowsPerType`) and in-memory selection of latest stage/status/error rows per instance. Outcome: simpler call pattern in `CockpitService.listInstances(...)` with identical behavior, validated by `./gradlew test`.
-- 2026-03-04 – Executed next IEF loop item (DSL infer-name deduplication): removed duplication between `inferConditionDescription(...)` and `inferActionName(...)` by extracting shared helper `inferCallableName(...)`. Outcome: simpler DSL utility code and full suite remained green (`./gradlew test`).
-- 2026-03-04 – Executed next IEF loop item (CockpitUiStaticConfig move): moved cockpit static-resource configuration from test package into reusable `source/cockpit` and wired it explicitly in test app beans. Outcome: same static routing behavior with reusable location for clients, validated by `./gradlew test`.
-- 2026-03-04 – Executed next IEF loop item (remove Flow test prefixes): renamed flow-prefixed test files/classes (including `FlowReceiverDslTest` -> `DslTest`) for cleaner naming consistency. Outcome: all tests still pass (`./gradlew test`).
-- 2026-03-04 – Executed next IEF loop item (ActionContext test placement): decided to keep `ActionContextTest` as a dedicated file rather than folding it into broader suites. Outcome: contract-level coverage remains isolated and easier to diagnose.
-- 2026-03-04 – Executed next IEF loop item (Playwright rewrite to Kotlin): added `CockpitPlaywrightTest` with screenshot-on-failure and always-on video recording, plus Playwright Java dependency in Gradle tests. Outcome: targeted and full suites passed; container emitted Playwright host dependency warnings but did not block execution.
-- 2026-03-04 – Executed next IEF loop item (public provider selection): evaluated GitHub/Render/Railway/Fly constraints, selected Render free web service for hosted test instance, and added deployment artifacts (`render.yaml`, `Dockerfile`, `.dockerignore`) plus README guidance. Outcome: provider decision is codified in-repo and validated with `./gradlew test` (BUILD SUCCESSFUL).
+- 2026-03-04 – Action context for stage actions.
+  - Outcome: Added `ActionContext` support in DSL/runtime, migrated onboarding actions, and validated with `./gradlew test`.
+  - Learning: Receiver-style action overloads (`ActionContext.(T) -> T?`) can conflict with existing receiver-lambda DSL APIs and create ambiguity for `::action` references.
+- 2026-03-04 – History model deduplication.
+  - Outcome: Removed `CockpitHistoryEntryDto` and returned `FlowLiteHistoryRow` directly from cockpit timeline APIs.
+- 2026-03-04 – Engine rename.
+  - Outcome: Renamed `FlowEngine` to `Engine`, moved source to `source/Engine.kt`, and updated source/tests/docs.
+- 2026-03-04 – Cockpit API declarations move.
+  - Outcome: Moved cockpit DTO/enum declarations from `source/cockpit/api.kt` into `source/cockpit/service.kt` and deleted `api.kt`.
+- 2026-03-04 – Showcase app seeding.
+  - Outcome: Added servlet-only demo seeding in `test/testApplication.kt` and verified cockpit activity/API checks.
+  - Learning: Demo/background generation should be feature-flagged so shared non-web test contexts are not polluted.
+- 2026-03-04 – History query review.
+  - Outcome: Replaced duplicated latest-row queries with parameterized `findLatestRows(flowId, types)` and shared type groups.
+- 2026-03-04 – Playwright tests in `cockpit-ui`.
+  - Outcome: Added Playwright setup/tests, fixed static asset serving, and kept both E2E + Gradle suites green.
+  - Learning: Asset routing must point to real Vite output subpaths (like `dist/assets`) to avoid JS/CSS 404 and blank UI.
+- 2026-03-04 – Public exposure script.
+  - Outcome: Added and validated `tools/exposeTestInstance.sh` for automated localhost.run tunnel bring-up and cleanup.
+- 2026-03-04 – Cockpit coverage expansion.
+  - Outcome: Added `CockpitServiceTest` coverage for instance aggregation, error grouping, counters/diagrams, and timeline projections.
+  - Learning: In Kotest `BehaviorSpec`, fixture setup inside `when` can be reset by cleanup hooks because each `then` is a separate test.
+- 2026-03-04 – Query consolidation.
+  - Outcome: Replaced three cockpit latest-row reads with single `findLatestRowsPerType` + in-memory projection.
+  - Learning: One query can still support latest stage/status/error derivation when SQL ranks by `(flow, instance, type)`.
+- 2026-03-04 – DSL infer-name deduplication.
+  - Outcome: Extracted shared `inferCallableName(...)` helper and reused it in action/condition description inference.
+  - Learning: Shared fallback-aware callable-name inference avoids drift in synthetic-lambda detection rules.
+- 2026-03-04 – `CockpitUiStaticConfig` move.
+  - Outcome: Moved static config from `test/` to reusable `source/cockpit` and wired it explicitly in test app beans.
+  - Learning: Reusable Spring MVC config should be explicitly registered instead of relying on incidental scan boundaries.
+- 2026-03-04 – Test naming cleanup.
+  - Outcome: Removed `Flow` prefixes from test files/classes (including `FlowReceiverDslTest` → `DslTest`) and revalidated full suite.
+  - Learning: Bulk test renames are usually low-risk but still require full-suite verification due to discovery/reporting behavior.
+- 2026-03-04 – ActionContext test placement decision.
+  - Outcome: Kept `ActionContextTest` as a dedicated contract test file.
+  - Learning: Narrow contract checks are easier to diagnose when isolated from broader scenario suites.
+- 2026-03-04 – Playwright rewrite to Kotlin.
+  - Outcome: Added `CockpitPlaywrightTest` with screenshot-on-failure and always-on video recording; targeted and full suites passed.
+  - Learning: Playwright host-library warnings in containers may be non-fatal for Chromium smoke tests, but should be tracked as environment debt.
+- 2026-03-04 – Public provider selection.
+  - Outcome: Evaluated GitHub/Render/Railway/Fly, selected Render free service, and added `render.yaml` + `Dockerfile` + `.dockerignore`.
+  - Learning: GitHub Pages is static-only and cannot host the JVM/Spring app; GitHub remains useful as repo/CI source for external deployment.

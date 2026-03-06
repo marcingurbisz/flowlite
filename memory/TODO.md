@@ -153,8 +153,17 @@ Decision summary:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Failed on step Test + Coverage
+## [DONE 2026-03-06] Failed on step Test + Coverage
 See https://github.com/marcingurbisz/flowlite/actions/runs/22705767837/job/65832358931
+
+Completed changes:
+- Identified clean-checkout failure mode: `cockpit-ui/dist` was not versioned and not built before `CockpitPlaywrightTest`.
+- Added Gradle task `installCockpitUiDeps` (`npm ci`) and `buildCockpitUi` (`npm run build`) in `build.gradle.kts`.
+- Wired `tasks.test` to depend on `buildCockpitUi`, making CI/local test runs deterministic.
+
+Validation:
+- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
+- `./gradlew test jacocoTestReport` → BUILD SUCCESSFUL.
 
 ## Why we need both private val distPath: Path = Paths.get("cockpit-ui", "dist") ?
 

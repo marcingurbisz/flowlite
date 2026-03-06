@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-06 – CI Test + Coverage stabilization.
+  - Outcome: Fixed clean-checkout CI failures by adding Gradle-managed Cockpit UI build steps (`installCockpitUiDeps`, `buildCockpitUi`) and making `test` depend on the UI build.
+  - Learning: UI-backed integration/E2E tests must not rely on untracked local frontend artifacts (`cockpit-ui/dist`) because they pass locally but fail on fresh CI runners.
+
 - 2026-03-04 – Action context for stage actions.
   - Outcome: Added `ActionContext` support in DSL/runtime, migrated onboarding actions, and validated with `./gradlew test`.
   - Learning: Receiver-style action overloads (`ActionContext.(T) -> T?`) can conflict with existing receiver-lambda DSL APIs and create ambiguity for `::action` references.

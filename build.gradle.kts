@@ -62,7 +62,42 @@ dependencies {
     testImplementation("com.github.kagkarlsson:db-scheduler:16.7.0")
 }
 
+val isWindows = System.getProperty("os.name").lowercase().contains("win")
+val npmCommand = if (isWindows) "npm.cmd" else "npm"
+val cockpitUiDir = layout.projectDirectory.dir("cockpit-ui")
+
+val installCockpitUiDeps by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Install Cockpit UI dependencies."
+    workingDir = cockpitUiDir.asFile
+    commandLine(npmCommand, "ci")
+
+    inputs.files(
+        cockpitUiDir.file("package.json"),
+        cockpitUiDir.file("package-lock.json"),
+    )
+    outputs.dir(cockpitUiDir.dir("node_modules"))
+}
+
+val buildCockpitUi by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Build Cockpit UI static assets for tests."
+    dependsOn(installCockpitUiDeps)
+    workingDir = cockpitUiDir.asFile
+    commandLine(npmCommand, "run", "build")
+
+    inputs.files(
+        cockpitUiDir.file("package.json"),
+        cockpitUiDir.file("package-lock.json"),
+        cockpitUiDir.file("index.html"),
+        cockpitUiDir.file("vite.config.ts"),
+        fileTree(cockpitUiDir.dir("src")) { include("**/*") },
+    )
+    outputs.dir(cockpitUiDir.dir("dist"))
+}
+
 tasks.test {
+    dependsOn(buildCockpitUi)
     useJUnitPlatform()
     
     testLogging {

@@ -6,11 +6,11 @@ import com.microsoft.playwright.Locator
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
-import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.WaitForSelectorState
 import io.kotest.core.spec.style.BehaviorSpec
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.time.Instant
 import org.springframework.context.ConfigurableApplicationContext
 
@@ -41,17 +41,28 @@ class CockpitPlaywrightTest : BehaviorSpec({
         runCatching { context.close() }
     }
 
+    fun sanitizeArtifactName(value: String): String =
+        value.lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+            .ifBlank { "test" }
+
     fun withRecordedContext(testName: String, block: (Page) -> Unit) {
+        val safeTestName = sanitizeArtifactName(testName)
+        val timestamp = Instant.now().toEpochMilli()
+        val artifactPrefix = "$safeTestName-$timestamp"
         val browserContext = browser.newContext(
             Browser.NewContextOptions()
                 .setRecordVideoDir(videoDir)
                 .setViewportSize(1440, 900),
         )
         val page = browserContext.newPage()
+        val pageVideo = page.video()
+
         try {
             block(page)
         } catch (error: Throwable) {
-            val screenshotPath = screenshotDir.resolve("$testName-${Instant.now().toEpochMilli()}.png")
+            val screenshotPath = screenshotDir.resolve("$artifactPrefix.png")
             runCatching {
                 page.screenshot(
                     Page.ScreenshotOptions()
@@ -62,34 +73,32 @@ class CockpitPlaywrightTest : BehaviorSpec({
             throw error
         } finally {
             browserContext.close()
+
+            val sourceVideoPath = runCatching { pageVideo?.path() }.getOrNull()
+            if (sourceVideoPath != null && Files.exists(sourceVideoPath)) {
+                val targetVideoPath = videoDir.resolve("$artifactPrefix.webm")
+                runCatching {
+                    Files.move(sourceVideoPath, targetVideoPath, StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
         }
     }
 
     given("cockpit UI with Playwright") {
         `when`("loading cockpit and opening an instance") {
             then("it renders flow list and instance details") {
-                withRecordedContext("cockpit-smoke") { page ->
+                withRecordedContext("it-renders-flow-list-and-instance-details") { page ->
                     page.navigate("http://127.0.0.1:8080/index.html")
 
-                    assertThat(
-                        page.getByRole(
-                            AriaRole.HEADING,
-                            Page.GetByRoleOptions().setName("FlowLite Cockpit"),
-                        ),
-                    ).isVisible()
-                    assertThat(
-                        page.getByRole(
-                            AriaRole.HEADING,
-                            Page.GetByRoleOptions().setName("Flow Definitions"),
-                        ),
-                    ).isVisible()
-                    assertThat(page.getByText("order-confirmation").first()).isVisible()
-                    assertThat(page.getByText("employee-onboarding").first()).isVisible()
+                    assertThat(page.getByTestId("cockpit-title")).isVisible()
+                    assertThat(page.getByTestId("flows-heading")).isVisible()
+                    assertThat(page.getByTestId("flow-card-order-confirmation")).isVisible()
+                    assertThat(page.getByTestId("flow-card-employee-onboarding")).isVisible()
 
-                    page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Instances")).click()
-                    assertThat(page.getByPlaceholder("Search by instance ID or flow ID...")).isVisible()
+                    page.getByTestId("tab-instances").click()
+                    assertThat(page.getByTestId("instances-search")).isVisible()
 
-                    val firstRow = page.locator("tbody tr").first()
+                    val firstRow = page.locator("[data-testid='instances-row']").first()
                     firstRow.waitFor(
                         Locator.WaitForOptions()
                             .setState(WaitForSelectorState.VISIBLE)
@@ -97,13 +106,34 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     )
                     firstRow.click()
 
-                    assertThat(
-                        page.getByRole(
-                            AriaRole.HEADING,
-                            Page.GetByRoleOptions().setName("Instance Details"),
-                        ),
-                    ).isVisible()
-                    assertThat(page.getByText("Event History")).isVisible()
+                    assertThat(page.getByTestId("instance-details-title")).isVisible()
+                    assertThat(page.getByTestId("instance-event-history-title")).isVisible()
+                }
+            }
+        }
+
+        `when`("opening flow diagram from flow card") {
+            then("it displays and closes the flow diagram modal") {
+                withRecordedContext("it-displays-and-closes-flow-diagram-modal") { page ->
+                    page.navigate("http://127.0.0.1:8080/index.html")
+
+                    page.getByTestId("flow-view-diagram-order-confirmation").click()
+                    assertThat(page.getByTestId("flow-diagram-modal")).isVisible()
+                    assertThat(page.getByTestId("flow-diagram-title")).containsText("order-confirmation")
+
+                    page.getByTestId("flow-diagram-close").click()
+                    assertThat(page.getByTestId("flow-diagram-modal")).isHidden()
+                }
+            }
+        }
+
+        `when`("jumping to instances from flow card") {
+            then("it pre-fills the instances search with flow id") {
+                withRecordedContext("it-prefills-instances-search-from-flow-card") { page ->
+                    page.navigate("http://127.0.0.1:8080/index.html")
+
+                    page.getByTestId("flow-incomplete-order-confirmation").click()
+                    assertThat(page.getByTestId("instances-search")).hasValue("order-confirmation")
                 }
             }
         }

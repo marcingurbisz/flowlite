@@ -177,11 +177,22 @@ Rationale:
 Validation:
 - `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL (after reverting simplification).
 
-## Playwright test improvements
-* Use name of the test and timestamp for videos and screenshots from playwright
-* Use data-testid?
-* Prepare document what is worth to test in playwright (scenarios) and implement one or two such new tests
-* Remove previous TS playwright tests and setup
+## [DONE 2026-03-06] Playwright test improvements
+Completed changes:
+- Improved Kotlin Playwright artifacts in `test/CockpitPlaywrightTest.kt`: screenshots and videos now use `<test-name>-<timestamp>` naming.
+- Added stable `data-testid` selectors in `cockpit-ui/src/App.tsx` for cockpit title, tabs, flow cards/actions, instances search/rows, instance details, and flow diagram modal.
+- Expanded Kotlin Playwright coverage with new scenarios:
+	- open/close flow diagram modal from a flow card,
+	- jump from flow card to instances view with pre-filled search.
+- Added scenario planning document: `memory/PlaywrightTestScenarios.md`.
+- Removed legacy TypeScript Playwright setup:
+	- deleted `cockpit-ui/playwright.config.ts`,
+	- deleted `cockpit-ui/tests/cockpit.spec.ts`,
+	- removed Playwright scripts/dependency from `cockpit-ui/package.json` and refreshed lockfile.
+
+Validation:
+- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Expose test instance publicly available - part 3
 * See [Expose test instance publicly available.md](Expose%20test%20instance%20publicly%20available.md). I think we should go for render and add auto ping from app to have it always on.

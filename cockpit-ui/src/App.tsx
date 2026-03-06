@@ -371,7 +371,7 @@ const FlowLiteCockpit = () => {
     <div className="min-h-screen bg-zinc-950 text-zinc-100" style={{ fontFamily: '"IBM Plex Mono", monospace' }}>
       <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-50">FlowLite Cockpit</h1>
+          <h1 data-testid="cockpit-title" className="text-2xl font-bold tracking-tight text-zinc-50">FlowLite Cockpit</h1>
           <p className="text-sm text-zinc-500 mt-1">Workflow Engine Monitoring & Management</p>
           <p className="text-xs text-zinc-600 mt-1">
             flows: {stats.totalFlows} • instances: {stats.totalInstances} • errors: {stats.errorInstances}
@@ -385,6 +385,7 @@ const FlowLiteCockpit = () => {
             {['flows', 'errors', 'long-running', 'instances'].map((view) => (
               <button
                 key={view}
+                data-testid={`tab-${view}`}
                 onClick={() => setActiveView(view as 'flows' | 'errors' | 'long-running' | 'instances')}
                 className={
                   'px-1 py-3 text-sm font-medium border-b-2 transition-colors ' +
@@ -403,7 +404,7 @@ const FlowLiteCockpit = () => {
       <div className="max-w-7xl mx-auto px-6 py-6">
         {activeView === 'flows' && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-zinc-50 mb-4">Flow Definitions</h2>
+            <h2 data-testid="flows-heading" className="text-xl font-bold text-zinc-50 mb-4">Flow Definitions</h2>
             {flows.map((flow) => {
               const incompleteInstances = instances.filter(
                 (i) => i.flowId === flow.flowId && i.status !== 'Completed' && i.status !== 'Cancelled',
@@ -424,7 +425,7 @@ const FlowLiteCockpit = () => {
               });
 
               return (
-                <div key={flow.flowId} className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+                <div key={flow.flowId} data-testid={`flow-card-${flow.flowId}`} className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <h3 className="text-lg font-bold text-zinc-50 font-mono">{flow.flowId}</h3>
@@ -432,6 +433,7 @@ const FlowLiteCockpit = () => {
                     </div>
                     <div className="flex gap-2">
                       <button
+                        data-testid={`flow-view-diagram-${flow.flowId}`}
                         onClick={() => setSelectedFlowForDiagram(flow)}
                         className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors"
                       >
@@ -449,6 +451,7 @@ const FlowLiteCockpit = () => {
                         </button>
                       )}
                       <button
+                        data-testid={`flow-incomplete-${flow.flowId}`}
                         onClick={() => {
                           setActiveView('instances');
                           setSearchTerm(flow.flowId);
@@ -699,6 +702,7 @@ const FlowLiteCockpit = () => {
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
                 <input
+                  data-testid="instances-search"
                   type="text"
                   placeholder="Search by instance ID or flow ID..."
                   value={searchTerm}
@@ -767,7 +771,13 @@ const FlowLiteCockpit = () => {
                 </thead>
                 <tbody className="divide-y divide-zinc-800">
                   {filteredInstances.map((instance) => (
-                    <tr key={instance.id} className="hover:bg-zinc-800/30 transition-colors cursor-pointer" onClick={() => setSelectedInstance(instance)}>
+                    <tr
+                      key={instance.id}
+                      data-testid="instances-row"
+                      data-instance-id={instance.id}
+                      className="hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                      onClick={() => setSelectedInstance(instance)}
+                    >
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         {(instance.status === 'Pending' || instance.status === 'Error') && (
                           <input
@@ -779,7 +789,7 @@ const FlowLiteCockpit = () => {
                         )}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.id}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
+                      <td data-testid="instance-flow-id" className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
                       <td className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage || '—'}</td>
                       <td className="px-4 py-3"><StatusBadge status={instance.status} /></td>
                       <td className="px-4 py-3 text-xs text-zinc-500">{instance.updatedAt.toLocaleString()}</td>
@@ -797,7 +807,7 @@ const FlowLiteCockpit = () => {
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }} onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border-b border-zinc-800 p-6 flex items-center justify-between flex-shrink-0">
               <div className="flex-1">
-                <h3 className="text-lg font-bold text-zinc-50">Instance Details</h3>
+                <h3 data-testid="instance-details-title" className="text-lg font-bold text-zinc-50">Instance Details</h3>
                 <p className="text-sm text-zinc-500 font-mono mt-1">{selectedInstance.id}</p>
               </div>
               <div className="flex items-center gap-2">
@@ -854,7 +864,7 @@ const FlowLiteCockpit = () => {
               )}
 
               <div>
-                <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-wide mb-3">Event History</h4>
+                <h4 data-testid="instance-event-history-title" className="text-sm font-bold text-zinc-400 uppercase tracking-wide mb-3">Event History</h4>
                 <div className="space-y-3">
                   {visibleHistory.map((event, idx) => {
                     const isErrorEvent = event.type === 'Error';
@@ -897,14 +907,14 @@ const FlowLiteCockpit = () => {
       )}
 
       {selectedFlowForDiagram && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-hidden" onClick={() => setSelectedFlowForDiagram(null)}>
+        <div data-testid="flow-diagram-modal" className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-hidden" onClick={() => setSelectedFlowForDiagram(null)}>
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg w-full max-w-5xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }} onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border-b border-zinc-800 p-6 flex items-center justify-between flex-shrink-0">
               <div>
-                <h3 className="text-lg font-bold text-zinc-50 font-mono">{selectedFlowForDiagram.flowId}</h3>
+                <h3 data-testid="flow-diagram-title" className="text-lg font-bold text-zinc-50 font-mono">{selectedFlowForDiagram.flowId}</h3>
                 <p className="text-sm text-zinc-500 mt-1">Flow Diagram</p>
               </div>
-              <button onClick={() => setSelectedFlowForDiagram(null)} className="p-2 hover:bg-zinc-800 rounded transition-colors"><X size={20} /></button>
+              <button data-testid="flow-diagram-close" onClick={() => setSelectedFlowForDiagram(null)} className="p-2 hover:bg-zinc-800 rounded transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6 overflow-y-auto flex-1 min-h-0"><div className="bg-zinc-800/50 rounded-lg p-8 overflow-auto"><MermaidDiagram diagram={selectedFlowForDiagram.diagram} id={`flow-${selectedFlowForDiagram.flowId}`} /></div></div>
           </div>

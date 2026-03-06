@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-06 – Playwright consolidation and selector hardening.
+  - Outcome: Consolidated E2E on Kotlin Playwright, added `data-testid` anchors in Cockpit UI, expanded Kotlin scenarios, and removed legacy TS Playwright config/tests/dependency.
+  - Learning: Purpose-built test IDs significantly reduce selector fragility compared with mixed role/text selectors in a dynamic dashboard UI.
+
 - 2026-03-06 – Cockpit static path investigation.
   - Outcome: Verified that separate root (`dist`) and assets (`dist/assets`) resource locations are needed in `CockpitUiStaticConfig`.
   - Learning: Mapping `/assets/**` directly to the dist root looked cleaner but broke UI rendering in Playwright; explicit assets location is safer with current handler patterns.

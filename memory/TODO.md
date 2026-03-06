@@ -194,11 +194,17 @@ Validation:
 - `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Expose test instance publicly available - part 3
-* See [Expose test instance publicly available.md](Expose%20test%20instance%20publicly%20available.md). I think we should go for render and add auto ping from app to have it always on.
-* Worth to start app from springboot jar instead gradle?
-* In readme leave just pure instructions without explanation why render was choosen
-* Remove exposeTestInstance.sh
+## [DONE 2026-03-06] Expose test instance publicly available - part 3
+Completed changes:
+- Added scheduled Render keepalive workflow: `.github/workflows/keep-render-alive.yml` (uses repository variable `FLOWLITE_RENDER_URL`).
+- Updated `README.md` deployment chapter to pure step-by-step instructions (removed provider-comparison narrative).
+- Removed obsolete local tunnel script: `tools/exposeTestInstance.sh`.
+
+Decision:
+- Keep runtime command on `./gradlew runTestApp` for now; moving to a Spring Boot jar is deferred because current public test app is test-source-set based and has no dedicated production-style bootJar pipeline yet.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Improve showcase mode
 In showcase mode flow instances started by ShowcaseFlowSeeder should have random action execution time (from near zero to lets say one minute?). From time to time some flow action should fail.

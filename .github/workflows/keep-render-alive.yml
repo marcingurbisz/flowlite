@@ -1,0 +1,22 @@
+name: Keep Render Test Instance Alive
+
+on:
+  schedule:
+    - cron: "*/14 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping configured Render URL
+        env:
+          FLOWLITE_RENDER_URL: ${{ vars.FLOWLITE_RENDER_URL }}
+        run: |
+          if [[ -z "${FLOWLITE_RENDER_URL}" ]]; then
+            echo "FLOWLITE_RENDER_URL is not set. Skipping ping."
+            exit 0
+          fi
+
+          curl -fsS --retry 2 --retry-delay 2 --max-time 20 "${FLOWLITE_RENDER_URL%/}/api/flows" > /dev/null

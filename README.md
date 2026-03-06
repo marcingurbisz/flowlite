@@ -452,20 +452,15 @@ External updates exist (GUI / notifications / other services):
 
 ### Public test instance deployment (free/cheap)
 
-Recommendation: use **Render** free web service with this repo's `render.yaml` + `Dockerfile`.
-
-- Why not GitHub-only hosting: GitHub Pages is static-only, so it cannot run this Spring/JVM app.
-- Is GitHub still an option: yes, as source control + CI/CD trigger (Render can deploy directly from a GitHub repo).
-- Trade-off: Render free services can sleep when idle, so expect cold starts.
-
 Quick start:
 - Push this repo to GitHub.
 - In Render, create a **Blueprint** from the repo (it will pick up `render.yaml`).
 - Deploy the created `flowlite-test-instance` service.
 - Open `/cockpit` on the generated `onrender.com` URL.
 
-Alternative low-cost option:
-- Railway works well too, but after trial it has a monthly minimum charge.
+Optional keepalive:
+- Set GitHub repository variable `FLOWLITE_RENDER_URL` to your deployed service URL (for example, `https://flowlite-test-instance.onrender.com`).
+- Keep `.github/workflows/keep-render-alive.yml` enabled to ping `/api/flows` every 14 minutes.
 
 ### Coverage (Local + GitHub)
 

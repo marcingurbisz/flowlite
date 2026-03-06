@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-06 – Public test instance part 3.
+  - Outcome: Added GitHub Actions keepalive workflow for Render (`FLOWLITE_RENDER_URL`-driven), simplified README deployment section to instruction-only steps, and removed legacy localhost.run exposure script.
+  - Learning: Keepalive must come from an external scheduler; an app cannot reliably self-wake after scale-to-zero.
+
 - 2026-03-06 – Playwright consolidation and selector hardening.
   - Outcome: Consolidated E2E on Kotlin Playwright, added `data-testid` anchors in Cockpit UI, expanded Kotlin scenarios, and removed legacy TS Playwright config/tests/dependency.
   - Learning: Purpose-built test IDs significantly reduce selector fragility compared with mixed role/text selectors in a dynamic dashboard UI.

@@ -165,7 +165,17 @@ Validation:
 - `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
 - `./gradlew test jacocoTestReport` → BUILD SUCCESSFUL.
 
-## Why we need both private val distPath: Path = Paths.get("cockpit-ui", "dist") ?
+## [DONE 2026-03-06] Why we need both private val distPath: Path = Paths.get("cockpit-ui", "dist") ?
+
+Decision:
+- Keep both derived locations in `CockpitUiStaticConfig`: `distLocation` for HTML/root files and `distAssetsLocation` for `/assets/**`.
+
+Rationale:
+- A simplification attempt that mapped `/assets/**` to `distLocation` caused `CockpitPlaywrightTest` to fail (UI heading not rendered due missing static asset resolution).
+- `distAssetsLocation` is therefore required for correct `/assets/**` serving in current setup.
+
+Validation:
+- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL (after reverting simplification).
 
 ## Playwright test improvements
 * Use name of the test and timestamp for videos and screenshots from playwright

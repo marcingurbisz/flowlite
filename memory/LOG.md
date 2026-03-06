@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-06 – Cockpit static path investigation.
+  - Outcome: Verified that separate root (`dist`) and assets (`dist/assets`) resource locations are needed in `CockpitUiStaticConfig`.
+  - Learning: Mapping `/assets/**` directly to the dist root looked cleaner but broke UI rendering in Playwright; explicit assets location is safer with current handler patterns.
+
 - 2026-03-06 – CI Test + Coverage stabilization.
   - Outcome: Fixed clean-checkout CI failures by adding Gradle-managed Cockpit UI build steps (`installCockpitUiDeps`, `buildCockpitUi`) and making `test` depend on the UI build.
   - Learning: UI-backed integration/E2E tests must not rely on untracked local frontend artifacts (`cockpit-ui/dist`) because they pass locally but fail on fresh CI runners.

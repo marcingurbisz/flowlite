@@ -152,3 +152,23 @@ Decision summary:
 
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
+
+## Failed on step Test + Coverage
+See https://github.com/marcingurbisz/flowlite/actions/runs/22705767837/job/65832358931
+
+## Why we need both private val distPath: Path = Paths.get("cockpit-ui", "dist") ?
+
+## Playwright test improvements
+* Use name of the test and timestamp for videos and screenshots from playwright
+* Use data-testid?
+* Prepare document what is worth to test in playwright (scenarios) and implement one or two such new tests
+* Remove previous TS playwright tests and setup
+
+## Expose test instance publicly available - part 3
+* See [Expose test instance publicly available.md](Expose%20test%20instance%20publicly%20available.md). I think we should go for render and add auto ping from app to have it always on.
+* Worth to start app from springboot jar instead gradle?
+* In readme leave just pure instructions without explanation why render was choosen
+* Remove exposeTestInstance.sh
+
+## Improve showcase mode
+In showcase mode flow instances started by ShowcaseFlowSeeder should have random action execution time (from near zero to lets say one minute?). From time to time some flow action should fail.

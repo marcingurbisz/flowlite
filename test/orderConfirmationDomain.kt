@@ -109,17 +109,20 @@ class SpringDataOrderConfirmationPersister(
 }
 
 fun initializeOrderConfirmation(confirmation: OrderConfirmation): OrderConfirmation {
+    ShowcaseActionBehavior.apply("initializeOrderConfirmation", confirmation.isShowcaseInstance())
     orderLog.info { "Initializing order confirmation for order ${confirmation.orderNumber}" }
     val timestamp = System.currentTimeMillis().toString()
     return confirmation.copy(confirmationTimestamp = timestamp)
 }
 
 fun removeFromConfirmationQueue(confirmation: OrderConfirmation): OrderConfirmation {
+    ShowcaseActionBehavior.apply("removeFromConfirmationQueue", confirmation.isShowcaseInstance())
     orderLog.info { "Removing order ${confirmation.orderNumber} from confirmation queue (digital processing)" }
     return confirmation.copy(isRemovedFromQueue = true)
 }
 
 fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
+    ShowcaseActionBehavior.apply("informCustomer", confirmation.isShowcaseInstance())
     val method =
         when (confirmation.confirmationType) {
             ConfirmationType.Digital -> "app notification/email"
@@ -141,5 +144,7 @@ fun createOrderConfirmationFlow() = flow<OrderConfirmation, OrderConfirmationSta
     }
 }
 // FLOW-DEFINITION-END
+
+private fun OrderConfirmation.isShowcaseInstance() = orderNumber.startsWith("SHOW-")
 
 private val orderLog = KotlinLogging.logger {}

@@ -206,5 +206,15 @@ Decision:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Improve showcase mode
-In showcase mode flow instances started by ShowcaseFlowSeeder should have random action execution time (from near zero to lets say one minute?). From time to time some flow action should fail.
+## [DONE 2026-03-06] Improve showcase mode
+Completed changes:
+- Added showcase behavior helper `test/showcaseActionBehavior.kt` that applies randomized action delay (`0..maxDelayMs`) and probabilistic failures for showcase-marked instances.
+- Wired showcase config in `ShowcaseFlowSeeder` with new properties:
+	- `flowlite.showcase.max-action-delay-ms` (default `60000`),
+	- `flowlite.showcase.action-failure-rate` (default `0.1`).
+- Marked showcase-seeded employee instances via `isRemoteEmployee = true` and applied behavior in all employee onboarding actions.
+- Applied showcase behavior in order-confirmation actions for `orderNumber` prefixed with `SHOW-`.
+
+Validation:
+- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
+- `./gradlew test` → BUILD SUCCESSFUL.

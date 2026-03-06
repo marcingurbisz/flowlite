@@ -105,9 +105,12 @@ object Beans {
         }
 
         registerBean {
+            val environment = bean<Environment>()
             ShowcaseFlowSeeder(
                 engine = bean<Engine>(),
-                enabled = bean<Environment>().getProperty("flowlite.showcase.enabled", Boolean::class.java, false),
+                enabled = environment.getProperty("flowlite.showcase.enabled", Boolean::class.java, false),
+                maxActionDelayMs = environment.getProperty("flowlite.showcase.max-action-delay-ms", Long::class.java, 60_000L),
+                actionFailureRate = environment.getProperty("flowlite.showcase.action-failure-rate", Double::class.java, 0.1),
             )
         }
 
@@ -144,6 +147,8 @@ private fun startApplication(webType: String) = runApplication<TestApplication>(
 private class ShowcaseFlowSeeder(
     private val engine: Engine,
     enabled: Boolean,
+    maxActionDelayMs: Long,
+    actionFailureRate: Double,
 ) : AutoCloseable {
     private val sequence = AtomicLong(0)
     private val executor =
@@ -156,6 +161,12 @@ private class ShowcaseFlowSeeder(
         }
 
     init {
+        ShowcaseActionBehavior.configure(
+            enabled = enabled,
+            maxDelayMs = maxActionDelayMs,
+            failureRate = actionFailureRate,
+        )
+
         if (enabled) {
             seedOnce()
             executor?.scheduleAtFixedRate(::seedOnceSafely, 5, 5, TimeUnit.SECONDS)
@@ -190,6 +201,7 @@ private class ShowcaseFlowSeeder(
             isOnboardingAutomated = true,
             isExecutiveRole = false,
             isSecurityClearanceRequired = false,
+            isRemoteEmployee = true,
         )
         val employeeId = engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, employee)
         engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.EmployeeDocumentsSigned)

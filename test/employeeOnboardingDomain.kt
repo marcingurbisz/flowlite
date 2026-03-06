@@ -140,6 +140,7 @@ class EmployeeOnboardingActions(
     private val repo: EmployeeOnboardingRepository,
 ) {
     fun createUserInSystem(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply("createUserInSystem", employee.isShowcaseInstance())
         employeeOnboardingLog.info { "Creating user account in system" }
         val id = context.flowInstanceId
 
@@ -164,6 +165,7 @@ class EmployeeOnboardingActions(
     }
 
     fun activateEmployee(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply("activateEmployee", employee.isShowcaseInstance())
         employeeOnboardingLog.info { "Activating employee account" }
         val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
@@ -175,6 +177,7 @@ class EmployeeOnboardingActions(
     }
 
     fun updateSecurityClearanceLevels(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply("updateSecurityClearanceLevels", employee.isShowcaseInstance())
         employeeOnboardingLog.info { "Updating security clearance levels" }
         val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
@@ -186,6 +189,7 @@ class EmployeeOnboardingActions(
     }
 
     fun setDepartmentAccess(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply("setDepartmentAccess", employee.isShowcaseInstance())
         employeeOnboardingLog.info { "Setting department access permissions" }
         val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
@@ -197,6 +201,7 @@ class EmployeeOnboardingActions(
     }
 
     fun generateEmployeeDocuments(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply("generateEmployeeDocuments", employee.isShowcaseInstance())
         employeeOnboardingLog.info { "Generating employee documents" }
         val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
@@ -208,6 +213,7 @@ class EmployeeOnboardingActions(
     }
 
     fun sendContractForSigning(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply("sendContractForSigning", employee.isShowcaseInstance())
         employeeOnboardingLog.info { "Sending contract for signing" }
         val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
@@ -219,6 +225,7 @@ class EmployeeOnboardingActions(
     }
 
     fun updateStatusInHRSystem(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply("updateStatusInHRSystem", employee.isShowcaseInstance())
         employeeOnboardingLog.info { "Updating status in HR system" }
         val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
@@ -309,5 +316,7 @@ class EmployeeOnboardingActionHooks {
         val allowReturnAfterSave: java.util.concurrent.CountDownLatch,
     )
 }
+
+private fun EmployeeOnboarding.isShowcaseInstance() = isRemoteEmployee
 
 private val employeeOnboardingLog = KotlinLogging.logger {}

@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-06 – Showcase mode action simulation.
+  - Outcome: Added configurable showcase-only random action delays and occasional simulated failures, wired through seeder config and showcase instance markers.
+  - Learning: Tagging showcase instances in domain state keeps demo chaos behavior isolated from standard deterministic test flows.
+
 - 2026-03-06 – Public test instance part 3.
   - Outcome: Added GitHub Actions keepalive workflow for Render (`FLOWLITE_RENDER_URL`-driven), simplified README deployment section to instruction-only steps, and removed legacy localhost.run exposure script.
   - Learning: Keepalive must come from an external scheduler; an app cannot reliably self-wake after scale-to-zero.

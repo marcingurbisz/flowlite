@@ -13,6 +13,13 @@ repositories {
     mavenCentral()
 }
 
+val isWindows = System.getProperty("os.name").lowercase().contains("win")
+val npmCommand = if (isWindows) "npm.cmd" else "npm"
+val cockpitUiDir = layout.projectDirectory.dir("cockpit-ui")
+val generatedTestAppResourcesDir = layout.buildDirectory.dir("generated/test-app-resources")
+val generatedCockpitUiDistDir = generatedTestAppResourcesDir.map { it.dir("cockpit-ui/dist") }
+val testAppRuntimeLibsDir = layout.buildDirectory.dir("test-app-libs")
+
 // Configure custom source sets for the flat structure
 sourceSets {
     main {
@@ -29,6 +36,7 @@ sourceSets {
         }
         resources {
             setSrcDirs(listOf("test"))
+            srcDir(generatedTestAppResourcesDir)
         }
     }
 }
@@ -62,10 +70,6 @@ dependencies {
     testImplementation("com.github.kagkarlsson:db-scheduler:16.7.0")
 }
 
-val isWindows = System.getProperty("os.name").lowercase().contains("win")
-val npmCommand = if (isWindows) "npm.cmd" else "npm"
-val cockpitUiDir = layout.projectDirectory.dir("cockpit-ui")
-
 val installCockpitUiDeps by tasks.registering(Exec::class) {
     group = "build"
     description = "Install Cockpit UI dependencies."
@@ -96,8 +100,23 @@ val buildCockpitUi by tasks.registering(Exec::class) {
     outputs.dir(cockpitUiDir.dir("dist"))
 }
 
-tasks.test {
+val syncCockpitUiDist by tasks.registering(Copy::class) {
+    group = "build"
+    description = "Copy built Cockpit UI assets into the test-app classpath resources."
     dependsOn(buildCockpitUi)
+    from(cockpitUiDir.dir("dist"))
+    into(generatedCockpitUiDistDir)
+
+    inputs.dir(cockpitUiDir.dir("dist"))
+    outputs.dir(generatedCockpitUiDistDir)
+}
+
+tasks.named("processTestResources") {
+    dependsOn(syncCockpitUiDist)
+}
+
+tasks.test {
+    dependsOn(syncCockpitUiDist)
     useJUnitPlatform()
     
     testLogging {
@@ -170,8 +189,41 @@ tasks.register<JavaExec>("updateReadme") {
 tasks.register<JavaExec>("runTestApp") {
     group = "application"
     description = "Run the FlowLite test application with Cockpit routes on Tomcat."
+    dependsOn(tasks.named("testClasses"))
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.flowlite.test.TestApplicationMainKt")
+}
+
+tasks.register<Jar>("testAppJar") {
+    group = "application"
+    description = "Build the application jar for the FlowLite test app."
+    dependsOn(tasks.named("testClasses"))
+    archiveClassifier.set("test-app")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    manifest {
+        attributes["Main-Class"] = "io.flowlite.test.TestApplicationMainKt"
+    }
+
+    from(sourceSets["main"].output)
+    from(sourceSets["test"].output)
+}
+
+val syncTestAppRuntimeLibs by tasks.registering(Sync::class) {
+    group = "application"
+    description = "Collect runtime dependency jars for the packaged FlowLite test app."
+    dependsOn(tasks.named("testClasses"))
+    from(
+        sourceSets["test"].runtimeClasspath
+            .filter { it.exists() && it.name.endsWith(".jar") },
+    )
+    into(testAppRuntimeLibsDir)
+}
+
+tasks.register("testAppBundle") {
+    group = "application"
+    description = "Build the packaged FlowLite test app jar and runtime libs for container deployment."
+    dependsOn(tasks.named("testAppJar"), syncTestAppRuntimeLibs)
 }
 
 publishing {

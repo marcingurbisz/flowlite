@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – Packaged public test app runtime.
+  - Outcome: Copied Cockpit UI assets into the test-app classpath, added packaged app bundle tasks, updated Docker to run the app directly with `java` instead of Gradle, and smoke-tested the packaged app over HTTP.
+  - Learning: Packaging the app jar and runtime libs separately is more reliable than flattening Spring Boot dependencies into one homemade fat jar because Spring auto-configuration metadata stays intact.
+
 - 2026-03-07 – Cockpit Playwright coverage expansion.
   - Outcome: Added bookmarkable/back-button cockpit URL state, broadened `data-testid` coverage, added missing long-running/clear-filter UI actions, and replaced the minimal Playwright suite with deterministic fixture-based scenarios for flows, errors, long-running instances, and instance filters.
   - Learning: Deterministic end-to-end seeding is much easier if showcase/background data generation can be disabled for the web test app.

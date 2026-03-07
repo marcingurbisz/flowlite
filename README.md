@@ -477,6 +477,7 @@ External updates exist (GUI / notifications / other services):
 - `./gradlew test` - Run all tests
 - `./gradlew test jacocoTestReport` - Run tests and generate coverage report (HTML + XML)
 - `./gradlew runTestApp` - Run the test Spring Boot app with Cockpit UI served by Tomcat (http://localhost:8080)
+- `./gradlew testAppBundle` - Build the public test app jar plus runtime libs for container deployment (`build/libs/*-test-app.jar` + `build/test-app-libs/`)
 - `cd cockpit-ui && npm install && npm run dev` - Run the full React+TypeScript Cockpit prototype UI (from `flowlite-cockpit.jsx`)
 - `./gradlew clean` - Clean build artifacts
 - `./gradlew check` - Run all verification tasks
@@ -504,6 +505,7 @@ This keeps demo traffic visually interesting in Cockpit without changing normal 
 Quick start:
 - Push this repo to GitHub.
 - In Render, create a **Blueprint** from the repo (it will pick up `render.yaml`).
+- The Docker image now builds the packaged test-app jar, bundles Cockpit UI assets on the classpath, copies runtime libs into the image, and starts the service directly with `java`, so the deployed container does not need Gradle at runtime.
 - Deploy the created `flowlite-test-instance` service.
 - Open `/cockpit` on the generated `onrender.com` URL.
 

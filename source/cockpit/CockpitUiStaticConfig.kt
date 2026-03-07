@@ -6,21 +6,44 @@ import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
 class CockpitUiStaticConfig(
+    private val classpathDistLocation: String = "classpath:/cockpit-ui/dist/",
     private val distPath: Path = Paths.get("cockpit-ui", "dist"),
 ) : WebMvcConfigurer {
     override fun addResourceHandlers(registry: ResourceHandlerRegistry) {
-        val normalizedDistPath = distPath.toAbsolutePath().normalize()
-        val distAssetsPath = normalizedDistPath.resolve("assets")
-        val distLocation = normalizedDistPath.toUri().toString().let { if (it.endsWith("/")) it else "$it/" }
-        val distAssetsLocation = distAssetsPath.toUri().toString().let { if (it.endsWith("/")) it else "$it/" }
+        val resourceLocations = resolveResourceLocations()
 
         registry.addResourceHandler("/cockpit", "/cockpit/**")
-            .addResourceLocations(distLocation)
+            .addResourceLocations(resourceLocations.dist)
 
         registry.addResourceHandler("/", "/index.html", "/vite.svg")
-            .addResourceLocations(distLocation)
+            .addResourceLocations(resourceLocations.dist)
 
         registry.addResourceHandler("/assets/**")
-            .addResourceLocations(distAssetsLocation)
+            .addResourceLocations(resourceLocations.assets)
     }
+
+    private fun resolveResourceLocations(): ResourceLocations {
+        val normalizedClasspathDistLocation = ensureTrailingSlash(classpathDistLocation)
+        if (javaClass.getResource("/cockpit-ui/dist/index.html") != null) {
+            return ResourceLocations(
+                dist = normalizedClasspathDistLocation,
+                assets = ensureTrailingSlash("${normalizedClasspathDistLocation}assets"),
+            )
+        }
+
+        val normalizedDistPath = distPath.toAbsolutePath().normalize()
+        val distAssetsPath = normalizedDistPath.resolve("assets")
+
+        return ResourceLocations(
+            dist = ensureTrailingSlash(normalizedDistPath.toUri().toString()),
+            assets = ensureTrailingSlash(distAssetsPath.toUri().toString()),
+        )
+    }
+
+    private fun ensureTrailingSlash(location: String) = if (location.endsWith("/")) location else "$location/"
+
+    private data class ResourceLocations(
+        val dist: String,
+        val assets: String,
+    )
 }

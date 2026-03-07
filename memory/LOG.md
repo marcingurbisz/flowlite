@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – Test schema extraction.
+  - Outcome: Moved inline test-app DDL out of `testApplication.kt` into dedicated `schema/h2.sql` and `schema/mssql.sql` resources, and added a small dialect-aware schema loader helper.
+  - Learning: Keeping dialect-specific DDL in resource scripts makes bootstrap code smaller now and removes a major blocker for future multi-database test coverage.
+
 - 2026-03-07 – Showcase mode cleanup.
   - Outcome: Documented showcase seeding/config in the README, moved `ShowcaseActionBehavior` into `testApplication.kt`, and replaced the employee showcase marker with an explicit `isShowcaseInstance` field plus matching schema column.
   - Learning: Demo metadata should stay explicit and local to bootstrap code rather than piggybacking on real business flags such as `isRemoteEmployee`.

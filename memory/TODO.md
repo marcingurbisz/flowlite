@@ -1,6 +1,3 @@
-## Move tables definitions outside testApplication.kt 
-Put them into seperate file or files? Prepare for more db to suppport but now only provide scripts for h2 and mssql
-
 ## Prepare idea for runnig test on mssql too
 
 ## Refactor DSL to procedural style
@@ -116,6 +113,15 @@ Pack cockpit-ui into jar
 
 ## [WAITING FOR BETTER SPEC] Duplicate copkpit but in Kotlin 
 Create a duplicate of cockpit-ui but written in Kotlin (cockpit-ui-kotlin)
+
+## [DONE 2026-03-07] Move tables definitions outside testApplication.kt
+Completed changes:
+- Moved test-app schema DDL out of `test/testApplication.kt` into dedicated resource scripts: `test/schema/h2.sql` and `test/schema/mssql.sql`.
+- Added `test/testDatabaseSchema.kt` with `TestDatabaseDialect` and `initializeTestSchema(...)` so the test app bootstrap only selects a dialect and applies the matching script.
+- Kept the current runtime on H2 while preparing a parallel MSSQL schema script for the next database-support task.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## [DONE 2026-03-07] Showcase improvements
 Completed changes:

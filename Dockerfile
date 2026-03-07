@@ -1,3 +1,13 @@
+FROM node:22-bookworm AS cockpit-ui-build
+
+WORKDIR /cockpit-ui
+
+COPY cockpit-ui/package.json cockpit-ui/package-lock.json ./
+RUN npm ci
+
+COPY cockpit-ui ./
+RUN npm run build
+
 FROM eclipse-temurin:25-jdk AS build
 
 WORKDIR /workspace
@@ -13,7 +23,9 @@ COPY test test
 COPY tools tools
 COPY cockpit-ui cockpit-ui
 
-RUN ./gradlew --no-daemon testAppBundle
+COPY --from=cockpit-ui-build /cockpit-ui/dist cockpit-ui/dist
+
+RUN ./gradlew --no-daemon -PusePrebuiltCockpitUi=true testAppBundle
 
 FROM eclipse-temurin:25-jre
 

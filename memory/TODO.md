@@ -22,6 +22,16 @@ Validation:
 - `java -Dserver.port=18080 -cp build/libs/flowlite-0.1.0-SNAPSHOT-test-app.jar:build/test-app-libs/* io.flowlite.test.TestApplicationMainKt` + `curl http://127.0.0.1:18080/api/flows` → OK.
 - `./gradlew test` → BUILD SUCCESSFUL.
 
+## [DONE 2026-03-07] Fix Render packaged-app Docker build
+Completed changes:
+- Added a Gradle `usePrebuiltCockpitUi` switch so `installCockpitUiDeps` and `buildCockpitUi` are skipped when a prebuilt `cockpit-ui/dist` is supplied, while `syncCockpitUiDist` still copies the assets into the packaged test app.
+- Updated `Dockerfile` to build the Cockpit UI in a dedicated Node stage, copy the resulting `dist` directory into the JDK packaging stage, and run `./gradlew -PusePrebuiltCockpitUi=true testAppBundle`.
+- Updated `README.md` to reflect the new Docker build path.
+
+Validation:
+- `./gradlew --console=plain -PusePrebuiltCockpitUi=true testAppBundle` → BUILD SUCCESSFUL (`installCockpitUiDeps` and `buildCockpitUi` both SKIPPED).
+- `./gradlew test` → BUILD SUCCESSFUL.
+
 ## [WAITING FOR RENDER ACCESS] Deploy updated packaged test app to Render
 * Apply the current jar-based container changes on Render.
 * Verify `/cockpit` and `/api/flows` on the deployed service.

@@ -19,6 +19,9 @@ val cockpitUiDir = layout.projectDirectory.dir("cockpit-ui")
 val generatedTestAppResourcesDir = layout.buildDirectory.dir("generated/test-app-resources")
 val generatedCockpitUiDistDir = generatedTestAppResourcesDir.map { it.dir("cockpit-ui/dist") }
 val testAppRuntimeLibsDir = layout.buildDirectory.dir("test-app-libs")
+val usePrebuiltCockpitUi = providers.gradleProperty("usePrebuiltCockpitUi")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
 
 // Configure custom source sets for the flat structure
 sourceSets {
@@ -75,6 +78,7 @@ val installCockpitUiDeps by tasks.registering(Exec::class) {
     description = "Install Cockpit UI dependencies."
     workingDir = cockpitUiDir.asFile
     commandLine(npmCommand, "ci")
+    onlyIf { !usePrebuiltCockpitUi.get() }
 
     inputs.files(
         cockpitUiDir.file("package.json"),
@@ -89,6 +93,7 @@ val buildCockpitUi by tasks.registering(Exec::class) {
     dependsOn(installCockpitUiDeps)
     workingDir = cockpitUiDir.asFile
     commandLine(npmCommand, "run", "build")
+    onlyIf { !usePrebuiltCockpitUi.get() }
 
     inputs.files(
         cockpitUiDir.file("package.json"),
@@ -106,6 +111,13 @@ val syncCockpitUiDist by tasks.registering(Copy::class) {
     dependsOn(buildCockpitUi)
     from(cockpitUiDir.dir("dist"))
     into(generatedCockpitUiDistDir)
+
+    doFirst {
+        val distIndex = cockpitUiDir.file("dist/index.html").asFile
+        require(distIndex.exists()) {
+            "Cockpit UI dist not found at ${distIndex.path}. Build it locally or provide a prebuilt dist when using -PusePrebuiltCockpitUi=true."
+        }
+    }
 
     inputs.dir(cockpitUiDir.dir("dist"))
     outputs.dir(generatedCockpitUiDistDir)

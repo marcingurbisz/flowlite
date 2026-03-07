@@ -505,7 +505,7 @@ This keeps demo traffic visually interesting in Cockpit without changing normal 
 Quick start:
 - Push this repo to GitHub.
 - In Render, create a **Blueprint** from the repo (it will pick up `render.yaml`).
-- The Docker image now builds the packaged test-app jar, bundles Cockpit UI assets on the classpath, copies runtime libs into the image, and starts the service directly with `java`, so the deployed container does not need Gradle at runtime.
+- The Docker image now builds Cockpit UI assets in a dedicated Node stage, then packages the test app jar and runtime libs in the JDK stage, so the deployed container does not need Gradle or npm at runtime.
 - Deploy the created `flowlite-test-instance` service.
 - Open `/cockpit` on the generated `onrender.com` URL.
 

@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – Render Docker build fix for packaged app.
+  - Outcome: Added a prebuilt-Cockpit Gradle switch, moved Cockpit UI compilation into a dedicated Node Docker stage, and kept the packaged app bundle build green without requiring `npm` in the JDK stage.
+  - Learning: Separating frontend compilation from JVM packaging keeps the Docker build reproducible and avoids assuming Node tooling exists in the Java base image.
+
 - 2026-03-07 – Single-dist cockpit static config.
   - Outcome: Simplified `CockpitUiStaticConfig` to use one dist root plus a small resolver for `/assets/**`, then revalidated the Playwright cockpit suite, packaged app bundle, and packaged `index.html` serving.
   - Learning: A single dist location works if `/assets/**` lookups are rewritten to `assets/...`; pointing Spring directly at the dist root without that rewrite still misses Vite asset files because the handler prefix is stripped.

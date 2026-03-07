@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – MSSQL test strategy.
+  - Outcome: Added `memory/MssqlTestPlan.md` with a staged plan for MSSQL coverage: H2 stays the default, MSSQL gets a separate task/job, and CI service containers are the recommended first implementation step.
+  - Learning: For cross-database coverage, separating the fast default suite from the vendor-specific suite keeps feedback fast while still making SQL portability visible on PRs.
+
 - 2026-03-07 – Test schema extraction.
   - Outcome: Moved inline test-app DDL out of `testApplication.kt` into dedicated `schema/h2.sql` and `schema/mssql.sql` resources, and added a small dialect-aware schema loader helper.
   - Learning: Keeping dialect-specific DDL in resource scripts makes bootstrap code smaller now and removes a major blocker for future multi-database test coverage.

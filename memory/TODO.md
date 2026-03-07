@@ -1,5 +1,3 @@
-## Prepare idea for runnig test on mssql too
-
 ## Refactor DSL to procedural style
 
 Implement only support for dsl that you see in these two examples below. Do not care about braking changes :). Update source and test leaving only what is needed after this dsl change.
@@ -113,6 +111,15 @@ Pack cockpit-ui into jar
 
 ## [WAITING FOR BETTER SPEC] Duplicate copkpit but in Kotlin 
 Create a duplicate of cockpit-ui but written in Kotlin (cockpit-ui-kotlin)
+
+## [DONE 2026-03-07] Prepare idea for runnig test on mssql too
+Completed changes:
+- Added the planning note `memory/MssqlTestPlan.md`.
+- Chose a staged approach: keep default H2 tests fast, add a separate MSSQL task/job, and use CI service containers first.
+- Captured the concrete follow-up changes needed in datasource selection, Gradle tasking, CI wiring, and test-suite scope.
+
+Validation:
+- Design-only task; no runtime code changes were required.
 
 ## [DONE 2026-03-07] Move tables definitions outside testApplication.kt
 Completed changes:

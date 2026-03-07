@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – Single-dist cockpit static config.
+  - Outcome: Simplified `CockpitUiStaticConfig` to use one dist root plus a small resolver for `/assets/**`, then revalidated the Playwright cockpit suite, packaged app bundle, and packaged `index.html` serving.
+  - Learning: A single dist location works if `/assets/**` lookups are rewritten to `assets/...`; pointing Spring directly at the dist root without that rewrite still misses Vite asset files because the handler prefix is stripped.
+
 - 2026-03-07 – Packaged public test app runtime.
   - Outcome: Copied Cockpit UI assets into the test-app classpath, added packaged app bundle tasks, updated Docker to run the app directly with `java` instead of Gradle, and smoke-tested the packaged app over HTTP.
   - Learning: Packaging the app jar and runtime libs separately is more reliable than flattening Spring Boot dependencies into one homemade fat jar because Spring auto-configuration metadata stays intact.

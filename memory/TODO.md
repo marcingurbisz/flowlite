@@ -22,9 +22,9 @@ Validation:
 - `java -Dserver.port=18080 -cp build/libs/flowlite-0.1.0-SNAPSHOT-test-app.jar:build/test-app-libs/* io.flowlite.test.TestApplicationMainKt` + `curl http://127.0.0.1:18080/api/flows` → OK.
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## [IN PROGRESS] Expose test instance publicly available - part 4 follow-up
-* Revisit whether `CockpitUiStaticConfig` can safely collapse to a single dist location without breaking `/assets/**` resolution.
-* Deploy the updated image to Render and verify `/cockpit` + `/api/flows` there.
+## [WAITING FOR RENDER ACCESS] Deploy updated packaged test app to Render
+* Apply the current jar-based container changes on Render.
+* Verify `/cockpit` and `/api/flows` on the deployed service.
 
 ## [WAITING FOR BETTER SPEC] Duplicate copkpit but in Kotlin 
 Create a duplicate of cockpit-ui but written in Kotlin (cockpit-ui-kotlin)

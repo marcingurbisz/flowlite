@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – Playwright artifact timestamp cleanup.
+  - Outcome: Replaced raw epoch-millis Playwright screenshot/video suffixes with readable UTC date-time stamps in `CockpitPlaywrightTest.kt`.
+  - Learning: Human-readable artifact names make E2E failure triage easier without changing the underlying capture flow.
+
 - 2026-03-07 – Procedural DSL refactor.
   - Outcome: Replaced the old DSL surface with `waitFor`, `timer`, and `_if/_else`, rewrote the order/onboarding example flows and their tests, updated the showcase seeder/schema, and refreshed generated/manual docs.
   - Learning: The existing `Flow`/`StageDefinition`/`ConditionHandler` graph model was reusable; the main change was compiling a structured procedural AST into that graph rather than changing engine execution semantics.

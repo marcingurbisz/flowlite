@@ -12,12 +12,15 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import org.springframework.context.ConfigurableApplicationContext
 
 class CockpitPlaywrightTest : BehaviorSpec({
     val artifactsRoot = Path.of("build", "reports", "playwright")
     val screenshotDir = artifactsRoot.resolve("screenshots")
     val videoDir = artifactsRoot.resolve("videos")
+    val artifactTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
 
     lateinit var context: ConfigurableApplicationContext
     lateinit var playwright: Playwright
@@ -49,7 +52,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
     fun withRecordedContext(testName: String, block: (Page) -> Unit) {
         val safeTestName = sanitizeArtifactName(testName)
-        val timestamp = Instant.now().toEpochMilli()
+        val timestamp = Instant.now().atOffset(ZoneOffset.UTC).format(artifactTimestampFormatter)
         val artifactPrefix = "$safeTestName-$timestamp"
         val browserContext = browser.newContext(
             Browser.NewContextOptions()

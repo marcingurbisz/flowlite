@@ -1,5 +1,3 @@
-## Playwright: use date and timestap in artifact names instead toEpochMilli 
-
 ## More playwright tests
 Implement tests from [PlaywrightTestScenarios.md](PlaywrightTestScenarios.md). In addition, test:
 * From Flow Definitions > concrete flow:
@@ -28,14 +26,24 @@ Implement tests from [PlaywrightTestScenarios.md](PlaywrightTestScenarios.md). I
 * Back button support
 * All views are bookmarkable, links include tab and applied filters
 
+## Expose test instance publicly available - part 4
+Start app in docker without gradle using springboot jar. We run out of 512MB during build on render.
+
 ## [IN PROGRESS] Expose test instance publicly available - part 4
-Start app in docker without gradle using springboot jar?
+
 Pack cockpit-ui into jar
 * use only dist in CockpitUiStaticConfig
 * Deploy to render
 
 ## [WAITING FOR BETTER SPEC] Duplicate copkpit but in Kotlin 
 Create a duplicate of cockpit-ui but written in Kotlin (cockpit-ui-kotlin)
+
+## [DONE 2026-03-07] Playwright: use date and timestap in artifact names instead toEpochMilli
+Completed changes:
+- Updated `test/CockpitPlaywrightTest.kt` so screenshot/video artifact prefixes use a readable UTC `yyyyMMdd-HHmmss-SSS` timestamp instead of raw `toEpochMilli()` values.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## [DONE 2026-03-07] Refactor DSL to procedural style
 Completed changes:

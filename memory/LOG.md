@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – Procedural DSL refactor.
+  - Outcome: Replaced the old DSL surface with `waitFor`, `timer`, and `_if/_else`, rewrote the order/onboarding example flows and their tests, updated the showcase seeder/schema, and refreshed generated/manual docs.
+  - Learning: The existing `Flow`/`StageDefinition`/`ConditionHandler` graph model was reusable; the main change was compiling a structured procedural AST into that graph rather than changing engine execution semantics.
+
 - 2026-03-07 – MSSQL test strategy.
   - Outcome: Added `memory/MssqlTestPlan.md` with a staged plan for MSSQL coverage: H2 stays the default, MSSQL gets a separate task/job, and CI service containers are the recommended first implementation step.
   - Learning: For cross-database coverage, separating the fast default suite from the vendor-specific suite keeps feedback fast while still making SQL portability visible on PRs.

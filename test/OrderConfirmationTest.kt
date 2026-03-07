@@ -1,8 +1,7 @@
 package io.flowlite.test
 
 import io.flowlite.*
-import io.flowlite.test.OrderConfirmationEvent.ConfirmedDigitally
-import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
+import io.flowlite.test.OrderConfirmationEvent.Confirmed
 import io.flowlite.test.OrderConfirmationStage.*
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain
@@ -44,10 +43,9 @@ class OrderConfirmationTest : BehaviorSpec({
             }
 
             then("should contain event transitions") {
-                diagram shouldContain "onEvent ConfirmedDigitally"
-                diagram shouldContain "onEvent ConfirmedPhysically"
-                diagram shouldContain "WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally"
-                diagram shouldContain "WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically"
+                diagram shouldContain "WaitingForConfirmation --> if_wasconfirmeddigitally: onEvent Confirmed"
+                diagram shouldContain "if_wasconfirmeddigitally --> RemovingFromConfirmationQueue: wasConfirmedDigitally"
+                diagram shouldContain "if_wasconfirmeddigitally --> InformingCustomer: NOT (wasConfirmedDigitally)"
             }
 
             then("should have terminal state") {
@@ -81,7 +79,7 @@ class OrderConfirmationTest : BehaviorSpec({
             }
 
             then("it completes after digital confirmation event") {
-                engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId, ConfirmedDigitally)
+                engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId, Confirmed)
                 awaitStatus(
                     fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
                     expected = InformingCustomer to StageStatus.Completed,
@@ -90,7 +88,7 @@ class OrderConfirmationTest : BehaviorSpec({
                 val timeline = historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
                 require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
                 require(timeline.any { it.type == HistoryEntryType.Started })
-                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ConfirmedDigitally.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == Confirmed.name })
                 require(timeline.any { it.type == HistoryEntryType.StageChanged && it.toStage == InformingCustomer.name })
             }
         }
@@ -119,7 +117,7 @@ class OrderConfirmationTest : BehaviorSpec({
                 flowInstanceId = flowInstanceId,
             )
 
-            engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId, ConfirmedPhysically)
+            engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId, Confirmed)
 
             then("it informs customer and completes") {
                 awaitStatus(
@@ -129,7 +127,7 @@ class OrderConfirmationTest : BehaviorSpec({
 
                 val timeline = historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
                 require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
-                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ConfirmedPhysically.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == Confirmed.name })
                 require(timeline.any { it.type == HistoryEntryType.StageChanged && it.toStage == InformingCustomer.name })
             }
         }

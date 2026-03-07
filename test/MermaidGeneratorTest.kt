@@ -72,31 +72,28 @@ class MermaidGeneratorTest : BehaviorSpec({
 
 private fun createDiagramFlow() =
     flow<DiagramState, DiagramStage, DiagramEvent> {
-        condition(
+        _if(
             predicate = { it.flag },
             description = "Is Ready",
         ) {
-            onTrue {
-                stage(DiagramStage.TrueStage, ::actionForTrueStage)
-                condition(
-                    predicate = { it.duplicate },
-                    description = "Is VIP",
-                ) {
-                    onTrue { stage(DiagramStage.End) }
-                    onFalse { stage(DiagramStage.AltEndTrue) }
-                }
+            stage(DiagramStage.TrueStage, ::actionForTrueStage)
+            _if(
+                predicate = { it.duplicate },
+                description = "Is VIP",
+            ) {
+                stage(DiagramStage.End)
+            } _else {
+                stage(DiagramStage.AltEndTrue)
             }
-            onFalse {
-                stage(DiagramStage.FalseStage)
-                onEvent(DiagramEvent.Trigger) {
-                    condition(
-                        predicate = { it.vip },
-                        description = "Is VIP",
-                    ) {
-                        onTrue { stage(DiagramStage.AfterEvent) }
-                        onFalse { stage(DiagramStage.AltEndFalse) }
-                    }
-                }
+        } _else {
+            stage(DiagramStage.FalseStage, waitFor = DiagramEvent.Trigger)
+            _if(
+                predicate = { it.vip },
+                description = "Is VIP",
+            ) {
+                stage(DiagramStage.AfterEvent)
+            } _else {
+                stage(DiagramStage.AltEndFalse)
             }
         }
     }
@@ -109,10 +106,5 @@ private fun isReady(state: InferredState) = state.ready
 
 private fun createInferredDescriptionFlow() =
     flow<InferredState, DiagramStage, DiagramEvent> {
-        condition(
-            predicate = ::isReady,
-        ) {
-            onTrue { stage(DiagramStage.TrueStage) }
-            onFalse { stage(DiagramStage.FalseStage) }
-        }
+        _if(::isReady) { stage(DiagramStage.TrueStage) } _else { stage(DiagramStage.FalseStage) }
     }

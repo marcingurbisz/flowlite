@@ -1,78 +1,3 @@
-## Refactor DSL to procedural style
-
-Implement only support for dsl that you see in these two examples below. Do not care about braking changes :). Update source and test leaving only what is needed after this dsl change.
-
-Change order confirmation to this:
-
-fun createOrderConfirmationFlow() =
-    flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
-        stage(InitializingConfirmation, ::initializeOrderConfirmation)
-        stage(WaitingForConfirmation, waitFor = Confirmed)
-        _if(::wasConfirmedDigitally) {
-            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-        }
-        stage(InformingCustomer, ::informCustomer)
-    }
-
-Replace employee onbording with this:
-
-fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions) =
-    flow<EmployeeOnboarding, EmployeeOnboardingStage, EmployeeOnboardingEvent> {
-
-        _if(::isOnboardingAutomated) {
-            stage(CreateEmployeeProfile, actions::createEmployeeProfile)
-
-            _if(::needsTrainingProgram) {
-
-                _if(::isEngineeringRole) {
-                    stage(ActivateSystemAccess, actions::activateSystemAccess)
-                    timer(WaitForITBusinessHours, actions::effectiveITWorkingDateTime)
-                    stage(CreateAccountsInExternalSystems, actions::createAccountsInExternalSystems)
-                    stage(UpdateBenefitsEnrollment, actions::updateBenefitsEnrollment)
-                } _else {
-                    _if(::isFullSecuritySetup) {
-                        stage(SetSecurityClearanceLevels, actions::setSecurityClearanceLevels)
-                    }
-                }
-
-                stage(GenerateOnboardingDocuments, actions::generateOnboardingDocuments)
-                stage(SendContractForSigning, actions::sendContractForSigning)
-                stage(WaitingForContractSigned, waitFor = ContractSigned)
-
-                _if(::wereDocumentsSignedPhysically) {
-                    stage(RemoveFromSigningQueue, actions::removeFromSigningQueue)
-                }
-            }
-        }
-
-        stage(WaitingForOnboardingAgreementSigned, waitFor = OnboardingAgreementSigned)
-        timer(Delay5Min, actions::delay5Min)
-
-        _if(::isNotManualPath) {
-            _if(::isExecutiveOrManagement) {
-                stage(ActivateSpecializedAccess, actions::activateSpecializedAccess)
-            } _else {
-                _if(::hasComplianceChecks) {
-                    stage(WaitingForComplianceComplete, waitFor = ComplianceComplete)
-                }
-            }
-
-            stage(UpdateHRSystem, actions::updateHRSystem)
-            timer(DelayAfterHRUpdate, actions::delayAfterHRUpdate)
-        } _else {
-            stage(WaitingForManualApproval, waitFor = ManualApproval)
-            stage(FetchEmployeeRecords, actions::fetchEmployeeRecords)
-        }
-
-        _if(::isNotContractor) {
-            stage(UpdateDepartmentAssignment, actions::updateDepartmentAssignment)
-            stage(LinkToOrganizationChart, actions::linkToOrganizationChart)
-        }
-
-        stage(UpdateStatusInPayroll, actions::updateStatusInPayroll)
-        stage(CompleteOnboarding, actions::completeOnboarding)
-    }
-
 ## Playwright: use date and timestap in artifact names instead toEpochMilli 
 
 ## More playwright tests
@@ -111,6 +36,16 @@ Pack cockpit-ui into jar
 
 ## [WAITING FOR BETTER SPEC] Duplicate copkpit but in Kotlin 
 Create a duplicate of cockpit-ui but written in Kotlin (cockpit-ui-kotlin)
+
+## [DONE 2026-03-07] Refactor DSL to procedural style
+Completed changes:
+- Replaced the old `onEvent` / `condition` / `goTo` builder surface with a procedural compiler in `source/dsl.kt` that supports `stage(..., waitFor = ...)`, `timer(...)`, and `_if { ... } _else { ... }` while reusing the existing runtime graph model.
+- Migrated order confirmation and employee onboarding to the new DSL, including the new order event model and the new employee stage/event/action vocabulary.
+- Updated the affected DSL/runtime tests, cockpit fixtures, showcase seeding, schema scripts, and generated/manual README docs to match the new builder shape.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
+- `./gradlew updateReadme` → BUILD SUCCESSFUL.
 
 ## [DONE 2026-03-07] Prepare idea for runnig test on mssql too
 Completed changes:

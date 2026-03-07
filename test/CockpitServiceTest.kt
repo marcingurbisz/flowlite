@@ -108,7 +108,7 @@ class CockpitServiceTest : BehaviorSpec({
                 historyRepo.deleteAll()
                 historyRepo.save(historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
                 historyRepo.save(historyRow("2026-03-04T09:01:00Z", ORDER_CONFIRMATION_FLOW_ID, orderError, HistoryEntryType.Error, stage = "InformingCustomer", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "order-failed"))
-                historyRepo.save(historyRow("2026-03-04T09:02:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingCompleted, HistoryEntryType.StatusChanged, stage = "UpdateStatusInHRSystem", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed))
+                historyRepo.save(historyRow("2026-03-04T09:02:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingCompleted, HistoryEntryType.StatusChanged, stage = "CompleteOnboarding", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed))
                 historyRepo.save(historyRow("2026-03-04T09:03:00Z", "unknown-flow", unknownFlow, HistoryEntryType.StatusChanged, stage = "X", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
 
                 val flows = service.listFlows()
@@ -140,11 +140,11 @@ class CockpitServiceTest : BehaviorSpec({
             then("timeline returns rows in repository order") {
                 historyRepo.deleteAll()
                 historyRepo.save(historyRow("2026-03-04T10:00:00Z", flowId, id, HistoryEntryType.Started, stage = "InitializingConfirmation", toStatus = StageStatus.Pending))
-                historyRepo.save(historyRow("2026-03-04T10:01:00Z", flowId, id, HistoryEntryType.EventAppended, event = OrderConfirmationEvent.ConfirmedDigitally.name))
+                historyRepo.save(historyRow("2026-03-04T10:01:00Z", flowId, id, HistoryEntryType.EventAppended, event = OrderConfirmationEvent.Confirmed.name))
 
                 val timeline = service.timeline(flowId, id)
                 timeline.map { it.type } shouldContainExactly listOf(HistoryEntryType.Started, HistoryEntryType.EventAppended)
-                timeline.map { it.event } shouldContainExactly listOf(null, OrderConfirmationEvent.ConfirmedDigitally.name)
+                timeline.map { it.event } shouldContainExactly listOf(null, OrderConfirmationEvent.Confirmed.name)
             }
         }
     }

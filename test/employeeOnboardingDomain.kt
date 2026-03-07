@@ -1,25 +1,38 @@
 package io.flowlite.test
 
-import io.flowlite.Event
 import io.flowlite.ActionContext
+import io.flowlite.Event
 import io.flowlite.InstanceData
 import io.flowlite.Stage
 import io.flowlite.StageStatus
 import io.flowlite.StatePersister
 import io.flowlite.flow
+import io.flowlite.test.EmployeeEvent.ComplianceComplete
 import io.flowlite.test.EmployeeEvent.ContractSigned
-import io.flowlite.test.EmployeeEvent.EmployeeDocumentsSigned
-import io.flowlite.test.EmployeeEvent.OnboardingComplete
-import io.flowlite.test.EmployeeStage.ActivateSpecializedEmployee
-import io.flowlite.test.EmployeeStage.ActivateStandardEmployee
-import io.flowlite.test.EmployeeStage.GenerateEmployeeDocuments
+import io.flowlite.test.EmployeeEvent.ManualApproval
+import io.flowlite.test.EmployeeEvent.OnboardingAgreementSigned
+import io.flowlite.test.EmployeeStage.ActivateSpecializedAccess
+import io.flowlite.test.EmployeeStage.ActivateSystemAccess
+import io.flowlite.test.EmployeeStage.CompleteOnboarding
+import io.flowlite.test.EmployeeStage.CreateAccountsInExternalSystems
+import io.flowlite.test.EmployeeStage.CreateEmployeeProfile
+import io.flowlite.test.EmployeeStage.Delay5Min
+import io.flowlite.test.EmployeeStage.DelayAfterHRUpdate
+import io.flowlite.test.EmployeeStage.FetchEmployeeRecords
+import io.flowlite.test.EmployeeStage.GenerateOnboardingDocuments
+import io.flowlite.test.EmployeeStage.LinkToOrganizationChart
+import io.flowlite.test.EmployeeStage.RemoveFromSigningQueue
 import io.flowlite.test.EmployeeStage.SendContractForSigning
-import io.flowlite.test.EmployeeStage.SetDepartmentAccess
-import io.flowlite.test.EmployeeStage.UpdateSecurityClearanceLevels
-import io.flowlite.test.EmployeeStage.UpdateStatusInHRSystem
+import io.flowlite.test.EmployeeStage.SetSecurityClearanceLevels
+import io.flowlite.test.EmployeeStage.UpdateBenefitsEnrollment
+import io.flowlite.test.EmployeeStage.UpdateDepartmentAssignment
+import io.flowlite.test.EmployeeStage.UpdateHRSystem
+import io.flowlite.test.EmployeeStage.UpdateStatusInPayroll
+import io.flowlite.test.EmployeeStage.WaitForITBusinessHours
+import io.flowlite.test.EmployeeStage.WaitingForComplianceComplete
 import io.flowlite.test.EmployeeStage.WaitingForContractSigned
-import io.flowlite.test.EmployeeStage.WaitingForEmployeeDocumentsSigned
-import io.flowlite.test.EmployeeStage.WaitingForOnboardingCompletion
+import io.flowlite.test.EmployeeStage.WaitingForManualApproval
+import io.flowlite.test.EmployeeStage.WaitingForOnboardingAgreementSigned
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -32,23 +45,35 @@ import org.springframework.data.repository.CrudRepository
 const val EMPLOYEE_ONBOARDING_FLOW_ID = "employee-onboarding"
 
 enum class EmployeeStage : Stage {
-    CreateUserInSystem,
-    ActivateStandardEmployee,
-    ActivateSpecializedEmployee,
-    UpdateSecurityClearanceLevels,
-    SetDepartmentAccess,
-    GenerateEmployeeDocuments,
+    CreateEmployeeProfile,
+    ActivateSystemAccess,
+    WaitForITBusinessHours,
+    CreateAccountsInExternalSystems,
+    UpdateBenefitsEnrollment,
+    SetSecurityClearanceLevels,
+    GenerateOnboardingDocuments,
     SendContractForSigning,
     WaitingForContractSigned,
-    WaitingForOnboardingCompletion,
-    UpdateStatusInHRSystem,
-    WaitingForEmployeeDocumentsSigned,
+    RemoveFromSigningQueue,
+    WaitingForOnboardingAgreementSigned,
+    Delay5Min,
+    ActivateSpecializedAccess,
+    WaitingForComplianceComplete,
+    UpdateHRSystem,
+    DelayAfterHRUpdate,
+    WaitingForManualApproval,
+    FetchEmployeeRecords,
+    UpdateDepartmentAssignment,
+    LinkToOrganizationChart,
+    UpdateStatusInPayroll,
+    CompleteOnboarding,
 }
 
 enum class EmployeeEvent : Event {
     ContractSigned,
-    OnboardingComplete,
-    EmployeeDocumentsSigned,
+    OnboardingAgreementSigned,
+    ComplianceComplete,
+    ManualApproval,
 }
 
 data class EmployeeOnboarding(
@@ -59,93 +84,120 @@ data class EmployeeOnboarding(
     val stage: EmployeeStage,
     val stageStatus: StageStatus = StageStatus.Pending,
     val isOnboardingAutomated: Boolean = false,
-    val isContractSigned: Boolean = false,
-    val isExecutiveRole: Boolean = false,
-    val isSecurityClearanceRequired: Boolean = false,
-    val isFullOnboardingRequired: Boolean = false,
-    val isManagerOrDirectorRole: Boolean = false,
+    val needsTrainingProgram: Boolean = false,
+    val isEngineeringRole: Boolean = false,
+    val isFullSecuritySetup: Boolean = false,
+    val wereDocumentsSignedPhysically: Boolean = false,
+    val isNotManualPath: Boolean = true,
+    val isExecutiveOrManagement: Boolean = false,
+    val hasComplianceChecks: Boolean = false,
+    val isNotContractor: Boolean = true,
     val isRemoteEmployee: Boolean = false,
+    val isManagerOrDirectorRole: Boolean = false,
     val isShowcaseInstance: Boolean = false,
-    val userCreatedInSystem: Boolean = false,
-    val employeeActivated: Boolean = false,
-    val securityClearanceUpdated: Boolean = false,
-    val departmentAccessSet: Boolean = false,
+    val employeeProfileCreated: Boolean = false,
+    val systemAccessActivated: Boolean = false,
+    val itBusinessHoursResolved: Boolean = false,
+    val externalAccountsCreated: Boolean = false,
+    val benefitsEnrollmentUpdated: Boolean = false,
+    val securityClearanceLevelsSet: Boolean = false,
     val documentsGenerated: Boolean = false,
     val contractSentForSigning: Boolean = false,
-    val statusUpdatedInHR: Boolean = false,
+    val removedFromSigningQueue: Boolean = false,
+    val delay5MinCompleted: Boolean = false,
+    val specializedAccessActivated: Boolean = false,
+    val hrUpdated: Boolean = false,
+    val delayAfterHrUpdateCompleted: Boolean = false,
+    val employeeRecordsFetched: Boolean = false,
+    val departmentAssignmentUpdated: Boolean = false,
+    val organizationChartLinked: Boolean = false,
+    val payrollStatusUpdated: Boolean = false,
+    val onboardingCompleted: Boolean = false,
 )
 
 fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions) = // FLOW-DEFINITION-START
     flow<EmployeeOnboarding, EmployeeStage, EmployeeEvent> {
-        condition(::isOnboardingAutomated) {
-            onTrue {
-                stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
-                condition(
-                    { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                    description = "isExecutiveRole || isSecurityClearanceRequired",
-                ) {
-                    onFalse {
-                        stage(ActivateStandardEmployee, actions::activateEmployee)
-                        stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
-                        stage(SendContractForSigning, actions::sendContractForSigning)
-                        stage(WaitingForEmployeeDocumentsSigned)
-                        onEvent(EmployeeDocumentsSigned)
-                        stage(WaitingForContractSigned)
-                        onEvent(ContractSigned)
-                        condition(
-                            { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                            description = "isExecutiveRole || isSecurityClearanceRequired",
-                        ) {
-                            onTrue {
-                                stage(ActivateSpecializedEmployee, actions::activateEmployee)
-                                stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
-                            }
-                            onFalse {
-                                stage(WaitingForOnboardingCompletion)
-                                onEvent(OnboardingComplete)
-                                goTo(UpdateStatusInHRSystem)
-                            }
-                        }
-                    }
-                    onTrue {
-                        stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
-                        condition(::isSecurityClearanceRequired) {
-                            onTrue {
-                                condition(predicate = ::isFullOnboardingRequired) {
-                                    onTrue {
-                                        stage(SetDepartmentAccess, actions::setDepartmentAccess)
-                                        goTo(GenerateEmployeeDocuments)
-                                    }
-                                    onFalse { goTo(GenerateEmployeeDocuments) }
-                                }
-                            }
-                            onFalse { goTo(WaitingForContractSigned) }
-                        }
+        _if(::isOnboardingAutomated) {
+            stage(CreateEmployeeProfile, actions::createEmployeeProfile)
+
+            _if(::needsTrainingProgram) {
+                _if(::isEngineeringRole) {
+                    stage(ActivateSystemAccess, actions::activateSystemAccess)
+                    timer(WaitForITBusinessHours, actions::effectiveITWorkingDateTime)
+                    stage(CreateAccountsInExternalSystems, actions::createAccountsInExternalSystems)
+                    stage(UpdateBenefitsEnrollment, actions::updateBenefitsEnrollment)
+                } _else {
+                    _if(::isFullSecuritySetup) {
+                        stage(SetSecurityClearanceLevels, actions::setSecurityClearanceLevels)
                     }
                 }
-            }
-            onFalse {
-                goTo(WaitingForContractSigned)
+
+                stage(GenerateOnboardingDocuments, actions::generateOnboardingDocuments)
+                stage(SendContractForSigning, actions::sendContractForSigning)
+                stage(WaitingForContractSigned, waitFor = ContractSigned)
+
+                _if(::wereDocumentsSignedPhysically) {
+                    stage(RemoveFromSigningQueue, actions::removeFromSigningQueue)
+                }
             }
         }
+
+        stage(WaitingForOnboardingAgreementSigned, waitFor = OnboardingAgreementSigned)
+        timer(Delay5Min, actions::delay5Min)
+
+        _if(::isNotManualPath) {
+            _if(::isExecutiveOrManagement) {
+                stage(ActivateSpecializedAccess, actions::activateSpecializedAccess)
+            } _else {
+                _if(::hasComplianceChecks) {
+                    stage(WaitingForComplianceComplete, waitFor = ComplianceComplete)
+                }
+            }
+
+            stage(UpdateHRSystem, actions::updateHRSystem)
+            timer(DelayAfterHRUpdate, actions::delayAfterHRUpdate)
+        } _else {
+            stage(WaitingForManualApproval, waitFor = ManualApproval)
+            stage(FetchEmployeeRecords, actions::fetchEmployeeRecords)
+        }
+
+        _if(::isNotContractor) {
+            stage(UpdateDepartmentAssignment, actions::updateDepartmentAssignment)
+            stage(LinkToOrganizationChart, actions::linkToOrganizationChart)
+        }
+
+        stage(UpdateStatusInPayroll, actions::updateStatusInPayroll)
+        stage(CompleteOnboarding, actions::completeOnboarding)
     }
 // FLOW-DEFINITION-END
 
 private fun isOnboardingAutomated(employee: EmployeeOnboarding) = employee.isOnboardingAutomated
 
-private fun isSecurityClearanceRequired(employee: EmployeeOnboarding) = employee.isSecurityClearanceRequired
+private fun needsTrainingProgram(employee: EmployeeOnboarding) = employee.needsTrainingProgram
 
-private fun isFullOnboardingRequired(employee: EmployeeOnboarding) = employee.isFullOnboardingRequired
+private fun isEngineeringRole(employee: EmployeeOnboarding) = employee.isEngineeringRole
+
+private fun isFullSecuritySetup(employee: EmployeeOnboarding) = employee.isFullSecuritySetup
+
+private fun wereDocumentsSignedPhysically(employee: EmployeeOnboarding) = employee.wereDocumentsSignedPhysically
+
+private fun isNotManualPath(employee: EmployeeOnboarding) = employee.isNotManualPath
+
+private fun isExecutiveOrManagement(employee: EmployeeOnboarding) = employee.isExecutiveOrManagement
+
+private fun hasComplianceChecks(employee: EmployeeOnboarding) = employee.hasComplianceChecks
+
+private fun isNotContractor(employee: EmployeeOnboarding) = employee.isNotContractor
 
 class EmployeeOnboardingActions(
     private val repo: EmployeeOnboardingRepository,
 ) {
-    fun createUserInSystem(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
-        ShowcaseActionBehavior.apply("createUserInSystem", employee.isShowcaseInstance)
-        employeeOnboardingLog.info { "Creating user account in system" }
+    fun createEmployeeProfile(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply("createEmployeeProfile", employee.isShowcaseInstance)
+        employeeOnboardingLog.info { "Creating employee profile" }
         val id = context.flowInstanceId
 
-        EmployeeOnboardingTestHooks.get(id)?.createUserInSystemHooks?.let { hooks ->
+        EmployeeOnboardingTestHooks.get(id)?.createEmployeeProfileHooks?.let { hooks ->
             hooks.entered.countDown()
             require(hooks.allowProceedToSave.await(2, TimeUnit.SECONDS)) { "Timed out waiting for allowProceedToSave" }
         }
@@ -154,10 +206,10 @@ class EmployeeOnboardingActions(
             id = id,
             initial = employee,
         ) { latest ->
-            latest.copy(userCreatedInSystem = true)
+            latest.copy(employeeProfileCreated = true)
         }
 
-        EmployeeOnboardingTestHooks.get(id)?.createUserInSystemHooks?.let { hooks ->
+        EmployeeOnboardingTestHooks.get(id)?.createEmployeeProfileHooks?.let { hooks ->
             hooks.saved.countDown()
             require(hooks.allowReturnAfterSave.await(2, TimeUnit.SECONDS)) { "Timed out waiting for allowReturnAfterSave" }
         }
@@ -165,75 +217,106 @@ class EmployeeOnboardingActions(
         return savedEntity
     }
 
-    fun activateEmployee(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
-        ShowcaseActionBehavior.apply("activateEmployee", employee.isShowcaseInstance)
-        employeeOnboardingLog.info { "Activating employee account" }
-        val id = context.flowInstanceId
-        return repo.saveWithOptimisticLockRetry(
-            id = id,
-            initial = employee,
-        ) { latest ->
-            latest.copy(employeeActivated = true)
+    fun activateSystemAccess(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "activateSystemAccess", "Activating system access") {
+            it.copy(systemAccessActivated = true)
         }
-    }
 
-    fun updateSecurityClearanceLevels(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
-        ShowcaseActionBehavior.apply("updateSecurityClearanceLevels", employee.isShowcaseInstance)
-        employeeOnboardingLog.info { "Updating security clearance levels" }
-        val id = context.flowInstanceId
-        return repo.saveWithOptimisticLockRetry(
-            id = id,
-            initial = employee,
-        ) { latest ->
-            latest.copy(securityClearanceUpdated = true)
+    fun effectiveITWorkingDateTime(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "effectiveITWorkingDateTime", "Resolving effective IT working date time") {
+            it.copy(itBusinessHoursResolved = true)
         }
-    }
 
-    fun setDepartmentAccess(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
-        ShowcaseActionBehavior.apply("setDepartmentAccess", employee.isShowcaseInstance)
-        employeeOnboardingLog.info { "Setting department access permissions" }
-        val id = context.flowInstanceId
-        return repo.saveWithOptimisticLockRetry(
-            id = id,
-            initial = employee,
-        ) { latest ->
-            latest.copy(departmentAccessSet = true)
+    fun createAccountsInExternalSystems(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "createAccountsInExternalSystems", "Creating accounts in external systems") {
+            it.copy(externalAccountsCreated = true)
         }
-    }
 
-    fun generateEmployeeDocuments(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
-        ShowcaseActionBehavior.apply("generateEmployeeDocuments", employee.isShowcaseInstance)
-        employeeOnboardingLog.info { "Generating employee documents" }
-        val id = context.flowInstanceId
-        return repo.saveWithOptimisticLockRetry(
-            id = id,
-            initial = employee,
-        ) { latest ->
-            latest.copy(documentsGenerated = true)
+    fun updateBenefitsEnrollment(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "updateBenefitsEnrollment", "Updating benefits enrollment") {
+            it.copy(benefitsEnrollmentUpdated = true)
         }
-    }
 
-    fun sendContractForSigning(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
-        ShowcaseActionBehavior.apply("sendContractForSigning", employee.isShowcaseInstance)
-        employeeOnboardingLog.info { "Sending contract for signing" }
-        val id = context.flowInstanceId
-        return repo.saveWithOptimisticLockRetry(
-            id = id,
-            initial = employee,
-        ) { latest ->
-            latest.copy(contractSentForSigning = true)
+    fun setSecurityClearanceLevels(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "setSecurityClearanceLevels", "Setting security clearance levels") {
+            it.copy(securityClearanceLevelsSet = true)
         }
-    }
 
-    fun updateStatusInHRSystem(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding {
-        ShowcaseActionBehavior.apply("updateStatusInHRSystem", employee.isShowcaseInstance)
-        employeeOnboardingLog.info { "Updating status in HR system" }
+    fun generateOnboardingDocuments(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "generateOnboardingDocuments", "Generating onboarding documents") {
+            it.copy(documentsGenerated = true)
+        }
+
+    fun sendContractForSigning(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "sendContractForSigning", "Sending contract for signing") {
+            it.copy(contractSentForSigning = true)
+        }
+
+    fun removeFromSigningQueue(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "removeFromSigningQueue", "Removing employee from signing queue") {
+            it.copy(removedFromSigningQueue = true)
+        }
+
+    fun delay5Min(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "delay5Min", "Recording five-minute delay marker") {
+            it.copy(delay5MinCompleted = true)
+        }
+
+    fun activateSpecializedAccess(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "activateSpecializedAccess", "Activating specialized access") {
+            it.copy(specializedAccessActivated = true)
+        }
+
+    fun updateHRSystem(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "updateHRSystem", "Updating HR system") {
+            it.copy(hrUpdated = true)
+        }
+
+    fun delayAfterHRUpdate(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "delayAfterHRUpdate", "Recording post-HR-update delay marker") {
+            it.copy(delayAfterHrUpdateCompleted = true)
+        }
+
+    fun fetchEmployeeRecords(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "fetchEmployeeRecords", "Fetching employee records") {
+            it.copy(employeeRecordsFetched = true)
+        }
+
+    fun updateDepartmentAssignment(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "updateDepartmentAssignment", "Updating department assignment") {
+            it.copy(departmentAssignmentUpdated = true)
+        }
+
+    fun linkToOrganizationChart(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "linkToOrganizationChart", "Linking employee to organization chart") {
+            it.copy(organizationChartLinked = true)
+        }
+
+    fun updateStatusInPayroll(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "updateStatusInPayroll", "Updating status in payroll") {
+            it.copy(payrollStatusUpdated = true)
+        }
+
+    fun completeOnboarding(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
+        saveProgress(context, employee, "completeOnboarding", "Completing onboarding") {
+            it.copy(onboardingCompleted = true)
+        }
+
+    private fun saveProgress(
+        context: ActionContext,
+        employee: EmployeeOnboarding,
+        actionName: String,
+        message: String,
+        transform: (EmployeeOnboarding) -> EmployeeOnboarding,
+    ): EmployeeOnboarding {
+        ShowcaseActionBehavior.apply(actionName, employee.isShowcaseInstance)
+        employeeOnboardingLog.info { message }
         val id = context.flowInstanceId
         return repo.saveWithOptimisticLockRetry(
             id = id,
             initial = employee,
         ) { latest ->
-            latest.copy(statusUpdatedInHR = true)
+            transform(latest)
         }
     }
 }
@@ -308,9 +391,9 @@ object EmployeeOnboardingTestHooks {
 
 class EmployeeOnboardingActionHooks {
     @Volatile
-    var createUserInSystemHooks: CreateUserInSystemHooks? = null
+    var createEmployeeProfileHooks: CreateEmployeeProfileHooks? = null
 
-    class CreateUserInSystemHooks(
+    class CreateEmployeeProfileHooks(
         val entered: java.util.concurrent.CountDownLatch,
         val allowProceedToSave: java.util.concurrent.CountDownLatch,
         val saved: java.util.concurrent.CountDownLatch,

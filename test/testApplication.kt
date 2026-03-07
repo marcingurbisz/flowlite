@@ -228,25 +228,25 @@ private class ShowcaseFlowSeeder(
             customerName = "Showcase Customer $index",
         )
         val orderId = engine.startInstance(ORDER_CONFIRMATION_FLOW_ID, order)
-        val orderEvent =
-            if (confirmationType == ConfirmationType.Digital) {
-                OrderConfirmationEvent.ConfirmedDigitally
-            } else {
-                OrderConfirmationEvent.ConfirmedPhysically
-            }
-        engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, orderId, orderEvent)
+        engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, orderId, OrderConfirmationEvent.Confirmed)
 
         val employee = EmployeeOnboarding(
-            stage = EmployeeStage.CreateUserInSystem,
+            stage = EmployeeStage.CreateEmployeeProfile,
             isOnboardingAutomated = true,
-            isExecutiveRole = false,
-            isSecurityClearanceRequired = false,
+            needsTrainingProgram = true,
+            isEngineeringRole = index % 2L == 0L,
+            isFullSecuritySetup = index % 3L == 0L,
+            wereDocumentsSignedPhysically = index % 2L != 0L,
+            isNotManualPath = true,
+            isExecutiveOrManagement = index % 4L == 0L,
+            hasComplianceChecks = index % 5L == 0L,
+            isNotContractor = true,
             isShowcaseInstance = true,
         )
         val employeeId = engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, employee)
-        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.EmployeeDocumentsSigned)
         engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.ContractSigned)
-        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.OnboardingComplete)
+        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.OnboardingAgreementSigned)
+        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.ComplianceComplete)
     }
 
     override fun close() {

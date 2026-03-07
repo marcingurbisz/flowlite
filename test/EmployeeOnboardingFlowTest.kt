@@ -5,11 +5,11 @@ import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.HistoryEntryType
 import io.flowlite.MermaidGenerator
 import io.flowlite.StageStatus
-import io.flowlite.test.EmployeeEvent.ContractSigned
-import io.flowlite.test.EmployeeEvent.OnboardingComplete
-import io.flowlite.test.EmployeeStage.CreateUserInSystem
-import io.flowlite.test.EmployeeStage.UpdateStatusInHRSystem
-import io.flowlite.test.EmployeeStage.WaitingForContractSigned
+import io.flowlite.test.EmployeeEvent.ManualApproval
+import io.flowlite.test.EmployeeEvent.OnboardingAgreementSigned
+import io.flowlite.test.EmployeeStage.CompleteOnboarding
+import io.flowlite.test.EmployeeStage.CreateEmployeeProfile
+import io.flowlite.test.EmployeeStage.WaitingForOnboardingAgreementSigned
 import io.kotest.core.spec.style.BehaviorSpec
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -37,39 +37,38 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
         }
     }
 
-    given("employee onboarding flow - manual path") {
+    given("employee onboarding flow - manual approval path") {
         val flowInstanceId = engine.startInstance(
             flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
             initialState = EmployeeOnboarding(
-                stage = WaitingForContractSigned,
+                stage = WaitingForOnboardingAgreementSigned,
                 isOnboardingAutomated = false,
-                isExecutiveRole = false,
-                isSecurityClearanceRequired = false,
-                isFullOnboardingRequired = false,
+                isNotManualPath = false,
+                isNotContractor = true,
             ),
         )
 
-        then("it starts at waiting for contract signature") {
+        then("it starts at waiting for onboarding agreement") {
             awaitStatus(
                 fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
-                expected = WaitingForContractSigned to StageStatus.Pending,
+                expected = WaitingForOnboardingAgreementSigned to StageStatus.Pending,
             )
         }
 
-        `when`("contract is signed and onboarding completes") {
-            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId, ContractSigned)
-            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId, OnboardingComplete)
+        `when`("agreement is signed and manual approval arrives") {
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId, OnboardingAgreementSigned)
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId, ManualApproval)
 
-            then("it finishes in HR system update stage") {
+            then("it finishes onboarding") {
                 awaitStatus(
                     fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
-                    expected = UpdateStatusInHRSystem to StageStatus.Completed,
+                    expected = CompleteOnboarding to StageStatus.Completed,
                 )
 
                 val timeline = historyRepo.findTimeline(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId)
                 require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
-                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ContractSigned.name })
-                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == OnboardingComplete.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == OnboardingAgreementSigned.name })
+                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ManualApproval.name })
             }
         }
     }
@@ -89,7 +88,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             EmployeeOnboardingTestHooks.set(
                 id,
                 EmployeeOnboardingActionHooks().apply {
-                    createUserInSystemHooks = EmployeeOnboardingActionHooks.CreateUserInSystemHooks(
+                    createEmployeeProfileHooks = EmployeeOnboardingActionHooks.CreateEmployeeProfileHooks(
                         entered = entered,
                         allowProceedToSave = allowProceedToSave,
                         saved = saved,
@@ -101,15 +100,17 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             repo.save(
                 EmployeeOnboarding(
                     id = id,
-                    stage = CreateUserInSystem,
+                    stage = CreateEmployeeProfile,
                     stageStatus = StageStatus.Pending,
                     isOnboardingAutomated = true,
-                    isExecutiveRole = true,
-                    isSecurityClearanceRequired = false,
+                    needsTrainingProgram = false,
+                    isNotManualPath = true,
+                    isExecutiveOrManagement = true,
+                    isNotContractor = false,
                 ),
             )
 
-            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, ContractSigned)
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, OnboardingAgreementSigned)
             engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, id)
 
             then("persister merges engine progress with external business updates") {
@@ -124,11 +125,11 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
                     awaitStatus(
                         fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = UpdateStatusInHRSystem to StageStatus.Completed,
+                        expected = CompleteOnboarding to StageStatus.Completed,
                     )
 
                     val final = repo.findById(id).orElseThrow()
-                    require(final.userCreatedInSystem)
+                    require(final.employeeProfileCreated)
                     require(final.isRemoteEmployee)
                 } finally {
                     EmployeeOnboardingTestHooks.clear(id)
@@ -146,7 +147,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             EmployeeOnboardingTestHooks.set(
                 id,
                 EmployeeOnboardingActionHooks().apply {
-                    createUserInSystemHooks = EmployeeOnboardingActionHooks.CreateUserInSystemHooks(
+                    createEmployeeProfileHooks = EmployeeOnboardingActionHooks.CreateEmployeeProfileHooks(
                         entered = entered,
                         allowProceedToSave = allowProceedToSave,
                         saved = saved,
@@ -158,15 +159,17 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             repo.save(
                 EmployeeOnboarding(
                     id = id,
-                    stage = CreateUserInSystem,
+                    stage = CreateEmployeeProfile,
                     stageStatus = StageStatus.Pending,
                     isOnboardingAutomated = true,
-                    isExecutiveRole = true,
-                    isSecurityClearanceRequired = false,
+                    needsTrainingProgram = false,
+                    isNotManualPath = true,
+                    isExecutiveOrManagement = true,
+                    isNotContractor = false,
                 ),
             )
 
-            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, ContractSigned)
+            engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, OnboardingAgreementSigned)
             engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, id)
 
             then("persister merges without losing the external update") {
@@ -181,11 +184,11 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
                     awaitStatus(
                         fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = UpdateStatusInHRSystem to StageStatus.Completed,
+                        expected = CompleteOnboarding to StageStatus.Completed,
                     )
 
                     val final = repo.findById(id).orElseThrow()
-                    require(final.userCreatedInSystem)
+                    require(final.employeeProfileCreated)
                     require(final.isManagerOrDirectorRole)
                 } finally {
                     EmployeeOnboardingTestHooks.clear(id)

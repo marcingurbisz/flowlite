@@ -17,58 +17,55 @@ private enum class ReceiverStage : Stage {
 }
 
 private enum class ReceiverEvent : Event {
-    ConfirmedDigitally,
-    ConfirmedPhysically,
+    Confirmed,
 }
 
 private data class ReceiverState(val flag: Boolean)
 
 class DslTest : BehaviorSpec({
-    given("receiver-lambda DSL") {
-        `when`("building an event-driven flow") {
+    given("procedural DSL") {
+        `when`("building a flow with waitFor and implicit false-path fallthrough") {
             val built = flow<ReceiverState, ReceiverStage, ReceiverEvent> {
                 stage(ReceiverStage.Start, ::noOp)
-                stage(ReceiverStage.Wait) {
-                    onEvent(ReceiverEvent.ConfirmedDigitally) {
-                        stage(ReceiverStage.Removing, ::noOp)
-                        stage(ReceiverStage.Informing, ::noOp)
-                    }
-                    onEvent(ReceiverEvent.ConfirmedPhysically) {
-                        goTo(ReceiverStage.Informing)
-                    }
+                stage(ReceiverStage.Wait, waitFor = ReceiverEvent.Confirmed)
+                _if(::isFlagTrue) {
+                    stage(ReceiverStage.Removing, ::noOp)
                 }
+                stage(ReceiverStage.Informing, ::noOp)
             }
 
-            then("it preserves direct and event transitions") {
+            then("it lowers the waited event into an event-based condition") {
                 built.initialStage shouldBe ReceiverStage.Start
                 val start = requireNotNull(built.stages[ReceiverStage.Start])
                 start.nextStage shouldBe ReceiverStage.Wait
 
                 val wait = requireNotNull(built.stages[ReceiverStage.Wait])
-                wait.eventHandlers shouldContainKey ReceiverEvent.ConfirmedDigitally
-                wait.eventHandlers shouldContainKey ReceiverEvent.ConfirmedPhysically
-                wait.eventHandlers[ReceiverEvent.ConfirmedDigitally]?.targetStage shouldBe ReceiverStage.Removing
-                wait.eventHandlers[ReceiverEvent.ConfirmedPhysically]?.targetStage shouldBe ReceiverStage.Informing
+                wait.eventHandlers shouldContainKey ReceiverEvent.Confirmed
+
+                val condition = requireNotNull(wait.eventHandlers[ReceiverEvent.Confirmed]?.targetCondition)
+                condition.description shouldBe "isFlagTrue"
+                condition.trueStage shouldBe ReceiverStage.Removing
+                condition.falseStage shouldBe ReceiverStage.Informing
+
+                requireNotNull(built.stages[ReceiverStage.Removing]).nextStage shouldBe ReceiverStage.Informing
             }
         }
 
-        `when`("using condition blocks in receiver DSL") {
-            val built = flow<ReceiverState, ReceiverStage, ReceiverEvent> {
-                condition(
-                    predicate = ::isFlagTrue,
-                ) {
-                    onTrue {
-                        stage(ReceiverStage.Start)
-                        condition(::isFlagTrue) {
-                            onTrue { stage(ReceiverStage.Done) }
-                            onFalse { stage(ReceiverStage.Informing) }
-                        }
+        `when`("building nested _if / _else branches") {
+            val built = eventlessFlow<ReceiverState, ReceiverStage> {
+                _if(::isFlagTrue) {
+                    stage(ReceiverStage.Start)
+                    _if(::isFlagTrue) {
+                        stage(ReceiverStage.Done)
+                    } _else {
+                        stage(ReceiverStage.Informing)
                     }
-                    onFalse { stage(ReceiverStage.Wait) }
+                } _else {
+                    stage(ReceiverStage.Wait)
                 }
             }
 
-            then("it infers condition descriptions and keeps branch targets") {
+            then("it lowers nested conditions and infers descriptions") {
                 val initialCondition = requireNotNull(built.initialCondition)
                 initialCondition.description shouldBe "isFlagTrue"
                 initialCondition.trueStage shouldBe ReceiverStage.Start
@@ -78,58 +75,6 @@ class DslTest : BehaviorSpec({
                 startCondition.description shouldBe "isFlagTrue"
                 startCondition.trueStage shouldBe ReceiverStage.Done
                 startCondition.falseStage shouldBe ReceiverStage.Informing
-            }
-        }
-
-        `when`("building an eventless flow") {
-            val built = eventlessFlow<ReceiverState, ReceiverStage> {
-                stage(ReceiverStage.Start, ::noOp)
-                stage(ReceiverStage.Done, ::noOp)
-            }
-
-            then("it supports direct transitions without event type") {
-                built.initialStage shouldBe ReceiverStage.Start
-                val start = requireNotNull(built.stages[ReceiverStage.Start])
-                start.nextStage shouldBe ReceiverStage.Done
-            }
-        }
-
-        `when`("using root-level onEvent after stage") {
-            val built = flow<ReceiverState, ReceiverStage, ReceiverEvent> {
-                stage(ReceiverStage.Start, ::noOp)
-                stage(ReceiverStage.Wait)
-                onEvent(ReceiverEvent.ConfirmedDigitally)
-                stage(ReceiverStage.Done)
-            }
-
-            then("it creates event transition from the current stage") {
-                val wait = requireNotNull(built.stages[ReceiverStage.Wait])
-                wait.eventHandlers shouldContainKey ReceiverEvent.ConfirmedDigitally
-                wait.eventHandlers[ReceiverEvent.ConfirmedDigitally]?.targetStage shouldBe ReceiverStage.Done
-            }
-        }
-
-        `when`("an event branch transitions to a condition") {
-            val built = flow<ReceiverState, ReceiverStage, ReceiverEvent> {
-                stage(ReceiverStage.Wait)
-                onEvent(ReceiverEvent.ConfirmedDigitally) {
-                    condition(
-                        predicate = ::isFlagTrue,
-                    ) {
-                        onTrue { stage(ReceiverStage.Removing) }
-                        onFalse { stage(ReceiverStage.Informing) }
-                    }
-                }
-            }
-
-            then("it stores event handler with condition target and inferred description") {
-                val wait = requireNotNull(built.stages[ReceiverStage.Wait])
-                val handler = requireNotNull(wait.eventHandlers[ReceiverEvent.ConfirmedDigitally])
-                val condition = requireNotNull(handler.targetCondition)
-
-                condition.description shouldBe "isFlagTrue"
-                condition.trueStage shouldBe ReceiverStage.Removing
-                condition.falseStage shouldBe ReceiverStage.Informing
             }
         }
     }

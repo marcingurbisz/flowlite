@@ -365,21 +365,20 @@ class EngineBehaviorTest : BehaviorSpec({
 
         fun eventConditionFlow() =
             flow<EngineState, EngineStage, EngineEvent> {
-                stage(EngineStage.Wait)
-                onEvent(EngineEvent.Go)
-                condition(
+                stage(EngineStage.Wait, waitFor = EngineEvent.Go)
+                _if(
                     predicate = { it.flag },
                     description = "flag",
                 ) {
-                    onTrue { stage(EngineStage.TrueStage) }
-                    onFalse { stage(EngineStage.FalseStage) }
+                    stage(EngineStage.TrueStage)
+                } _else {
+                    stage(EngineStage.FalseStage)
                 }
             }
 
         fun waitingFlow() =
             flow<EngineState, EngineStage, EngineEvent> {
-                stage(EngineStage.Wait)
-                onEvent(EngineEvent.Go)
+                stage(EngineStage.Wait, waitFor = EngineEvent.Go)
                 stage(EngineStage.Done)
             }
 
@@ -397,27 +396,26 @@ class EngineBehaviorTest : BehaviorSpec({
         fun conditionOnlyFlow() =
             eventlessFlow<EngineState, EngineStage> {
                 stage(EngineStage.Start)
-                condition(
+                _if(
                     predicate = { it.flag },
                     description = "flag",
                 ) {
-                    onTrue { stage(EngineStage.TrueStage) }
-                    onFalse { stage(EngineStage.FalseStage) }
+                    stage(EngineStage.TrueStage)
+                } _else {
+                    stage(EngineStage.FalseStage)
                 }
             }
 
         fun eventGoToConditionOnlyFlow() =
             flow<EngineState, EngineStage, EngineEvent> {
-                stage(EngineStage.Wait)
-                onEvent(EngineEvent.Go) { goTo(EngineStage.Conditional) }
-
-                stage(EngineStage.Conditional)
-                condition(
+                stage(EngineStage.Wait, waitFor = EngineEvent.Go)
+                _if(
                     predicate = { it.flag },
                     description = "flag",
                 ) {
-                    onTrue { stage(EngineStage.TrueStage) }
-                    onFalse { stage(EngineStage.FalseStage) }
+                    stage(EngineStage.TrueStage)
+                } _else {
+                    stage(EngineStage.FalseStage)
                 }
             }
 

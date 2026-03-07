@@ -6,8 +6,7 @@ import io.flowlite.Stage
 import io.flowlite.StageStatus
 import io.flowlite.StatePersister
 import io.flowlite.flow
-import io.flowlite.test.OrderConfirmationEvent.ConfirmedDigitally
-import io.flowlite.test.OrderConfirmationEvent.ConfirmedPhysically
+import io.flowlite.test.OrderConfirmationEvent.Confirmed
 import io.flowlite.test.OrderConfirmationStage.InformingCustomer
 import io.flowlite.test.OrderConfirmationStage.InitializingConfirmation
 import io.flowlite.test.OrderConfirmationStage.RemovingFromConfirmationQueue
@@ -29,8 +28,7 @@ enum class OrderConfirmationStage : Stage {
 }
 
 enum class OrderConfirmationEvent : Event {
-    ConfirmedPhysically,
-    ConfirmedDigitally,
+    Confirmed,
 }
 
 enum class ConfirmationType {
@@ -135,15 +133,15 @@ fun informCustomer(confirmation: OrderConfirmation): OrderConfirmation {
 // FLOW-DEFINITION-START
 fun createOrderConfirmationFlow() = flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
     stage(InitializingConfirmation, ::initializeOrderConfirmation)
-    stage(WaitingForConfirmation) {
-        onEvent(ConfirmedDigitally) {
-            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-            stage(InformingCustomer, ::informCustomer)
-        }
-        onEvent(ConfirmedPhysically) { goTo(InformingCustomer) }
+    stage(WaitingForConfirmation, waitFor = Confirmed)
+    _if(::wasConfirmedDigitally) {
+        stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
     }
+    stage(InformingCustomer, ::informCustomer)
 }
 // FLOW-DEFINITION-END
+
+private fun wasConfirmedDigitally(confirmation: OrderConfirmation) = confirmation.confirmationType == ConfirmationType.Digital
 
 private fun OrderConfirmation.isShowcaseInstance() = orderNumber.startsWith("SHOW-")
 

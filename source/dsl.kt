@@ -1,8 +1,8 @@
 package io.flowlite
 
+import java.util.UUID
 import kotlin.reflect.KFunction
 import kotlin.reflect.KFunction1
-import java.util.UUID
 
 interface Stage
 
@@ -19,11 +19,6 @@ data class ActionContext(
 )
 
 typealias StageAction<T> = (ActionContext, T) -> T?
-
-internal enum class ScopeKind {
-    Root,
-    Branch,
-}
 
 data class Flow<T : Any, S : Stage, E : Event>(
     internal val initialStage: S?,
@@ -68,257 +63,83 @@ private fun inferCallableName(value: Any, fallback: String): String {
 
 @FlowLiteDsl
 class FlowDslScope<T : Any, S, E>
-internal constructor(
-    private val state: MutableFlowDefinition<T, S, E>,
-    private var currentStageDefinition: StageDefinition<T, S, E>? = null,
-    private val scopeKind: ScopeKind = ScopeKind.Root,
-) where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
-    private var flatEventContext: FlatEventContext<T, S, E>? = null
-    private var stageBlockSource: StageDefinition<T, S, E>? = null
-
-    constructor() : this(MutableFlowDefinition())
+internal constructor() where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
+    private val steps = mutableListOf<FlowStep<T, S, E>>()
 
     fun stage(stage: S) {
-        stageInternal(stage, null)
+        addLinearStep(stage = stage)
     }
 
     fun stage(stage: S, action: KFunction1<T, T?>) {
-        stageInternal(stage, { _, state -> action(state) }, action.name)
+        addLinearStep(stage = stage, action = { _, state -> action(state) }, actionName = action.name)
     }
 
     fun stage(stage: S, action: StageAction<T>) {
-        stageInternal(stage, action, inferActionName(action))
+        addLinearStep(stage = stage, action = action, actionName = inferActionName(action))
     }
 
-    @JvmName("stageWithBlock")
-    fun stage(stage: S, block: FlowDslScope<T, S, E>.() -> Unit) {
-        stage(stage)
-        val source = requireNotNull(currentStageDefinition)
-        stageBlockSource = source
-        try {
-            block()
-        } finally {
-            stageBlockSource = null
-            flatEventContext = null
-            currentStageDefinition = source
-        }
+    fun stage(stage: S, waitFor: E) {
+        addLinearStep(stage = stage, waitFor = waitFor)
     }
 
-    fun stage(stage: S, action: KFunction1<T, T?>, block: FlowDslScope<T, S, E>.() -> Unit) {
-        stage(stage, action)
-        val source = requireNotNull(currentStageDefinition)
-        stageBlockSource = source
-        try {
-            block()
-        } finally {
-            stageBlockSource = null
-            flatEventContext = null
-            currentStageDefinition = source
-        }
+    fun timer(stage: S, action: KFunction1<T, T?>) {
+        addLinearStep(stage = stage, action = { _, state -> action(state) }, actionName = action.name)
     }
 
-    fun stage(stage: S, action: StageAction<T>, block: FlowDslScope<T, S, E>.() -> Unit) {
-        stage(stage, action)
-        val source = requireNotNull(currentStageDefinition)
-        stageBlockSource = source
-        try {
-            block()
-        } finally {
-            stageBlockSource = null
-            flatEventContext = null
-            currentStageDefinition = source
-        }
+    fun timer(stage: S, action: StageAction<T>) {
+        addLinearStep(stage = stage, action = action, actionName = inferActionName(action))
     }
 
-    private fun stageInternal(stage: S, action: StageAction<T>?, actionName: String? = null) {
-        val flat = flatEventContext
-        val definition = if (flat == null) {
-            val current = currentStageDefinition
-            if (current?.nextStage != null) {
-                error(
-                    "Stage ${current.stage} already has a direct transition defined. " +
-                        "A goTo(...) ends the current branch; define subsequent stages inside another branch."
-                )
-            }
-            val linkFrom = current?.takeIf { isStageClean(it) }
-            state.defineStage(stage, action, actionName, linkFrom)
-        } else {
-            val branchDefinition = state.applyEventStage(flat, stage, action, actionName)
-            flatEventContext = flat.copy(currentBranchDefinition = branchDefinition)
-            branchDefinition
-        }
-
-        currentStageDefinition = definition
-    }
-
-    fun onEvent(event: E) {
-        startEventContext(event)
-    }
-
-    private fun startEventContext(event: E) {
-        val flat = flatEventContext
-        require(flat == null || flat.currentBranchDefinition != null) {
-            "onEvent(...) cannot be the first statement inside { ... }. " +
-                "Start the block with stage(...), goTo(...), or condition(...)."
-        }
-        val source = stageBlockSource ?: requireNotNull(currentStageDefinition) {
-            "onEvent($event) requires a previously defined stage"
-        }
-        flatEventContext = FlatEventContext(source, event, null)
-    }
-
-    fun onEvent(event: E, block: EventBranchDslScope<T, S, E>.() -> Unit) {
-        startEventContext(event)
-        val source = requireNotNull(flatEventContext).sourceStageDefinition
-        try {
-            EventBranchDslScope(this).apply(block)
-        } finally {
-            flatEventContext = null
-            currentStageDefinition = source
-        }
-    }
-
-    fun condition(
+    fun _if(
         predicate: (item: T) -> Boolean,
         description: String = inferConditionDescription(predicate),
-        block: ConditionBranchDslScope<T, S, E>.() -> Unit,
+        block: FlowDslScope<T, S, E>.() -> Unit,
+    ): ElseCapableIfBuilder<T, S, E> {
+        val trueScope = FlowDslScope<T, S, E>()
+        trueScope.apply(block)
+        val step = MutableIfStep(
+            predicate = predicate,
+            description = description,
+            trueSteps = trueScope.steps.toList(),
+        )
+        steps += step
+        return ElseCapableIfBuilder(step)
+    }
+
+    internal fun build(): Flow<T, S, E> = FlowCompiler<T, S, E>().build(steps)
+
+    private fun addLinearStep(
+        stage: S,
+        action: StageAction<T>? = null,
+        actionName: String? = null,
+        waitFor: E? = null,
     ) {
-        val branches = ConditionBranchDslScope<T, S, E>().apply(block)
-        val onTrue = requireNotNull(branches.trueBranch) {
-            "condition(...) requires onTrue { ... } branch"
+        require(action == null || waitFor == null) {
+            "Stage $stage cannot define both action and waitFor"
         }
-        val onFalse = requireNotNull(branches.falseBranch) {
-            "condition(...) requires onFalse { ... } branch"
+        steps += LinearStep(
+            stage = stage,
+            action = action,
+            actionName = actionName,
+            waitFor = waitFor,
+        )
+    }
+
+    @FlowLiteDsl
+    class ElseCapableIfBuilder<T : Any, S, E>
+    internal constructor(
+        private val step: MutableIfStep<T, S, E>,
+    ) where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
+        infix fun _else(block: FlowDslScope<T, S, E>.() -> Unit) {
+            require(step.falseSteps == null) { "_if(...) allows only one _else { ... } block" }
+            val falseScope = FlowDslScope<T, S, E>()
+            falseScope.apply(block)
+            step.falseSteps = falseScope.steps.toList()
         }
-
-        val flat = flatEventContext
-        if (flat != null) {
-            state.applyEventCondition(flat, predicate, onTrue, onFalse, description)
-            flatEventContext = null
-            currentStageDefinition = flat.sourceStageDefinition
-            return
-        }
-
-        val current = currentStageDefinition
-        if (current != null) {
-            ensureCanUseTransition(current, TransitionType.Condition)
-            current.conditionHandler = state.createConditionHandler(predicate, onTrue, onFalse, description)
-            return
-        }
-
-        state.initialCondition = state.createConditionHandler(predicate, onTrue, onFalse, description)
-        state.initialStage = null
-    }
-
-    fun goTo(targetStage: S) {
-        if (scopeKind == ScopeKind.Root) {
-            error("goTo($targetStage) is not allowed in top-level flow scope. Use stage(...) / onEvent(...) / condition(...) to model root transitions.")
-        }
-
-        val flat = flatEventContext
-        if (flat != null) {
-            state.applyEventJoin(flat, targetStage)
-            flatEventContext = null
-            currentStageDefinition = flat.sourceStageDefinition
-            return
-        }
-
-        val current = currentStageDefinition
-        if (current != null) {
-            ensureCanUseTransition(current, TransitionType.Direct)
-            current.nextStage = targetStage
-            return
-        }
-
-        state.initialStage = targetStage
-        state.initialCondition = null
-    }
-
-    internal fun goToFromEventBranch(targetStage: S) {
-        val flat = requireNotNull(flatEventContext) {
-            "goTo($targetStage) in event branch requires an active onEvent(...) context"
-        }
-        state.applyEventJoin(flat, targetStage)
-        flatEventContext = null
-        currentStageDefinition = flat.sourceStageDefinition
-    }
-
-    fun build() = state.build()
-}
-
-@FlowLiteDsl
-class EventBranchDslScope<T : Any, S, E>
-internal constructor(
-    private val flowScope: FlowDslScope<T, S, E>,
-) where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
-    fun stage(stage: S) {
-        flowScope.stage(stage)
-    }
-
-    fun stage(stage: S, action: KFunction1<T, T?>) {
-        flowScope.stage(stage, action)
-    }
-
-    fun stage(stage: S, action: StageAction<T>) {
-        flowScope.stage(stage, action)
-    }
-
-    fun stage(stage: S, block: EventBranchDslScope<T, S, E>.() -> Unit) {
-        flowScope.stage(stage, block = { EventBranchDslScope(this).apply(block) })
-    }
-
-    fun stage(stage: S, action: KFunction1<T, T?>, block: EventBranchDslScope<T, S, E>.() -> Unit) {
-        flowScope.stage(stage, action) { EventBranchDslScope(this).apply(block) }
-    }
-
-    fun stage(stage: S, action: StageAction<T>, block: EventBranchDslScope<T, S, E>.() -> Unit) {
-        flowScope.stage(stage, action) { EventBranchDslScope(this).apply(block) }
-    }
-
-    fun onEvent(event: E) {
-        flowScope.onEvent(event)
-    }
-
-    fun onEvent(event: E, block: EventBranchDslScope<T, S, E>.() -> Unit) {
-        flowScope.onEvent(event, block)
-    }
-
-    fun condition(
-        predicate: (item: T) -> Boolean,
-        description: String = inferConditionDescription(predicate),
-        block: ConditionBranchDslScope<T, S, E>.() -> Unit,
-    ) {
-        flowScope.condition(predicate, description, block)
-    }
-
-    fun goTo(targetStage: S) {
-        flowScope.goToFromEventBranch(targetStage)
-    }
-}
-
-@FlowLiteDsl
-class ConditionBranchDslScope<T : Any, S, E> where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
-    internal var trueBranch: (FlowDslScope<T, S, E>.() -> Unit)? = null
-    internal var falseBranch: (FlowDslScope<T, S, E>.() -> Unit)? = null
-
-    fun onTrue(block: FlowDslScope<T, S, E>.() -> Unit) {
-        require(trueBranch == null) { "condition(...) allows only one onTrue { ... } branch" }
-        trueBranch = block
-    }
-
-    fun onFalse(block: FlowDslScope<T, S, E>.() -> Unit) {
-        require(falseBranch == null) { "condition(...) allows only one onFalse { ... } branch" }
-        falseBranch = block
     }
 }
 
 typealias EventlessFlow<T, S> = Flow<T, S, NoEvent>
-
-enum class TransitionType {
-    Direct,
-    Event,
-    Condition,
-}
 
 data class StageDefinition<T : Any, S : Stage, E : Event>(
     val stage: S,
@@ -328,22 +149,6 @@ data class StageDefinition<T : Any, S : Stage, E : Event>(
     val eventHandlers = mutableMapOf<E, EventHandler<T, S, E>>()
     var conditionHandler: ConditionHandler<T, S>? = null
     var nextStage: S? = null
-
-    fun hasConflictingTransitions(newTransitionType: TransitionType): Boolean {
-        return when (newTransitionType) {
-            TransitionType.Direct -> eventHandlers.isNotEmpty() || conditionHandler != null
-            TransitionType.Event -> nextStage != null || conditionHandler != null
-            TransitionType.Condition -> nextStage != null || eventHandlers.isNotEmpty()
-        }
-    }
-
-    fun getExistingTransitions(): String {
-        val transitions = mutableListOf<String>()
-        if (nextStage != null) transitions.add("nextStage")
-        if (eventHandlers.isNotEmpty()) transitions.add("eventHandlers")
-        if (conditionHandler != null) transitions.add("conditionHandler")
-        return transitions.joinToString(", ")
-    }
 }
 
 data class ConditionHandler<T : Any, S : Stage>(
@@ -361,129 +166,150 @@ data class EventHandler<T : Any, S : Stage, E : Event>(
     val targetCondition: ConditionHandler<T, S>?,
 )
 
-internal data class FlatEventContext<T : Any, S, E>(
-    val sourceStageDefinition: StageDefinition<T, S, E>,
-    val event: E,
-    val currentBranchDefinition: StageDefinition<T, S, E>?,
-) where S : Enum<S>, S : Stage, E : Event, E : Enum<E>
+internal sealed interface FlowStep<T : Any, S, E>
+where S : Enum<S>, S : Stage, E : Event, E : Enum<E>
 
-internal class MutableFlowDefinition<T : Any, S, E> where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
-    private val stages = mutableMapOf<S, StageDefinition<T, S, E>>()
-    var initialStage: S? = null
-    var initialCondition: ConditionHandler<T, S>? = null
+internal data class LinearStep<T : Any, S, E>(
+    val stage: S,
+    val action: StageAction<T>?,
+    val actionName: String?,
+    val waitFor: E?,
+) : FlowStep<T, S, E>
+where S : Enum<S>, S : Stage, E : Event, E : Enum<E>
 
-    fun defineStage(
+internal data class MutableIfStep<T : Any, S, E>(
+    val predicate: (item: T) -> Boolean,
+    val description: String,
+    val trueSteps: List<FlowStep<T, S, E>>,
+    var falseSteps: List<FlowStep<T, S, E>>? = null,
+) : FlowStep<T, S, E>
+where S : Enum<S>, S : Stage, E : Event, E : Enum<E>
+
+internal sealed interface FlowEntry<T : Any, S : Stage>
+
+internal data class StageEntry<T : Any, S : Stage>(
+    val stage: S,
+) : FlowEntry<T, S>
+
+internal data class ConditionEntry<T : Any, S : Stage>(
+    val condition: ConditionHandler<T, S>,
+) : FlowEntry<T, S>
+
+internal class FlowCompiler<T : Any, S, E>
+where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
+    private val stages = linkedMapOf<S, StageDefinition<T, S, E>>()
+
+    fun build(steps: List<FlowStep<T, S, E>>): Flow<T, S, E> {
+        val entry = compileSequence(steps, continuation = null)
+        val initialStage = (entry as? StageEntry<T, S>)?.stage
+        val initialCondition = (entry as? ConditionEntry<T, S>)?.condition
+
+        validateDefinitions(stages, initialStage, initialCondition)
+        return Flow(
+            initialStage = initialStage,
+            initialCondition = initialCondition,
+            stages = stages.toMap(),
+        )
+    }
+
+    private fun compileSequence(
+        steps: List<FlowStep<T, S, E>>,
+        continuation: FlowEntry<T, S>?,
+    ): FlowEntry<T, S>? {
+        var current = continuation
+        for (step in steps.asReversed()) {
+            current = compileStep(step, current)
+        }
+        return current
+    }
+
+    private fun compileStep(
+        step: FlowStep<T, S, E>,
+        continuation: FlowEntry<T, S>?,
+    ): FlowEntry<T, S> {
+        return when (step) {
+            is LinearStep -> compileLinear(step, continuation)
+            is MutableIfStep -> compileIf(step, continuation)
+        }
+    }
+
+    private fun compileLinear(
+        step: LinearStep<T, S, E>,
+        continuation: FlowEntry<T, S>?,
+    ): FlowEntry<T, S> {
+        val definition = defineStage(step.stage, step.action, step.actionName)
+
+        if (step.waitFor != null) {
+            val resolved = requireNotNull(continuation) {
+                "Stage ${step.stage} waits for ${step.waitFor} but nothing follows it"
+            }
+            definition.eventHandlers[step.waitFor] = toEventHandler(step.waitFor, resolved)
+        } else {
+            attachContinuation(definition, continuation)
+        }
+
+        return StageEntry(step.stage)
+    }
+
+    private fun compileIf(
+        step: MutableIfStep<T, S, E>,
+        continuation: FlowEntry<T, S>?,
+    ): FlowEntry<T, S> {
+        val trueEntry = compileSequence(step.trueSteps, continuation) ?: continuation
+        val falseEntry = compileSequence(step.falseSteps.orEmpty(), continuation) ?: continuation
+
+        val resolvedTrue = requireNotNull(trueEntry) {
+            "_if(...) true branch must resolve to a stage or condition"
+        }
+        val resolvedFalse = requireNotNull(falseEntry) {
+            "_if(...) false branch must resolve to a stage or condition"
+        }
+
+        return ConditionEntry(
+            ConditionHandler(
+                predicate = step.predicate,
+                trueStage = (resolvedTrue as? StageEntry<T, S>)?.stage,
+                trueCondition = (resolvedTrue as? ConditionEntry<T, S>)?.condition,
+                falseStage = (resolvedFalse as? StageEntry<T, S>)?.stage,
+                falseCondition = (resolvedFalse as? ConditionEntry<T, S>)?.condition,
+                description = step.description,
+            ),
+        )
+    }
+
+    private fun defineStage(
         stage: S,
         action: StageAction<T>?,
         actionName: String?,
-        linkFrom: StageDefinition<T, S, E>?,
     ): StageDefinition<T, S, E> {
-        linkFrom?.let {
-            ensureCanUseTransition(it, TransitionType.Direct)
-            it.nextStage = stage
-        }
-
-        if (initialStage == null && initialCondition == null) {
-            initialStage = stage
-        }
-
         if (stage in stages) {
             error("Stage $stage already defined - each stage should be defined only once")
         }
 
-        return StageDefinition<T, S, E>(stage, action, actionName).also {
-            stages[stage] = it
+        return StageDefinition<T, S, E>(stage, action, actionName).also { definition ->
+            stages[stage] = definition
         }
     }
 
-    fun applyEventStage(
-        flat: FlatEventContext<T, S, E>,
-        stage: S,
-        action: StageAction<T>?,
-        actionName: String?,
-    ): StageDefinition<T, S, E> {
-        if (flat.currentBranchDefinition == null) {
-            ensureCanUseTransition(flat.sourceStageDefinition, TransitionType.Event)
-            val target = defineStage(stage, action, actionName, null)
-            flat.sourceStageDefinition.eventHandlers[flat.event] = EventHandler(flat.event, stage, null)
-            return target
-        }
-
-        return defineStage(stage, action, actionName, flat.currentBranchDefinition)
-    }
-
-    fun applyEventJoin(flat: FlatEventContext<T, S, E>, targetStage: S) {
-        val current = flat.currentBranchDefinition
-        if (current == null) {
-            ensureCanUseTransition(flat.sourceStageDefinition, TransitionType.Event)
-            flat.sourceStageDefinition.eventHandlers[flat.event] = EventHandler(flat.event, targetStage, null)
-            return
-        }
-
-        ensureCanUseTransition(current, TransitionType.Direct)
-        current.nextStage = targetStage
-    }
-
-    fun applyEventCondition(
-        flat: FlatEventContext<T, S, E>,
-        predicate: (item: T) -> Boolean,
-        onTrue: FlowDslScope<T, S, E>.() -> Unit,
-        onFalse: FlowDslScope<T, S, E>.() -> Unit,
-        description: String,
+    private fun attachContinuation(
+        definition: StageDefinition<T, S, E>,
+        continuation: FlowEntry<T, S>?,
     ) {
-        val current = flat.currentBranchDefinition
-        if (current == null) {
-            ensureCanUseTransition(flat.sourceStageDefinition, TransitionType.Event)
-            flat.sourceStageDefinition.eventHandlers[flat.event] = EventHandler(
-                event = flat.event,
-                targetStage = null,
-                targetCondition = createConditionHandler(predicate, onTrue, onFalse, description),
-            )
-            return
+        when (continuation) {
+            null -> return
+            is StageEntry -> definition.nextStage = continuation.stage
+            is ConditionEntry -> definition.conditionHandler = continuation.condition
         }
-
-        ensureCanUseTransition(current, TransitionType.Condition)
-        current.conditionHandler = createConditionHandler(predicate, onTrue, onFalse, description)
     }
 
-    fun createConditionHandler(
-        predicate: (item: T) -> Boolean,
-        onTrue: FlowDslScope<T, S, E>.() -> Unit,
-        onFalse: FlowDslScope<T, S, E>.() -> Unit,
-        description: String,
-    ): ConditionHandler<T, S> {
-        val trueBranch = MutableFlowDefinition<T, S, E>()
-        val falseBranch = MutableFlowDefinition<T, S, E>()
-
-        FlowDslScope(trueBranch, scopeKind = ScopeKind.Branch).apply(onTrue)
-        FlowDslScope(falseBranch, scopeKind = ScopeKind.Branch).apply(onFalse)
-
-        trueBranch.stages.forEach { (stage, definition) ->
-            if (stage in stages) {
-                error("Stage $stage already defined - each stage should be defined only once")
-            }
-            stages[stage] = definition
+    private fun toEventHandler(
+        event: E,
+        continuation: FlowEntry<T, S>,
+    ): EventHandler<T, S, E> {
+        return when (continuation) {
+            is StageEntry -> EventHandler(event = event, targetStage = continuation.stage, targetCondition = null)
+            is ConditionEntry -> EventHandler(event = event, targetStage = null, targetCondition = continuation.condition)
         }
-        falseBranch.stages.forEach { (stage, definition) ->
-            if (stage in stages) {
-                error("Stage $stage already defined - each stage should be defined only once")
-            }
-            stages[stage] = definition
-        }
-
-        return ConditionHandler(
-            predicate = predicate,
-            trueStage = trueBranch.initialStage,
-            trueCondition = trueBranch.initialCondition,
-            falseStage = falseBranch.initialStage,
-            falseCondition = falseBranch.initialCondition,
-            description = description,
-        )
-    }
-
-    internal fun build(): Flow<T, S, E> {
-        validateDefinitions(stages, initialStage, initialCondition)
-        return Flow(initialStage, initialCondition, stages.toMap())
     }
 }
 
@@ -565,23 +391,6 @@ private fun <T : Any, S : Stage> validateConditionResolvesToDefinedStages(
     referenced.forEach { stage ->
         if (stage !in stages) error("Condition ($origin) references undefined stage $stage")
     }
-}
-
-private fun <T : Any, S, E> ensureCanUseTransition(
-    definition: StageDefinition<T, S, E>,
-    transitionType: TransitionType,
-) where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
-    if (definition.hasConflictingTransitions(transitionType)) {
-        error(
-            "Stage ${definition.stage} already has transitions defined: ${definition.getExistingTransitions()}. " +
-                "Use only one of: stage(), onEvent(), or condition()."
-        )
-    }
-}
-
-private fun <T : Any, S, E> isStageClean(definition: StageDefinition<T, S, E>): Boolean
-where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
-    return definition.nextStage == null && definition.eventHandlers.isEmpty() && definition.conditionHandler == null
 }
 
 fun <T : Any, S, E> flow(definition: FlowDslScope<T, S, E>.() -> Unit): Flow<T, S, E>

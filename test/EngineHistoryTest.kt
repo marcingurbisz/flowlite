@@ -65,8 +65,7 @@ class EngineHistoryTest : BehaviorSpec({
 
         `when`("a flow waits for an event and none is present") {
             val flow = flow<HistWaitState, HistWaitStage, HistWaitEvent> {
-                stage(HistWaitStage.Wait)
-                onEvent(HistWaitEvent.Go)
+                stage(HistWaitStage.Wait, waitFor = HistWaitEvent.Go)
                 stage(HistWaitStage.Done)
             }
 

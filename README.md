@@ -29,26 +29,26 @@ See this [article](https://medium.com/@marcin.gurbisz/flowlite-a-tiny-workflow-e
 ```kotlin
 fun createOrderConfirmationFlow() = flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
     stage(InitializingConfirmation, ::initializeOrderConfirmation)
-    stage(WaitingForConfirmation) {
-        onEvent(ConfirmedDigitally) {
-            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-            stage(InformingCustomer, ::informCustomer)
-        }
-        onEvent(ConfirmedPhysically) { goTo(InformingCustomer) }
+    stage(WaitingForConfirmation, waitFor = Confirmed)
+    _if(::wasConfirmedDigitally) {
+        stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
     }
+    stage(InformingCustomer, ::informCustomer)
 }
 ```
 
 ```mermaid
 stateDiagram-v2
+    state if_wasconfirmeddigitally <<choice>>
     [*] --> InitializingConfirmation
     InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()
     InitializingConfirmation --> WaitingForConfirmation
-    WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally
+    WaitingForConfirmation --> if_wasconfirmeddigitally: onEvent Confirmed
+    if_wasconfirmeddigitally --> RemovingFromConfirmationQueue: wasConfirmedDigitally
     RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()
     RemovingFromConfirmationQueue --> InformingCustomer
     InformingCustomer: InformingCustomer informCustomer()
-    WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically
+    if_wasconfirmeddigitally --> InformingCustomer: NOT (wasConfirmedDigitally)
     InformingCustomer --> [*]
 
 ```
@@ -60,8 +60,10 @@ stateDiagram-v2
 - **Stage**: A named step (enum implementing `Stage` interface). Represents “we are doing X” - activity-oriented naming (e.g. `InitializingPayment`).
 - **Action**: Function executed when entering a stage `stage(InitializingConfirmation, ::initializeOrderConfirmation)` (optional for stage).
 - **Event**: External trigger causing a transition (implements `Event`). Submitted through engine API.
-- **Condition**: Binary branching with a predicate. Renders as a choice node on diagram.
-- **Join via `goTo(...)`**: Converges control flow by pointing to an existing stage.
+- **Wait stage**: `stage(WaitingForConfirmation, waitFor = Confirmed)` pauses until that event is available.
+- **Condition**: Structured branching with `_if { ... } _else { ... }`. Renders as a choice node on diagram.
+- **Implicit join**: Branches rejoin automatically at the next statement after an `_if` block.
+- **Timer stage**: `timer(...)` declares a delay/business-time step using the same action signature as normal stages.
 - **Flow**: Immutable definition produced by `flow { ... }` and held in-memory.
 - **StageStatus**: Lifecycle state of the single active stage:
     - `Pending` – Active stage awaiting action execution or matching event.
@@ -80,69 +82,64 @@ stateDiagram-v2
 
 ### Stage Transitions
 
-FlowLite supports 3 transition styles:
+FlowLite now uses a procedural builder with four main building blocks:
 
 1. **Automatic progression** (`stage(...)` then next `stage(...)`):
    ```kotlin
    flow<Order, OrderStage, OrderEvent> {
        stage(OrderStage.Initializing, ::initialize)
-       stage(OrderStage.WaitingForConfirmation)
-   }
-   ```
-
-2. **Event-based transition** (`onEvent(...)`):
-   ```kotlin
-   flow<Order, OrderStage, OrderEvent> {
-       stage(OrderStage.WaitingForConfirmation)
-       onEvent(OrderEvent.Confirmed)
+       stage(OrderStage.WaitingForConfirmation, waitFor = OrderEvent.Confirmed)
        stage(OrderStage.Processing, ::process)
    }
    ```
 
-3. **Conditional transition** (`condition { onTrue / onFalse }`):
+2. **Wait state** (`stage(..., waitFor = EventX)`):
    ```kotlin
    flow<Order, OrderStage, OrderEvent> {
-       condition(::isManualReviewRequired) {
-           onTrue { stage(OrderStage.ManualReview) }
-           onFalse { stage(OrderStage.Processing) }
+       stage(OrderStage.WaitingForConfirmation, waitFor = OrderEvent.Confirmed)
+       stage(OrderStage.Processing, ::process)
+   }
+   ```
+
+3. **Conditional transition** (`_if { ... } _else { ... }`):
+   ```kotlin
+   flow<Order, OrderStage, OrderEvent> {
+       _if(::isManualReviewRequired) {
+           stage(OrderStage.ManualReview)
+       } _else {
+           stage(OrderStage.Processing)
        }
    }
    ```
 
+4. **Timer step** (`timer(...)`):
+   ```kotlin
+   flow<Order, OrderStage, OrderEvent> {
+       timer(OrderStage.WaitForBusinessHours, ::waitForBusinessHours)
+       stage(OrderStage.Processing, ::process)
+   }
+   ```
+
 Event waiting semantics:
-- A stage with `onEvent(EventX)` transition moves forward when `EventX` is received.
+- A stage declared with `waitFor = EventX` moves forward when `EventX` is received.
 - If `EventX` was emitted earlier (before workflow reached this stage), it is persisted and consumed once the stage becomes eligible.
 
 ### Conditional Branching
 ```kotlin
-condition(::isManualReviewRequired) {
-    onTrue { stage(OrderStage.ManualReview) }
-    onFalse { stage(OrderStage.Processing) }
+_if(::isManualReviewRequired) {
+    stage(OrderStage.ManualReview)
+} _else {
+    stage(OrderStage.Processing)
 }
 ```
 
-### Joining branches
-
-Point a branch to an existing stage using `goTo(...)`:
-```kotlin
-condition(::needsEscalation) {
-    onTrue {
-        stage(OrderStage.Escalation)
-        goTo(OrderStage.Finalize)
-    }
-    onFalse { goTo(OrderStage.Finalize) }
-}
-```
+Branches automatically rejoin at the next statement after the conditional block. If the false path should simply continue, `_else` may be omitted.
 
 ### DSL style conventions
 
-- Prefer linear event style when a stage has a single simple event transition:
-    ```kotlin
-    stage(WaitingForApproval)
-    onEvent(Approved)
-    stage(Finalized)
-    ```
-- Use `onEvent(EventX) { ... }` primarily when one stage handles multiple events and each event has its own branch.
+- Prefer `stage(..., waitFor = EventX)` for single-event wait states.
+- Use `_if { ... } _else { ... }` for branch logic and let the next statement act as the implicit join.
+- Use `timer(...)` for delay/business-time steps and keep timer actions small and deterministic.
 
 ### Action functions
 
@@ -170,97 +167,131 @@ Documentation refresh:
 
 ```kotlin
     flow<EmployeeOnboarding, EmployeeStage, EmployeeEvent> {
-        condition(::isOnboardingAutomated) {
-            onTrue {
-                stage(EmployeeStage.CreateUserInSystem, actions::createUserInSystem)
-                condition(
-                    { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                    description = "isExecutiveRole || isSecurityClearanceRequired",
-                ) {
-                    onFalse {
-                        stage(ActivateStandardEmployee, actions::activateEmployee)
-                        stage(GenerateEmployeeDocuments, actions::generateEmployeeDocuments)
-                        stage(SendContractForSigning, actions::sendContractForSigning)
-                        stage(WaitingForEmployeeDocumentsSigned)
-                        onEvent(EmployeeDocumentsSigned)
-                        stage(WaitingForContractSigned)
-                        onEvent(ContractSigned)
-                        condition(
-                            { it.isExecutiveRole || it.isSecurityClearanceRequired },
-                            description = "isExecutiveRole || isSecurityClearanceRequired",
-                        ) {
-                            onTrue {
-                                stage(ActivateSpecializedEmployee, actions::activateEmployee)
-                                stage(UpdateStatusInHRSystem, actions::updateStatusInHRSystem)
-                            }
-                            onFalse {
-                                stage(WaitingForOnboardingCompletion)
-                                onEvent(OnboardingComplete)
-                                goTo(UpdateStatusInHRSystem)
-                            }
-                        }
-                    }
-                    onTrue {
-                        stage(UpdateSecurityClearanceLevels, actions::updateSecurityClearanceLevels)
-                        condition(::isSecurityClearanceRequired) {
-                            onTrue {
-                                condition(predicate = ::isFullOnboardingRequired) {
-                                    onTrue {
-                                        stage(SetDepartmentAccess, actions::setDepartmentAccess)
-                                        goTo(GenerateEmployeeDocuments)
-                                    }
-                                    onFalse { goTo(GenerateEmployeeDocuments) }
-                                }
-                            }
-                            onFalse { goTo(WaitingForContractSigned) }
-                        }
+        _if(::isOnboardingAutomated) {
+            stage(CreateEmployeeProfile, actions::createEmployeeProfile)
+
+            _if(::needsTrainingProgram) {
+                _if(::isEngineeringRole) {
+                    stage(ActivateSystemAccess, actions::activateSystemAccess)
+                    timer(WaitForITBusinessHours, actions::effectiveITWorkingDateTime)
+                    stage(CreateAccountsInExternalSystems, actions::createAccountsInExternalSystems)
+                    stage(UpdateBenefitsEnrollment, actions::updateBenefitsEnrollment)
+                } _else {
+                    _if(::isFullSecuritySetup) {
+                        stage(SetSecurityClearanceLevels, actions::setSecurityClearanceLevels)
                     }
                 }
-            }
-            onFalse {
-                goTo(WaitingForContractSigned)
+
+                stage(GenerateOnboardingDocuments, actions::generateOnboardingDocuments)
+                stage(SendContractForSigning, actions::sendContractForSigning)
+                stage(WaitingForContractSigned, waitFor = ContractSigned)
+
+                _if(::wereDocumentsSignedPhysically) {
+                    stage(RemoveFromSigningQueue, actions::removeFromSigningQueue)
+                }
             }
         }
+
+        stage(WaitingForOnboardingAgreementSigned, waitFor = OnboardingAgreementSigned)
+        timer(Delay5Min, actions::delay5Min)
+
+        _if(::isNotManualPath) {
+            _if(::isExecutiveOrManagement) {
+                stage(ActivateSpecializedAccess, actions::activateSpecializedAccess)
+            } _else {
+                _if(::hasComplianceChecks) {
+                    stage(WaitingForComplianceComplete, waitFor = ComplianceComplete)
+                }
+            }
+
+            stage(UpdateHRSystem, actions::updateHRSystem)
+            timer(DelayAfterHRUpdate, actions::delayAfterHRUpdate)
+        } _else {
+            stage(WaitingForManualApproval, waitFor = ManualApproval)
+            stage(FetchEmployeeRecords, actions::fetchEmployeeRecords)
+        }
+
+        _if(::isNotContractor) {
+            stage(UpdateDepartmentAssignment, actions::updateDepartmentAssignment)
+            stage(LinkToOrganizationChart, actions::linkToOrganizationChart)
+        }
+
+        stage(UpdateStatusInPayroll, actions::updateStatusInPayroll)
+        stage(CompleteOnboarding, actions::completeOnboarding)
     }
 ```
 
 ```mermaid
 stateDiagram-v2
     state if_isonboardingautomated <<choice>>
-    state if_isexecutiverole_issecurityclearancerequired <<choice>>
-    state if_issecurityclearancerequired <<choice>>
-    state if_isfullonboardingrequired <<choice>>
-    state if_isexecutiverole_issecurityclearancerequired_2 <<choice>>
+    state if_isnotcontractor <<choice>>
+    state if_isnotcontractor <<choice>>
+    state if_isnotmanualpath <<choice>>
+    state if_isexecutiveormanagement <<choice>>
+    state if_hascompliancechecks <<choice>>
+    state if_weredocumentssignedphysically <<choice>>
+    state if_needstrainingprogram <<choice>>
+    state if_isengineeringrole <<choice>>
+    state if_isfullsecuritysetup <<choice>>
     [*] --> if_isonboardingautomated
-    if_isonboardingautomated --> CreateUserInSystem: isOnboardingAutomated
-    CreateUserInSystem: CreateUserInSystem createUserInSystem()
-    CreateUserInSystem --> if_isexecutiverole_issecurityclearancerequired
-    if_isexecutiverole_issecurityclearancerequired --> UpdateSecurityClearanceLevels: isExecutiveRole || isSecurityClearanceRequired
-    UpdateSecurityClearanceLevels: UpdateSecurityClearanceLevels updateSecurityClearanceLevels()
-    UpdateSecurityClearanceLevels --> if_issecurityclearancerequired
-    if_issecurityclearancerequired --> if_isfullonboardingrequired: isSecurityClearanceRequired
-    if_isfullonboardingrequired --> SetDepartmentAccess: isFullOnboardingRequired
-    SetDepartmentAccess: SetDepartmentAccess setDepartmentAccess()
-    SetDepartmentAccess --> GenerateEmployeeDocuments
-    GenerateEmployeeDocuments: GenerateEmployeeDocuments generateEmployeeDocuments()
-    GenerateEmployeeDocuments --> SendContractForSigning
+    if_isonboardingautomated --> CreateEmployeeProfile: isOnboardingAutomated
+    CreateEmployeeProfile: CreateEmployeeProfile createEmployeeProfile()
+    CreateEmployeeProfile --> if_needstrainingprogram
+    if_needstrainingprogram --> if_isengineeringrole: needsTrainingProgram
+    if_isengineeringrole --> ActivateSystemAccess: isEngineeringRole
+    ActivateSystemAccess: ActivateSystemAccess activateSystemAccess()
+    ActivateSystemAccess --> WaitForITBusinessHours
+    WaitForITBusinessHours: WaitForITBusinessHours effectiveITWorkingDateTime()
+    WaitForITBusinessHours --> CreateAccountsInExternalSystems
+    CreateAccountsInExternalSystems: CreateAccountsInExternalSystems createAccountsInExternalSystems()
+    CreateAccountsInExternalSystems --> UpdateBenefitsEnrollment
+    UpdateBenefitsEnrollment: UpdateBenefitsEnrollment updateBenefitsEnrollment()
+    UpdateBenefitsEnrollment --> GenerateOnboardingDocuments
+    GenerateOnboardingDocuments: GenerateOnboardingDocuments generateOnboardingDocuments()
+    GenerateOnboardingDocuments --> SendContractForSigning
     SendContractForSigning: SendContractForSigning sendContractForSigning()
-    SendContractForSigning --> WaitingForEmployeeDocumentsSigned
-    WaitingForEmployeeDocumentsSigned --> WaitingForContractSigned: onEvent EmployeeDocumentsSigned
-    WaitingForContractSigned --> if_isexecutiverole_issecurityclearancerequired_2: onEvent ContractSigned
-    if_isexecutiverole_issecurityclearancerequired_2 --> ActivateSpecializedEmployee: isExecutiveRole || isSecurityClearanceRequired
-    ActivateSpecializedEmployee: ActivateSpecializedEmployee activateEmployee()
-    ActivateSpecializedEmployee --> UpdateStatusInHRSystem
-    UpdateStatusInHRSystem: UpdateStatusInHRSystem updateStatusInHRSystem()
-    if_isexecutiverole_issecurityclearancerequired_2 --> WaitingForOnboardingCompletion: NOT (isExecutiveRole || isSecurityClearanceRequired)
-    WaitingForOnboardingCompletion --> UpdateStatusInHRSystem: onEvent OnboardingComplete
-    if_isfullonboardingrequired --> GenerateEmployeeDocuments: NOT (isFullOnboardingRequired)
-    if_issecurityclearancerequired --> WaitingForContractSigned: NOT (isSecurityClearanceRequired)
-    if_isexecutiverole_issecurityclearancerequired --> ActivateStandardEmployee: NOT (isExecutiveRole || isSecurityClearanceRequired)
-    ActivateStandardEmployee: ActivateStandardEmployee activateEmployee()
-    ActivateStandardEmployee --> GenerateEmployeeDocuments
-    if_isonboardingautomated --> WaitingForContractSigned: NOT (isOnboardingAutomated)
-    UpdateStatusInHRSystem --> [*]
+    SendContractForSigning --> WaitingForContractSigned
+    WaitingForContractSigned --> if_weredocumentssignedphysically: onEvent ContractSigned
+    if_weredocumentssignedphysically --> RemoveFromSigningQueue: wereDocumentsSignedPhysically
+    RemoveFromSigningQueue: RemoveFromSigningQueue removeFromSigningQueue()
+    RemoveFromSigningQueue --> WaitingForOnboardingAgreementSigned
+    WaitingForOnboardingAgreementSigned --> Delay5Min: onEvent OnboardingAgreementSigned
+    Delay5Min: Delay5Min delay5Min()
+    Delay5Min --> if_isnotmanualpath
+    if_isnotmanualpath --> if_isexecutiveormanagement: isNotManualPath
+    if_isexecutiveormanagement --> ActivateSpecializedAccess: isExecutiveOrManagement
+    ActivateSpecializedAccess: ActivateSpecializedAccess activateSpecializedAccess()
+    ActivateSpecializedAccess --> UpdateHRSystem
+    UpdateHRSystem: UpdateHRSystem updateHRSystem()
+    UpdateHRSystem --> DelayAfterHRUpdate
+    DelayAfterHRUpdate: DelayAfterHRUpdate delayAfterHRUpdate()
+    DelayAfterHRUpdate --> if_isnotcontractor
+    if_isnotcontractor --> UpdateDepartmentAssignment: isNotContractor
+    UpdateDepartmentAssignment: UpdateDepartmentAssignment updateDepartmentAssignment()
+    UpdateDepartmentAssignment --> LinkToOrganizationChart
+    LinkToOrganizationChart: LinkToOrganizationChart linkToOrganizationChart()
+    LinkToOrganizationChart --> UpdateStatusInPayroll
+    UpdateStatusInPayroll: UpdateStatusInPayroll updateStatusInPayroll()
+    UpdateStatusInPayroll --> CompleteOnboarding
+    CompleteOnboarding: CompleteOnboarding completeOnboarding()
+    if_isnotcontractor --> UpdateStatusInPayroll: NOT (isNotContractor)
+    if_isexecutiveormanagement --> if_hascompliancechecks: NOT (isExecutiveOrManagement)
+    if_hascompliancechecks --> WaitingForComplianceComplete: hasComplianceChecks
+    WaitingForComplianceComplete --> UpdateHRSystem: onEvent ComplianceComplete
+    if_hascompliancechecks --> UpdateHRSystem: NOT (hasComplianceChecks)
+    if_isnotmanualpath --> WaitingForManualApproval: NOT (isNotManualPath)
+    WaitingForManualApproval --> FetchEmployeeRecords: onEvent ManualApproval
+    FetchEmployeeRecords: FetchEmployeeRecords fetchEmployeeRecords()
+    FetchEmployeeRecords --> if_isnotcontractor
+    if_weredocumentssignedphysically --> WaitingForOnboardingAgreementSigned: NOT (wereDocumentsSignedPhysically)
+    if_isengineeringrole --> if_isfullsecuritysetup: NOT (isEngineeringRole)
+    if_isfullsecuritysetup --> SetSecurityClearanceLevels: isFullSecuritySetup
+    SetSecurityClearanceLevels: SetSecurityClearanceLevels setSecurityClearanceLevels()
+    SetSecurityClearanceLevels --> GenerateOnboardingDocuments
+    if_isfullsecuritysetup --> GenerateOnboardingDocuments: NOT (isFullSecuritySetup)
+    if_needstrainingprogram --> WaitingForOnboardingAgreementSigned: NOT (needsTrainingProgram)
+    if_isonboardingautomated --> WaitingForOnboardingAgreementSigned: NOT (isOnboardingAutomated)
+    CompleteOnboarding --> [*]
 
 ```
 
@@ -269,26 +300,26 @@ stateDiagram-v2
 ```kotlin
 fun createOrderConfirmationFlow() = flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
     stage(InitializingConfirmation, ::initializeOrderConfirmation)
-    stage(WaitingForConfirmation) {
-        onEvent(ConfirmedDigitally) {
-            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
-            stage(InformingCustomer, ::informCustomer)
-        }
-        onEvent(ConfirmedPhysically) { goTo(InformingCustomer) }
+    stage(WaitingForConfirmation, waitFor = Confirmed)
+    _if(::wasConfirmedDigitally) {
+        stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
     }
+    stage(InformingCustomer, ::informCustomer)
 }
 ```
 
 ```mermaid
 stateDiagram-v2
+    state if_wasconfirmeddigitally <<choice>>
     [*] --> InitializingConfirmation
     InitializingConfirmation: InitializingConfirmation initializeOrderConfirmation()
     InitializingConfirmation --> WaitingForConfirmation
-    WaitingForConfirmation --> RemovingFromConfirmationQueue: onEvent ConfirmedDigitally
+    WaitingForConfirmation --> if_wasconfirmeddigitally: onEvent Confirmed
+    if_wasconfirmeddigitally --> RemovingFromConfirmationQueue: wasConfirmedDigitally
     RemovingFromConfirmationQueue: RemovingFromConfirmationQueue removeFromConfirmationQueue()
     RemovingFromConfirmationQueue --> InformingCustomer
     InformingCustomer: InformingCustomer informCustomer()
-    WaitingForConfirmation --> InformingCustomer: onEvent ConfirmedPhysically
+    if_wasconfirmeddigitally --> InformingCustomer: NOT (wasConfirmedDigitally)
     InformingCustomer --> [*]
 
 ```
@@ -301,7 +332,7 @@ stateDiagram-v2
 
 * Defining flow - See [source/dsl.kt](source/dsl.kt):
     * `Stage`, `Event`, `Flow`
-    * `flow { ... }`, `eventlessFlow { ... }`, `stage(...)`, `onEvent(...)`, `condition(...)`, `goTo(...)`.
+    * `flow { ... }`, `eventlessFlow { ... }`, `stage(...)`, `timer(...)`, `_if { ... } _else { ... }`.
 * Registering flows, starting flow instances, etc. - [source/Engine.kt](source/Engine.kt) (`Engine`).
 * Interfaces that must be implemented by client [source/persistance.kt](source/persistance.kt):
   * `StatePersister`
@@ -415,7 +446,7 @@ Concurrency scenarios (cheat sheet):
 | Scenario                                                        | Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                                        |
 |-----------------------------------------------------------------|--------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | Two ticks processed concurrently for same instance              | No (if correctly implemented) | Double action execution; double stage advance; inconsistent state                            | Use an atomic `PENDING -> RUNNING` claim using CAS (`tryTransitionStageStatus(...)`) in persistence                           |
-| Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one `onEvent(...)` source stage), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth                                             |
+| Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one waited stage), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth                                             |
 | External writer updates the same row while engine is processing |                                   Yes (GUI, notifications) | Potential lost updates; optimistic lock conflicts                                            | Options in case of JDBC persistence: 1) use optimistic locking (with merge or retries) 2) move engine state to separate table |
 
 

@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – Cockpit Playwright coverage expansion.
+  - Outcome: Added bookmarkable/back-button cockpit URL state, broadened `data-testid` coverage, added missing long-running/clear-filter UI actions, and replaced the minimal Playwright suite with deterministic fixture-based scenarios for flows, errors, long-running instances, and instance filters.
+  - Learning: Deterministic end-to-end seeding is much easier if showcase/background data generation can be disabled for the web test app.
+
 - 2026-03-07 – Playwright artifact timestamp cleanup.
   - Outcome: Replaced raw epoch-millis Playwright screenshot/video suffixes with readable UTC date-time stamps in `CockpitPlaywrightTest.kt`.
   - Learning: Human-readable artifact names make E2E failure triage easier without changing the underlying capture flow.

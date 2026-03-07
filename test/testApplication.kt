@@ -130,9 +130,12 @@ object Beans {
     }
 }
 
-private fun startApplication(webType: String) = runApplication<TestApplication>(
+private fun startApplication(
+    webType: String,
+    showcaseEnabled: Boolean = webType == "servlet",
+) = runApplication<TestApplication>(
     "--spring.main.web-application-type=$webType",
-    "--flowlite.showcase.enabled=${webType == "servlet"}",
+    "--flowlite.showcase.enabled=$showcaseEnabled",
 ) {
     addInitializers(
         ApplicationContextInitializer<GenericApplicationContext> { gac ->
@@ -256,7 +259,7 @@ private class ShowcaseFlowSeeder(
 
 fun startTestApplication() = startApplication("none")
 
-fun startTestWebApplication() = startApplication("servlet")
+fun startTestWebApplication(showcaseEnabled: Boolean = true) = startApplication("servlet", showcaseEnabled = showcaseEnabled)
 
 class SnakeCaseNamingStrategy : NamingStrategy {
     override fun getColumnName(property: RelationalPersistentProperty): String = property.name.toSnakeCase()

@@ -1,37 +1,19 @@
-## More playwright tests
-Implement tests from [PlaywrightTestScenarios.md](PlaywrightTestScenarios.md). In addition, test:
-* From Flow Definitions > concrete flow:
-  * Going from flow definition overview to long running instances
-  * Going to incomplete instances
-  * Going to instances active in given stage
-  * Going to instances in error in given stage
-* Error tab:
-  * List is empty at first
-  * Filter by flow
-  * Filter by stage
-  * Filter by error message
-  * Stack trace text is available after expanding it
-  * Selecting/deselecting
-  * Retry, changing stage and canceling selected
-* Long running tab:
-  * flow definition filter works
-  * Threshold filter works
-  * select, deselect, retry selected works
-* Instances tab:
-  * Search by instance id and flow id
-  * filter by stage
-  * filter by error message
-  * filter by status
-  * clear filter works
-* Back button support
-* All views are bookmarkable, links include tab and applied filters
+## [DONE 2026-03-07] More playwright tests
+Completed changes:
+- Added URL query-state syncing and browser-history support in `cockpit-ui/src/App.tsx` so cockpit tabs and applied filters are bookmarkable and respond to the back button.
+- Added stable `data-testid` hooks for flow shortcuts, error filters/actions, long-running filters/actions, instance filters/actions, detail stack traces, and the change-stage modal.
+- Added missing cockpit interactions needed by the test plan: clear instance filters and retry-selected support in the long-running view.
+- Reworked `test/CockpitPlaywrightTest.kt` to use deterministic seeded fixture data and expanded coverage for flow-definition shortcuts, error empty/filter/action scenarios, long-running scenarios, and instance-filter scenarios.
+- Allowed `startTestWebApplication(...)` to disable showcase seeding so Playwright scenarios can run against deterministic data.
+
+Validation:
+- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Expose test instance publicly available - part 4
-Start app in docker without gradle using springboot jar. We run out of 512MB during build on render.
+We run out of 512MB during build on render. I think it is better to start app in docker without gradle using springboot jar. This probalby shoudl include packing cockpit-ui into jar and serving it from there.
 
 ## [IN PROGRESS] Expose test instance publicly available - part 4
-
-Pack cockpit-ui into jar
 * use only dist in CockpitUiStaticConfig
 * Deploy to render
 

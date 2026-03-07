@@ -3,6 +3,8 @@ import { Play, AlertCircle, CheckCircle, Clock, RefreshCw, ChevronRight, X, Sear
 
 type InstanceStatus = 'Pending' | 'Running' | 'Completed' | 'Error' | 'Cancelled';
 type HistoryEventType = 'Started' | 'EventAppended' | 'StatusChanged' | 'StageChanged' | 'Cancelled' | 'Error';
+type ActiveView = 'flows' | 'errors' | 'long-running' | 'instances';
+type StatusFilter = 'all' | InstanceStatus;
 
 interface FlowDto {
   flowId: string;
@@ -61,6 +63,98 @@ interface MermaidWindow extends Window {
   };
 }
 
+interface CockpitLocationState {
+  activeView: ActiveView;
+  searchTerm: string;
+  statusFilter: StatusFilter;
+  stageFilter: string;
+  errorMessageFilter: string;
+  showIncompleteOnly: boolean;
+  errorFlowFilter: string;
+  errorStageFilter: string;
+  errorMessageFilterErrors: string;
+  longRunningFlowFilter: string;
+  longRunningThresholdHours: number;
+}
+
+const activeViews: ActiveView[] = ['flows', 'errors', 'long-running', 'instances'];
+const statusFilters: StatusFilter[] = ['all', 'Pending', 'Running', 'Completed', 'Error', 'Cancelled'];
+const defaultLongRunningThresholdHours = 1;
+
+const defaultLocationState: CockpitLocationState = {
+  activeView: 'flows',
+  searchTerm: '',
+  statusFilter: 'all',
+  stageFilter: 'all',
+  errorMessageFilter: '',
+  showIncompleteOnly: false,
+  errorFlowFilter: 'all',
+  errorStageFilter: 'all',
+  errorMessageFilterErrors: '',
+  longRunningFlowFilter: 'all',
+  longRunningThresholdHours: defaultLongRunningThresholdHours,
+};
+
+const isActiveView = (value: string | null): value is ActiveView =>
+  value !== null && activeViews.includes(value as ActiveView);
+
+const isStatusFilter = (value: string | null): value is StatusFilter =>
+  value !== null && statusFilters.includes(value as StatusFilter);
+
+const normalizeFilterValue = (value: string | null) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : 'all';
+};
+
+const parsePositiveNumber = (value: string | null, fallback: number) => {
+  const parsed = value ? Number.parseFloat(value) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const toTestIdFragment = (value: string | null) =>
+  (value ?? 'none').replace(/[^a-zA-Z0-9-]+/g, '-');
+
+const readLocationState = (): CockpitLocationState => {
+  const params = new URLSearchParams(window.location.search);
+  const activeViewParam = params.get('tab');
+  const statusFilterParam = params.get('status');
+
+  return {
+    activeView: isActiveView(activeViewParam) ? activeViewParam : defaultLocationState.activeView,
+    searchTerm: params.get('q') ?? defaultLocationState.searchTerm,
+    statusFilter: isStatusFilter(statusFilterParam) ? statusFilterParam : defaultLocationState.statusFilter,
+    stageFilter: normalizeFilterValue(params.get('stage')),
+    errorMessageFilter: params.get('error') ?? defaultLocationState.errorMessageFilter,
+    showIncompleteOnly: ['1', 'true', 'yes'].includes((params.get('incomplete') ?? '').toLowerCase()),
+    errorFlowFilter: normalizeFilterValue(params.get('errorFlow')),
+    errorStageFilter: normalizeFilterValue(params.get('errorStage')),
+    errorMessageFilterErrors: params.get('errorMessage') ?? defaultLocationState.errorMessageFilterErrors,
+    longRunningFlowFilter: normalizeFilterValue(params.get('lrFlow')),
+    longRunningThresholdHours: parsePositiveNumber(params.get('lrThreshold'), defaultLongRunningThresholdHours),
+  };
+};
+
+const buildLocationSearch = (state: CockpitLocationState) => {
+  const params = new URLSearchParams();
+  params.set('tab', state.activeView);
+
+  if (state.searchTerm) params.set('q', state.searchTerm);
+  if (state.statusFilter !== 'all') params.set('status', state.statusFilter);
+  if (state.stageFilter !== 'all') params.set('stage', state.stageFilter);
+  if (state.errorMessageFilter) params.set('error', state.errorMessageFilter);
+  if (state.showIncompleteOnly) params.set('incomplete', '1');
+  if (state.errorFlowFilter !== 'all') params.set('errorFlow', state.errorFlowFilter);
+  if (state.errorStageFilter !== 'all') params.set('errorStage', state.errorStageFilter);
+  if (state.errorMessageFilterErrors) params.set('errorMessage', state.errorMessageFilterErrors);
+  if (state.longRunningFlowFilter !== 'all') params.set('lrFlow', state.longRunningFlowFilter);
+  if (state.longRunningThresholdHours !== defaultLongRunningThresholdHours) {
+    params.set('lrThreshold', state.longRunningThresholdHours.toString());
+  }
+
+  const search = params.toString();
+  return search ? `?${search}` : '';
+};
+
 const statusConfig: Record<InstanceStatus, { bg: string; text: string; label: string }> = {
   Pending: { bg: 'bg-amber-500/20', text: 'text-amber-400', label: 'Pending' },
   Running: { bg: 'bg-blue-500/20', text: 'text-blue-400', label: 'Running' },
@@ -85,7 +179,8 @@ const StatusBadge = ({ status }: { status: InstanceStatus }) => {
 };
 
 const FlowLiteCockpit = () => {
-  const [activeView, setActiveView] = useState<'flows' | 'errors' | 'long-running' | 'instances'>('flows');
+  const initialLocationState = useMemo(() => readLocationState(), []);
+  const [activeView, setActiveView] = useState<ActiveView>(initialLocationState.activeView);
   const [flows, setFlows] = useState<FlowDto[]>([]);
   const [instances, setInstances] = useState<UiInstance[]>([]);
   const [errorsByGroup, setErrorsByGroup] = useState<ErrorGroupDto[]>([]);
@@ -93,24 +188,26 @@ const FlowLiteCockpit = () => {
   const [selectedFlowForDiagram, setSelectedFlowForDiagram] = useState<FlowDto | null>(null);
   const [instanceHistory, setInstanceHistory] = useState<HistoryEntryDto[]>([]);
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | InstanceStatus>('all');
-  const [stageFilter, setStageFilter] = useState('all');
-  const [errorMessageFilter, setErrorMessageFilter] = useState('');
-  const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
-  const [errorFlowFilter, setErrorFlowFilter] = useState('all');
-  const [errorStageFilter, setErrorStageFilter] = useState('all');
-  const [errorMessageFilterErrors, setErrorMessageFilterErrors] = useState('');
-  const [longRunningFlowFilter, setLongRunningFlowFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState(initialLocationState.searchTerm);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialLocationState.statusFilter);
+  const [stageFilter, setStageFilter] = useState(initialLocationState.stageFilter);
+  const [errorMessageFilter, setErrorMessageFilter] = useState(initialLocationState.errorMessageFilter);
+  const [showIncompleteOnly, setShowIncompleteOnly] = useState(initialLocationState.showIncompleteOnly);
+  const [errorFlowFilter, setErrorFlowFilter] = useState(initialLocationState.errorFlowFilter);
+  const [errorStageFilter, setErrorStageFilter] = useState(initialLocationState.errorStageFilter);
+  const [errorMessageFilterErrors, setErrorMessageFilterErrors] = useState(initialLocationState.errorMessageFilterErrors);
+  const [longRunningFlowFilter, setLongRunningFlowFilter] = useState(initialLocationState.longRunningFlowFilter);
   const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
   const [showDiagram, setShowDiagram] = useState(false);
   const [showStackTrace, setShowStackTrace] = useState(false);
   const [expandedHistoryErrors, setExpandedHistoryErrors] = useState<Set<number>>(new Set());
   const [mermaidLoaded, setMermaidLoaded] = useState(false);
-  const [longRunningThresholdHours, setLongRunningThresholdHours] = useState(1);
+  const [longRunningThresholdHours, setLongRunningThresholdHours] = useState(initialLocationState.longRunningThresholdHours);
   const [showChangeStageModal, setShowChangeStageModal] = useState(false);
   const [changeStageTargetInstances, setChangeStageTargetInstances] = useState<string[]>([]);
   const [newStage, setNewStage] = useState('');
+  const applyingLocationStateRef = useRef(false);
+  const initializedHistoryRef = useRef(false);
 
   async function apiGet<T>(path: string): Promise<T> {
     const res = await fetch(path, { headers: { Accept: 'application/json' } });
@@ -156,6 +253,84 @@ const FlowLiteCockpit = () => {
   useEffect(() => {
     void refreshData();
   }, []);
+
+  useEffect(() => {
+    const applyStateFromLocation = () => {
+      const next = readLocationState();
+      applyingLocationStateRef.current = true;
+      setActiveView(next.activeView);
+      setSearchTerm(next.searchTerm);
+      setStatusFilter(next.statusFilter);
+      setStageFilter(next.stageFilter);
+      setErrorMessageFilter(next.errorMessageFilter);
+      setShowIncompleteOnly(next.showIncompleteOnly);
+      setErrorFlowFilter(next.errorFlowFilter);
+      setErrorStageFilter(next.errorStageFilter);
+      setErrorMessageFilterErrors(next.errorMessageFilterErrors);
+      setLongRunningFlowFilter(next.longRunningFlowFilter);
+      setLongRunningThresholdHours(next.longRunningThresholdHours);
+      setSelectedInstances(new Set());
+      setSelectedInstance(null);
+      setSelectedFlowForDiagram(null);
+      setShowChangeStageModal(false);
+      setChangeStageTargetInstances([]);
+      setNewStage('');
+    };
+
+    window.addEventListener('popstate', applyStateFromLocation);
+    return () => {
+      window.removeEventListener('popstate', applyStateFromLocation);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (applyingLocationStateRef.current) {
+      applyingLocationStateRef.current = false;
+      initializedHistoryRef.current = true;
+      return;
+    }
+
+    const nextSearch = buildLocationSearch({
+      activeView,
+      searchTerm,
+      statusFilter,
+      stageFilter,
+      errorMessageFilter,
+      showIncompleteOnly,
+      errorFlowFilter,
+      errorStageFilter,
+      errorMessageFilterErrors,
+      longRunningFlowFilter,
+      longRunningThresholdHours,
+    });
+    const nextUrl = `${window.location.pathname}${nextSearch}${window.location.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (currentUrl === nextUrl) {
+      initializedHistoryRef.current = true;
+      return;
+    }
+
+    if (!initializedHistoryRef.current) {
+      window.history.replaceState(null, '', nextUrl);
+      initializedHistoryRef.current = true;
+      return;
+    }
+
+    window.history.pushState(null, '', nextUrl);
+  }, [
+    activeView,
+    searchTerm,
+    statusFilter,
+    stageFilter,
+    errorMessageFilter,
+    showIncompleteOnly,
+    errorFlowFilter,
+    errorStageFilter,
+    errorMessageFilterErrors,
+    longRunningFlowFilter,
+    longRunningThresholdHours,
+  ]);
 
   useEffect(() => {
     if (!selectedInstance) {
@@ -210,6 +385,10 @@ const FlowLiteCockpit = () => {
       document.body.style.overflow = 'unset';
     };
   }, [selectedInstance, selectedFlowForDiagram]);
+
+  useEffect(() => {
+    setSelectedInstances(new Set());
+  }, [activeView]);
 
   const MermaidDiagram = ({ diagram, id }: { diagram: string; id: string }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -314,6 +493,48 @@ const FlowLiteCockpit = () => {
     setSelectedInstances(next);
   };
 
+  const openInstancesView = ({
+    search = '',
+    status = 'all',
+    stage = 'all',
+    errorMessage = '',
+    incompleteOnly = false,
+  }: {
+    search?: string;
+    status?: StatusFilter;
+    stage?: string;
+    errorMessage?: string;
+    incompleteOnly?: boolean;
+  }) => {
+    setActiveView('instances');
+    setSearchTerm(search);
+    setStatusFilter(status);
+    setStageFilter(stage);
+    setErrorMessageFilter(errorMessage);
+    setShowIncompleteOnly(incompleteOnly);
+    setSelectedInstances(new Set());
+  };
+
+  const openErrorsView = ({
+    flow = 'all',
+    stage = 'all',
+    errorMessage = '',
+  }: {
+    flow?: string;
+    stage?: string;
+    errorMessage?: string;
+  }) => {
+    setActiveView('errors');
+    setErrorFlowFilter(flow);
+    setErrorStageFilter(stage);
+    setErrorMessageFilterErrors(errorMessage);
+    setSelectedInstances(new Set());
+  };
+
+  const clearInstanceFilters = () => {
+    openInstancesView({});
+  };
+
   const selectAllVisible = () => {
     const actionable = filteredInstances.filter((i) => i.status === 'Pending' || i.status === 'Error').map((i) => i.id);
     setSelectedInstances(new Set(actionable));
@@ -324,7 +545,12 @@ const FlowLiteCockpit = () => {
   const handleRetry = async (instanceIds: string[]) => {
     const selected = instances.filter((i) => instanceIds.includes(i.id));
     await Promise.all(
-      selected.map((i) => apiPost(`/api/instances/${encodeURIComponent(i.flowId)}/${encodeURIComponent(i.id)}/retry`)),
+      selected.map((i) => {
+        const basePath = `/api/instances/${encodeURIComponent(i.flowId)}/${encodeURIComponent(i.id)}`;
+        if (i.status === 'Error') return apiPost(`${basePath}/retry`);
+        if (i.stage) return apiPost(`${basePath}/change-stage?stage=${encodeURIComponent(i.stage)}`);
+        return Promise.resolve();
+      }),
     );
     setSelectedInstances(new Set());
     await refreshData();
@@ -366,6 +592,7 @@ const FlowLiteCockpit = () => {
     visibleHistory.find((h) => h.type === 'Error' && h.errorStackTrace)?.errorStackTrace ?? null;
 
   const flowForSelectedInstance = selectedInstance ? flows.find((f) => f.flowId === selectedInstance.flowId) : null;
+  const selectedLongRunningIds = longRunningInstances.filter((instance) => selectedInstances.has(instance.id)).map((instance) => instance.id);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100" style={{ fontFamily: '"IBM Plex Mono", monospace' }}>
@@ -382,11 +609,11 @@ const FlowLiteCockpit = () => {
       <div className="max-w-7xl mx-auto px-6">
         <div className="border-b border-zinc-800">
           <div className="flex gap-6">
-            {['flows', 'errors', 'long-running', 'instances'].map((view) => (
+            {activeViews.map((view) => (
               <button
                 key={view}
                 data-testid={`tab-${view}`}
-                onClick={() => setActiveView(view as 'flows' | 'errors' | 'long-running' | 'instances')}
+                onClick={() => setActiveView(view)}
                 className={
                   'px-1 py-3 text-sm font-medium border-b-2 transition-colors ' +
                   (activeView === view
@@ -441,9 +668,11 @@ const FlowLiteCockpit = () => {
                       </button>
                       {longRunningForFlow > 0 && (
                         <button
+                          data-testid={`flow-long-running-${flow.flowId}`}
                           onClick={() => {
                             setActiveView('long-running');
                             setLongRunningFlowFilter(flow.flowId);
+                            setSelectedInstances(new Set());
                           }}
                           className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded text-xs font-mono transition-colors"
                         >
@@ -453,12 +682,13 @@ const FlowLiteCockpit = () => {
                       <button
                         data-testid={`flow-incomplete-${flow.flowId}`}
                         onClick={() => {
-                          setActiveView('instances');
-                          setSearchTerm(flow.flowId);
-                          setStatusFilter('all');
-                          setStageFilter('all');
-                          setErrorMessageFilter('');
-                          setShowIncompleteOnly(true);
+                          openInstancesView({
+                            search: flow.flowId,
+                            status: 'all',
+                            stage: 'all',
+                            errorMessage: '',
+                            incompleteOnly: true,
+                          });
                         }}
                         className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded text-xs font-mono transition-colors"
                       >
@@ -474,11 +704,13 @@ const FlowLiteCockpit = () => {
                         {Object.entries(stageBreakdown).map(([stage, data]) => (
                           <button
                             key={stage}
+                            data-testid={`flow-stage-${flow.flowId}-${toTestIdFragment(stage)}`}
                             onClick={() => {
-                              setActiveView('instances');
-                              setSearchTerm(flow.flowId);
-                              setStatusFilter('all');
-                              setStageFilter(stage);
+                              openInstancesView({
+                                search: flow.flowId,
+                                status: 'all',
+                                stage,
+                              });
                             }}
                             className="bg-zinc-800/50 hover:bg-zinc-800 rounded p-3 text-left transition-colors group"
                           >
@@ -487,11 +719,10 @@ const FlowLiteCockpit = () => {
                               <span className="text-sm font-bold text-zinc-200">{data.total}</span>
                               {data.errors > 0 && (
                                 <button
+                                  data-testid={`flow-stage-errors-${flow.flowId}-${toTestIdFragment(stage)}`}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setActiveView('errors');
-                                    setErrorFlowFilter(flow.flowId);
-                                    setErrorStageFilter(stage);
+                                    openErrorsView({ flow: flow.flowId, stage });
                                   }}
                                   className="text-xs px-1.5 py-0.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded font-mono transition-colors"
                                 >
@@ -514,6 +745,7 @@ const FlowLiteCockpit = () => {
           <div className="space-y-4">
             <div className="flex items-center gap-4 mb-6">
               <select
+                data-testid="errors-flow-filter"
                 value={errorFlowFilter}
                 onChange={(e) => setErrorFlowFilter(e.target.value)}
                 className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
@@ -526,6 +758,7 @@ const FlowLiteCockpit = () => {
                 ))}
               </select>
               <input
+                data-testid="errors-stage-filter"
                 type="text"
                 placeholder="Filter by stage..."
                 value={errorStageFilter === 'all' ? '' : errorStageFilter}
@@ -533,6 +766,7 @@ const FlowLiteCockpit = () => {
                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
               />
               <input
+                data-testid="errors-message-filter"
                 type="text"
                 placeholder="Filter by error message..."
                 value={errorMessageFilterErrors}
@@ -542,33 +776,43 @@ const FlowLiteCockpit = () => {
             </div>
 
             {selectedInstances.size > 0 && (
-              <div className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
+              <div data-testid="errors-selection-bar" className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
                 <span className="text-sm text-emerald-400">{selectedInstances.size} error(s) selected</span>
                 <div className="flex gap-2">
                   <button
+                    data-testid="errors-retry-selected"
                     onClick={() => void handleRetry(Array.from(selectedInstances))}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors text-sm font-medium flex items-center gap-2"
                   >
                     <RefreshCw size={14} /> Retry Selected ({selectedInstances.size})
                   </button>
                   <button
+                    data-testid="errors-change-stage-selected"
                     onClick={() => handleChangeStage(Array.from(selectedInstances))}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-sm font-medium flex items-center gap-2"
                   >
                     <ChevronRight size={14} /> Change Stage ({selectedInstances.size})
                   </button>
                   <button
+                    data-testid="errors-cancel-selected"
                     onClick={() => void handleCancel(Array.from(selectedInstances))}
                     className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition-colors text-sm font-medium flex items-center gap-2"
                   >
                     <X size={14} /> Cancel Selected ({selectedInstances.size})
+                  </button>
+                  <button
+                    data-testid="errors-deselect-selected"
+                    onClick={deselectAll}
+                    className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-sm font-medium"
+                  >
+                    Deselect
                   </button>
                 </div>
               </div>
             )}
 
             {filteredErrorGroups.length === 0 ? (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+              <div data-testid="errors-empty" className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
                 <CheckCircle size={48} className="mx-auto mb-4 text-emerald-500 opacity-50" />
                 <p className="text-lg font-medium text-zinc-300 mb-2">No errors match filters</p>
               </div>
@@ -579,7 +823,7 @@ const FlowLiteCockpit = () => {
                 );
 
                 return (
-                  <div key={idx} className="bg-zinc-900 border border-red-900/30 rounded-lg p-6">
+                  <div key={idx} data-testid={`error-group-${group.flowId}-${toTestIdFragment(group.stage)}`} className="bg-zinc-900 border border-red-900/30 rounded-lg p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h3 className="text-lg font-bold text-zinc-50 font-mono">{group.flowId}</h3>
@@ -592,11 +836,13 @@ const FlowLiteCockpit = () => {
                       {groupInstances.map((instance) => (
                         <div
                           key={instance.id}
+                          data-testid={`error-instance-${instance.id}`}
                           className="bg-zinc-800/50 rounded p-3 hover:bg-zinc-800 transition-colors cursor-pointer"
                           onClick={() => setSelectedInstance(instance)}
                         >
                           <div className="flex items-start gap-3">
                             <input
+                              data-testid={`error-instance-checkbox-${instance.id}`}
                               type="checkbox"
                               checked={selectedInstances.has(instance.id)}
                               onChange={() => toggleSelectInstance(instance.id)}
@@ -622,11 +868,12 @@ const FlowLiteCockpit = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-xl font-bold text-zinc-50">Long Running Instances</h2>
+                <h2 data-testid="long-running-heading" className="text-xl font-bold text-zinc-50">Long Running Instances</h2>
                 <p className="text-sm text-zinc-500 mt-1">Instances in RUNNING state longer than threshold</p>
               </div>
               <div className="flex items-center gap-3">
                 <select
+                  data-testid="long-running-flow-filter"
                   value={longRunningFlowFilter}
                   onChange={(e) => setLongRunningFlowFilter(e.target.value)}
                   className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
@@ -638,6 +885,7 @@ const FlowLiteCockpit = () => {
                 </select>
                 <label className="text-sm text-zinc-400">Threshold:</label>
                 <input
+                  data-testid="long-running-threshold"
                   type="number"
                   min="0.1"
                   step="0.5"
@@ -649,8 +897,30 @@ const FlowLiteCockpit = () => {
               </div>
             </div>
 
+            {selectedLongRunningIds.length > 0 && (
+              <div data-testid="long-running-selection-bar" className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
+                <span className="text-sm text-emerald-400">{selectedLongRunningIds.length} long running instance(s) selected</span>
+                <div className="flex gap-2">
+                  <button
+                    data-testid="long-running-retry-selected"
+                    onClick={() => void handleRetry(selectedLongRunningIds)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors text-sm font-medium flex items-center gap-2"
+                  >
+                    <RefreshCw size={14} /> Retry Selected ({selectedLongRunningIds.length})
+                  </button>
+                  <button
+                    data-testid="long-running-deselect-selected"
+                    onClick={deselectAll}
+                    className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-sm font-medium"
+                  >
+                    Deselect
+                  </button>
+                </div>
+              </div>
+            )}
+
             {longRunningInstances.length === 0 ? (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+              <div data-testid="long-running-empty" className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
                 <CheckCircle size={48} className="mx-auto mb-4 text-emerald-500 opacity-50" />
                 <p className="text-lg font-medium text-zinc-300 mb-2">No long running instances</p>
               </div>
@@ -673,9 +943,15 @@ const FlowLiteCockpit = () => {
                       const durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
                       return (
-                        <tr key={instance.id} className="hover:bg-zinc-800/30 transition-colors cursor-pointer" onClick={() => setSelectedInstance(instance)}>
+                        <tr
+                          key={instance.id}
+                          data-testid={`long-running-row-${instance.id}`}
+                          className="hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                          onClick={() => setSelectedInstance(instance)}
+                        >
                           <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                             <input
+                              data-testid={`long-running-checkbox-${instance.id}`}
                               type="checkbox"
                               checked={selectedInstances.has(instance.id)}
                               onChange={() => toggleSelectInstance(instance.id)}
@@ -711,9 +987,10 @@ const FlowLiteCockpit = () => {
                 />
               </div>
               <select
+                data-testid="instances-status-filter"
                 value={statusFilter}
                 onChange={(e) => {
-                  setStatusFilter(e.target.value as 'all' | InstanceStatus);
+                  setStatusFilter(e.target.value as StatusFilter);
                   if (e.target.value !== 'all') setShowIncompleteOnly(false);
                 }}
                 className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
@@ -729,6 +1006,7 @@ const FlowLiteCockpit = () => {
 
             <div className="flex items-center gap-4 mb-4">
               <input
+                data-testid="instances-stage-filter"
                 type="text"
                 placeholder="Filter by stage..."
                 value={stageFilter === 'all' ? '' : stageFilter}
@@ -736,23 +1014,25 @@ const FlowLiteCockpit = () => {
                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
               />
               <input
+                data-testid="instances-error-filter"
                 type="text"
                 placeholder="Filter by error message..."
                 value={errorMessageFilter}
                 onChange={(e) => setErrorMessageFilter(e.target.value)}
                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
               />
-              <button onClick={selectAllVisible} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Select All Actionable</button>
-              <button onClick={deselectAll} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Deselect</button>
+              <button data-testid="instances-select-all" onClick={selectAllVisible} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Select All Actionable</button>
+              <button data-testid="instances-deselect" onClick={deselectAll} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Deselect</button>
+              <button data-testid="instances-clear-filters" onClick={clearInstanceFilters} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Clear Filters</button>
             </div>
 
             {selectedInstances.size > 0 && (
-              <div className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
+              <div data-testid="instances-selection-bar" className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
                 <span className="text-sm text-emerald-400">{selectedInstances.size} instance(s) selected</span>
                 <div className="flex gap-2">
-                  <button onClick={() => void handleRetry(Array.from(selectedInstances))} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><RefreshCw size={14} />Retry</button>
-                  <button onClick={() => handleChangeStage(Array.from(selectedInstances))} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Change Stage</button>
-                  <button onClick={() => void handleCancel(Array.from(selectedInstances))} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><X size={14} />Cancel</button>
+                  <button data-testid="instances-retry-selected" onClick={() => void handleRetry(Array.from(selectedInstances))} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><RefreshCw size={14} />Retry</button>
+                  <button data-testid="instances-change-stage-selected" onClick={() => handleChangeStage(Array.from(selectedInstances))} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Change Stage</button>
+                  <button data-testid="instances-cancel-selected" onClick={() => void handleCancel(Array.from(selectedInstances))} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><X size={14} />Cancel</button>
                 </div>
               </div>
             )}
@@ -781,6 +1061,7 @@ const FlowLiteCockpit = () => {
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         {(instance.status === 'Pending' || instance.status === 'Error') && (
                           <input
+                            data-testid={`instances-checkbox-${instance.id}`}
                             type="checkbox"
                             checked={selectedInstances.has(instance.id)}
                             onChange={() => toggleSelectInstance(instance.id)}
@@ -790,8 +1071,8 @@ const FlowLiteCockpit = () => {
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.id}</td>
                       <td data-testid="instance-flow-id" className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage || '—'}</td>
-                      <td className="px-4 py-3"><StatusBadge status={instance.status} /></td>
+                      <td data-testid={`instance-stage-${instance.id}`} className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage || '—'}</td>
+                      <td data-testid={`instance-status-${instance.id}`} className="px-4 py-3"><StatusBadge status={instance.status} /></td>
                       <td className="px-4 py-3 text-xs text-zinc-500">{instance.updatedAt.toLocaleString()}</td>
                     </tr>
                   ))}
@@ -803,7 +1084,7 @@ const FlowLiteCockpit = () => {
       </div>
 
       {selectedInstance && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-hidden" onClick={() => setSelectedInstance(null)}>
+        <div data-testid="instance-details-modal" className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-hidden" onClick={() => setSelectedInstance(null)}>
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }} onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border-b border-zinc-800 p-6 flex items-center justify-between flex-shrink-0">
               <div className="flex-1">
@@ -812,15 +1093,15 @@ const FlowLiteCockpit = () => {
               </div>
               <div className="flex items-center gap-2">
                 {selectedInstance.status === 'Error' && (
-                  <button onClick={() => void handleRetry([selectedInstance.id])} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><RefreshCw size={14} />Retry</button>
+                  <button data-testid="instance-retry" onClick={() => void handleRetry([selectedInstance.id])} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><RefreshCw size={14} />Retry</button>
                 )}
                 {(selectedInstance.status === 'Pending' || selectedInstance.status === 'Error') && (
-                  <button onClick={() => handleChangeStage([selectedInstance.id])} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Change Stage</button>
+                  <button data-testid="instance-change-stage" onClick={() => handleChangeStage([selectedInstance.id])} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Change Stage</button>
                 )}
                 {(selectedInstance.status === 'Pending' || selectedInstance.status === 'Error') && (
-                  <button onClick={() => void handleCancel([selectedInstance.id])} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><X size={14} />Cancel</button>
+                  <button data-testid="instance-cancel" onClick={() => void handleCancel([selectedInstance.id])} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><X size={14} />Cancel</button>
                 )}
-                <button onClick={() => setSelectedInstance(null)} className="p-2 hover:bg-zinc-800 rounded transition-colors"><X size={20} /></button>
+                <button data-testid="instance-details-close" onClick={() => setSelectedInstance(null)} className="p-2 hover:bg-zinc-800 rounded transition-colors"><X size={20} /></button>
               </div>
             </div>
 
@@ -829,14 +1110,14 @@ const FlowLiteCockpit = () => {
                 <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-wide mb-3">Overview</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div><div className="text-xs text-zinc-500 mb-1">Flow ID</div><div className="text-sm font-mono text-zinc-300">{selectedInstance.flowId}</div></div>
-                  <div><div className="text-xs text-zinc-500 mb-1">Current Stage</div><div className="text-sm font-mono text-zinc-300">{selectedInstance.stage || '—'}</div></div>
-                  <div><div className="text-xs text-zinc-500 mb-1">Status</div><StatusBadge status={selectedInstance.status} /></div>
+                  <div><div className="text-xs text-zinc-500 mb-1">Current Stage</div><div data-testid="instance-details-stage" className="text-sm font-mono text-zinc-300">{selectedInstance.stage || '—'}</div></div>
+                  <div><div className="text-xs text-zinc-500 mb-1">Status</div><div data-testid="instance-details-status"><StatusBadge status={selectedInstance.status} /></div></div>
                   <div><div className="text-xs text-zinc-500 mb-1">Updated At</div><div className="text-sm text-zinc-300">{selectedInstance.updatedAt.toLocaleString()}</div></div>
                 </div>
               </div>
 
               <div>
-                <button onClick={() => setShowDiagram(!showDiagram)} className="flex items-center gap-2 text-sm font-bold text-zinc-400 uppercase tracking-wide mb-3 hover:text-zinc-300 transition-colors">
+                <button data-testid="instance-flow-diagram-toggle" onClick={() => setShowDiagram(!showDiagram)} className="flex items-center gap-2 text-sm font-bold text-zinc-400 uppercase tracking-wide mb-3 hover:text-zinc-300 transition-colors">
                   <ChevronRight size={16} className={'transition-transform ' + (showDiagram ? 'rotate-90' : '')} /> Flow Diagram
                 </button>
                 {showDiagram && flowForSelectedInstance && (
@@ -853,10 +1134,10 @@ const FlowLiteCockpit = () => {
                     <div><div className="text-xs text-zinc-500 mb-2">Error Message</div><div className="text-sm text-zinc-300">{selectedInstance.errorMessage}</div></div>
                     {latestErrorStackTrace && (
                       <div>
-                        <button onClick={() => setShowStackTrace(!showStackTrace)} className="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-300 transition-colors mb-2">
+                        <button data-testid="instance-error-stacktrace-toggle" onClick={() => setShowStackTrace(!showStackTrace)} className="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-300 transition-colors mb-2">
                           <ChevronRight size={14} className={'transition-transform ' + (showStackTrace ? 'rotate-90' : '')} /> Stack Trace
                         </button>
-                        {showStackTrace && <pre className="bg-zinc-900/50 rounded p-3 text-xs text-zinc-400 overflow-x-auto font-mono">{latestErrorStackTrace}</pre>}
+                        {showStackTrace && <pre data-testid="instance-error-stacktrace" className="bg-zinc-900/50 rounded p-3 text-xs text-zinc-400 overflow-x-auto font-mono">{latestErrorStackTrace}</pre>}
                       </div>
                     )}
                   </div>
@@ -882,6 +1163,7 @@ const FlowLiteCockpit = () => {
                           {isErrorEvent && event.errorStackTrace && (
                             <div className="mt-2">
                               <button
+                                data-testid={`instance-history-stacktrace-toggle-${idx}`}
                                 onClick={() => {
                                   const next = new Set(expandedHistoryErrors);
                                   if (next.has(idx)) next.delete(idx);
@@ -892,7 +1174,7 @@ const FlowLiteCockpit = () => {
                               >
                                 <ChevronRight size={12} className={'transition-transform ' + (isExpanded ? 'rotate-90' : '')} /> Stack Trace
                               </button>
-                              {isExpanded && <pre className="bg-zinc-900/50 rounded p-2 text-xs text-zinc-400 overflow-x-auto font-mono mt-2">{event.errorStackTrace}</pre>}
+                              {isExpanded && <pre data-testid={`instance-history-stacktrace-${idx}`} className="bg-zinc-900/50 rounded p-2 text-xs text-zinc-400 overflow-x-auto font-mono mt-2">{event.errorStackTrace}</pre>}
                             </div>
                           )}
                         </div>
@@ -922,19 +1204,19 @@ const FlowLiteCockpit = () => {
       )}
 
       {showChangeStageModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => { setShowChangeStageModal(false); setChangeStageTargetInstances([]); setNewStage(''); }}>
+        <div data-testid="change-stage-modal" className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => { setShowChangeStageModal(false); setChangeStageTargetInstances([]); setNewStage(''); }}>
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border-b border-zinc-800 p-6 flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-bold text-zinc-50">Change Stage</h3>
                 <p className="text-sm text-zinc-500 mt-1">{changeStageTargetInstances.length} instance(s) selected</p>
               </div>
-              <button onClick={() => { setShowChangeStageModal(false); setChangeStageTargetInstances([]); setNewStage(''); }} className="p-2 hover:bg-zinc-800 rounded transition-colors"><X size={20} /></button>
+              <button data-testid="change-stage-close" onClick={() => { setShowChangeStageModal(false); setChangeStageTargetInstances([]); setNewStage(''); }} className="p-2 hover:bg-zinc-800 rounded transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
                 <label className="text-sm font-medium text-zinc-400 mb-2 block">Select New Stage</label>
-                <select value={newStage} onChange={(e) => setNewStage(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
+                <select data-testid="change-stage-select" value={newStage} onChange={(e) => setNewStage(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
                   <option value="">Select a stage...</option>
                   {flows.flatMap((flow) => flow.stages.map((stage) => (
                     <option key={`${flow.flowId}-${stage}`} value={stage}>{stage} ({flow.flowId})</option>
@@ -945,8 +1227,8 @@ const FlowLiteCockpit = () => {
                 <p className="text-xs text-amber-400">⚠️ Changing the stage will move the instance(s) to the selected stage. The engine will re-process from that stage on the next tick.</p>
               </div>
               <div className="flex gap-2 justify-end">
-                <button onClick={() => { setShowChangeStageModal(false); setChangeStageTargetInstances([]); setNewStage(''); }} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-sm font-medium">Cancel</button>
-                <button onClick={() => void confirmChangeStage()} disabled={!newStage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Change Stage</button>
+                <button data-testid="change-stage-cancel" onClick={() => { setShowChangeStageModal(false); setChangeStageTargetInstances([]); setNewStage(''); }} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-sm font-medium">Cancel</button>
+                <button data-testid="change-stage-confirm" onClick={() => void confirmChangeStage()} disabled={!newStage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Change Stage</button>
               </div>
             </div>
           </div>

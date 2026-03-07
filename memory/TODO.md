@@ -1,157 +1,126 @@
-## [DONE 2026-03-04] Action context for stage actions
-Implemented `ActionContext(flowId, flowInstanceId)` and action support with signature `(context: ActionContext, state: T) -> T?` while keeping existing state-only `::action` references.
+## [IN PROGRESS 2026-03-07] Showcase improvements
+* Describe our appoach to showcase application in README E.g. how Seeder works
+* Move ShowcaseActionBehavior to testApplication.kt
+* isRemoteEmployee used for isShowcaseInstance - maybe dedicated/explicite attribute for this in EmployeeOnboarding?
 
-Completed changes:
-- Added action-context support in DSL and runtime invocation.
-- Updated Mermaid rendering to preserve action names.
-- Migrated `EmployeeOnboardingActions` to use `context.flowInstanceId` instead of reading id from domain state.
-- Added `FlowActionContextTest` and verified with full suite (`./gradlew test`).
+## Move tables definitions outside testApplication.kt 
+Put them into seperate file or files? Prepare for more db to suppport but now only provide scripts for h2 and mssql
 
-## [DONE 2026-03-04] Use FlowLiteHistoryRow instead CockpitHistoryEntryDto which is just duplicate
-Completed changes:
-- Removed `CockpitHistoryEntryDto` from `source/cockpit/api.kt`.
-- Updated `CockpitService.timeline(...)` to return `List<FlowLiteHistoryRow>` directly.
-- Verified with `./gradlew test` (BUILD SUCCESSFUL).
+## Prepare idea for runnig test on mssql too
 
-## [DONE 2026-03-04] rename FlowEngine to Engine
-Completed changes:
-- Renamed core class `FlowEngine` to `Engine` and moved source file to `source/Engine.kt`.
-- Updated all source and test usages to the new class name.
-- Updated references in `README.md` and `AGENTS.md`.
-- Verified with `./gradlew test` (BUILD SUCCESSFUL).
+## Refactor DSL to procedural style
 
+Implement only support for dsl that you see in these two examples below. Do not care about braking changes :). Update source and test leaving only what is needed after this dsl change.
 
-## [DONE 2026-03-04] move cockpit/api.kt to service
-Completed changes:
-- Moved `CockpitFlowDto`, `CockpitInstanceDto`, `CockpitErrorGroupDto`, and `CockpitInstanceBucket` into `source/cockpit/service.kt`.
-- Deleted `source/cockpit/api.kt`.
-- Verified with `./gradlew test` (BUILD SUCCESSFUL).
- 
-## [DONE 2026-03-04] Showcase application
-Completed changes:
-- Added servlet-only `ShowcaseFlowSeeder` in `test/testApplication.kt`.
-- `startTestWebApplication()` now enables `flowlite.showcase.enabled=true` and seeds one order-confirmation + one employee-onboarding instance on startup and every 5 seconds.
-- Seeder also sends demo events so instances progress through stages (good cockpit activity).
+Change order confirmation to this:
 
-Validation:
-- `./gradlew test` passed.
-- `./gradlew runTestApp` runtime logs confirm periodic seeding.
-- Cockpit API smoke check: `/api/flows` and `/api/instances` returned data.
-- Visual inspection tooling confirmed via Simple Browser (`http://localhost:8080/cockpit`).
+fun createOrderConfirmationFlow() =
+    flow<OrderConfirmation, OrderConfirmationStage, OrderConfirmationEvent> {
+        stage(InitializingConfirmation, ::initializeOrderConfirmation)
+        stage(WaitingForConfirmation, waitFor = Confirmed)
+        _if(::wasConfirmedDigitally) {
+            stage(RemovingFromConfirmationQueue, ::removeFromConfirmationQueue)
+        }
+        stage(InformingCustomer, ::informCustomer)
+    }
 
-## [DONE 2026-03-04] Review queries in history repository
-Completed changes:
-- Replaced three duplicated latest-row repository queries with one parameterized method: `findLatestRows(flowId, types)`.
-- Centralized stage/status/error type-group definitions in `cockpit/service.kt` and reused the single query.
-- Verified behavior with `./gradlew test` (BUILD SUCCESSFUL).
+Replace employee onbording with this:
 
-## [DONE 2026-03-04] Implement playwright tests
-Completed changes:
-- Added Playwright setup in `cockpit-ui` (`@playwright/test`, `playwright.config.ts`, and `tests/cockpit.spec.ts`).
-- Added `test:e2e` and `test:e2e:headed` scripts to `cockpit-ui/package.json`.
-- Fixed static cockpit asset serving in `test/CockpitUiStaticConfig.kt` so E2E can render the app.
-- Added Playwright artifacts to `.gitignore`.
+fun createEmployeeOnboardingFlow(actions: EmployeeOnboardingActions) =
+    flow<EmployeeOnboarding, EmployeeOnboardingStage, EmployeeOnboardingEvent> {
 
-Validation:
-- `cd cockpit-ui && npm run test:e2e` → `2 passed`.
-- `./gradlew test` → BUILD SUCCESSFUL.
+        _if(::isOnboardingAutomated) {
+            stage(CreateEmployeeProfile, actions::createEmployeeProfile)
 
-## [DONE 2026-03-04] Expose test instance publicly available
-Completed changes:
-- Added automation script `tools/exposeTestInstance.sh` to start `runTestApp`, wait for readiness, open localhost.run tunnel, and clean up on exit.
-- Set executable bit on script (`chmod +x`).
+            _if(::needsTrainingProgram) {
 
-Validation:
-- Script dry-run with timeout successfully started app, reached readiness (`/api/flows`), and produced public tunnel URL (`https://2babf788d33bf1.lhr.life`).
-- Confirmed cleanup behavior: port `8080` was free after timeout/termination.
+                _if(::isEngineeringRole) {
+                    stage(ActivateSystemAccess, actions::activateSystemAccess)
+                    timer(WaitForITBusinessHours, actions::effectiveITWorkingDateTime)
+                    stage(CreateAccountsInExternalSystems, actions::createAccountsInExternalSystems)
+                    stage(UpdateBenefitsEnrollment, actions::updateBenefitsEnrollment)
+                } _else {
+                    _if(::isFullSecuritySetup) {
+                        stage(SetSecurityClearanceLevels, actions::setSecurityClearanceLevels)
+                    }
+                }
 
-## [DONE 2026-03-04] Yet more coverage?
-Completed changes:
-- Added `test/CockpitServiceTest.kt` with targeted coverage for cockpit aggregation logic:
-	- `listInstances(...)` sorting + bucket filtering (`Active`, `Error`, `Completed`) + `flowId` filter.
-	- `listErrorGroups(...)` grouping/sorting behavior.
-	- `listFlows()` per-flow counters and diagram generation checks.
-	- `timeline(...)` projection behavior.
+                stage(GenerateOnboardingDocuments, actions::generateOnboardingDocuments)
+                stage(SendContractForSigning, actions::sendContractForSigning)
+                stage(WaitingForContractSigned, waitFor = ContractSigned)
 
-Validation:
-- Focused run: `./gradlew test --tests io.flowlite.test.CockpitServiceTest` → BUILD SUCCESSFUL.
-- Full run: `./gradlew test` → BUILD SUCCESSFUL.
-- Coverage snapshot after tests: total line coverage `76%` and `io.flowlite.cockpit` line coverage `68%`.
+                _if(::wereDocumentsSignedPhysically) {
+                    stage(RemoveFromSigningQueue, actions::removeFromSigningQueue)
+                }
+            }
+        }
 
-## [DONE 2026-03-04] Why we query for all this separatelly?
-Completed changes:
-- Reworked cockpit instance summary loading to use one repository call instead of three.
-- Added `FlowLiteHistoryRepository.findLatestRowsPerType(flowId, types)` that ranks latest rows per `(flow_id, flow_instance_id, type)`.
-- Updated `CockpitService.listInstances(...)` to group once-fetched rows by instance key and derive latest stage/status/error rows in memory.
+        stage(WaitingForOnboardingAgreementSigned, waitFor = OnboardingAgreementSigned)
+        timer(Delay5Min, actions::delay5Min)
 
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
+        _if(::isNotManualPath) {
+            _if(::isExecutiveOrManagement) {
+                stage(ActivateSpecializedAccess, actions::activateSpecializedAccess)
+            } _else {
+                _if(::hasComplianceChecks) {
+                    stage(WaitingForComplianceComplete, waitFor = ComplianceComplete)
+                }
+            }
 
-## [DONE 2026-03-04] Remove duplication between inferActionName and inferConditionDescription
-Completed changes:
-- Introduced shared helper `inferCallableName(value, fallback)` in `source/dsl.kt`.
-- Reused the helper from both `inferConditionDescription(...)` and `inferActionName(...)`.
+            stage(UpdateHRSystem, actions::updateHRSystem)
+            timer(DelayAfterHRUpdate, actions::delayAfterHRUpdate)
+        } _else {
+            stage(WaitingForManualApproval, waitFor = ManualApproval)
+            stage(FetchEmployeeRecords, actions::fetchEmployeeRecords)
+        }
 
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
+        _if(::isNotContractor) {
+            stage(UpdateDepartmentAssignment, actions::updateDepartmentAssignment)
+            stage(LinkToOrganizationChart, actions::linkToOrganizationChart)
+        }
 
-## [DONE 2026-03-04] CockpitUiStaticConfig - move under source/cockpit? This may be usefull for library clients I guess.
-Completed changes:
-- Moved `CockpitUiStaticConfig` from `test/` to `source/cockpit/CockpitUiStaticConfig.kt`.
-- Kept behavior unchanged (`/cockpit`, root files, and `/assets/**` mappings).
-- Wired the reusable config bean from `test/testApplication.kt`.
+        stage(UpdateStatusInPayroll, actions::updateStatusInPayroll)
+        stage(CompleteOnboarding, actions::completeOnboarding)
+    }
 
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
+## Playwright: use date and timestap in artifact names instead toEpochMilli 
 
-## [DONE 2026-03-04] Remove Flow as perfix in test files/classes. Also FlowReceiverDslTest -> DslTest
-Completed changes:
-- Renamed flow-prefixed test files/classes:
-	- `FlowDslValidationTest` -> `DslValidationTest`
-	- `FlowActionContextTest` -> `ActionContextTest`
-	- `FlowEngineBehaviorTest` -> `EngineBehaviorTest`
-	- `FlowEngineErrorHandlingTest` -> `EngineErrorHandlingTest`
-	- `FlowEngineHistoryTest` -> `EngineHistoryTest`
-	- `FlowReceiverDslTest` -> `DslTest`
+## More playwright tests
+Implement tests from [PlaywrightTestScenarios.md](PlaywrightTestScenarios.md). In addition, test:
+* From Flow Definitions > concrete flow:
+  * Going from flow definition overview to long running instances
+  * Going to incomplete instances
+  * Going to instances active in given stage
+  * Going to instances in error in given stage
+* Error tab:
+  * List is empty at first
+  * Filter by flow
+  * Filter by stage
+  * Filter by error message
+  * Stack trace text is available after expanding it
+  * Selecting/deselecting
+  * Retry, changing stage and canceling selected
+* Long running tab:
+  * flow definition filter works
+  * Threshold filter works
+  * select, deselect, retry selected works
+* Instances tab:
+  * Search by instance id and flow id
+  * filter by stage
+  * filter by error message
+  * filter by status
+  * clear filter works
+* Back button support
+* All views are bookmarkable, links include tab and applied filters
 
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
+## [IN PROGRESS] Expose test instance publicly available - part 4
+Start app in docker without gradle using springboot jar?
+Pack cockpit-ui into jar
+* use only dist in CockpitUiStaticConfig
+* Deploy to render
 
-## [DONE 2026-03-04] Worth to keep ActionContextTest as separate file? Don't they fit to ActionContextTest or other file?
-Decision:
-- Keep `ActionContextTest` as a separate file.
-
-Rationale:
-- It validates one focused contract (`ActionContext` propagation into stage actions) independent of broader engine behavior.
-- Keeping it isolated avoids mixing low-level contract checks into larger scenario suites and keeps failure diagnosis faster.
-
-## [DONE 2026-03-04] Rewrite playwright test to Kotlin
-Completed changes:
-- Added Kotlin Playwright E2E test: `test/CockpitPlaywrightTest.kt`.
-- Added test dependency: `com.microsoft.playwright:playwright:1.58.0`.
-- Implemented screenshot capture on failure (`build/reports/playwright/screenshots`).
-- Enabled always-on video recording via Playwright context (`build/reports/playwright/videos`).
-
-Validation:
-- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
-- `./gradlew test` → BUILD SUCCESSFUL.
-- Note: Playwright host dependency warnings were emitted in this container, but test execution succeeded.
-
-## [DONE 2026-03-04] Expose test instance publicly available - part 2
-Completed changes:
-- Selected **Render free web service** as the default provider for a public test instance.
-- Added deploy blueprint: `render.yaml`.
-- Added container runtime definition: `Dockerfile`.
-- Added `.dockerignore` for faster/smaller image builds.
-- Documented provider decision and quick-start deployment steps in `README.md`.
-
-Decision summary:
-- GitHub Pages is static-only, so it is **not** suitable for hosting this JVM/Spring service.
-- GitHub is still a good option for repository hosting and CI/CD trigger (Render deploy from GitHub repo).
-- Render free tier is suitable for demo exposure with expected idle sleep/cold-start trade-off.
-
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
+## [WAITING FOR BETTER SPEC] Duplicate copkpit but in Kotlin 
+Create a duplicate of cockpit-ui but written in Kotlin (cockpit-ui-kotlin)
 
 ## [DONE 2026-03-06] Failed on step Test + Coverage
 See https://github.com/marcingurbisz/flowlite/actions/runs/22705767837/job/65832358931

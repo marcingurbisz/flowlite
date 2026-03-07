@@ -450,6 +450,24 @@ External updates exist (GUI / notifications / other services):
 - `./gradlew clean` - Clean build artifacts
 - `./gradlew check` - Run all verification tasks
 
+### Showcase mode
+
+`./gradlew runTestApp` enables showcase mode automatically for the servlet test app.
+
+Showcase seeding is implemented by `ShowcaseFlowSeeder` in [test/testApplication.kt](test/testApplication.kt). It seeds one order confirmation instance and one employee onboarding instance on startup, then repeats every 5 seconds so the Cockpit always has fresh activity to display.
+
+Showcase-only behavior is intentionally explicit:
+- Order confirmations are tagged by `orderNumber` values prefixed with `SHOW-`.
+- Employee onboarding uses a dedicated `isShowcaseInstance` field instead of overloading business flags such as `isRemoteEmployee`.
+- `ShowcaseActionBehavior` adds random per-action delays and optional simulated failures only for showcase-tagged instances.
+
+Relevant properties:
+- `flowlite.showcase.enabled` - turns showcase seeding and showcase action behavior on/off.
+- `flowlite.showcase.max-action-delay-ms` - maximum random delay applied to a showcase action (default `60000`).
+- `flowlite.showcase.action-failure-rate` - probability of a simulated showcase action failure from `0.0` to `1.0` (default `0.1`).
+
+This keeps demo traffic visually interesting in Cockpit without changing normal deterministic test flows.
+
 ### Public test instance deployment (free/cheap)
 
 Quick start:

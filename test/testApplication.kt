@@ -10,10 +10,13 @@ import io.flowlite.SpringDataJdbcTickScheduler
 import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.cockpitRouter
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import io.kotest.core.listeners.ProjectListener
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistrarDsl
@@ -144,6 +147,48 @@ private fun startApplication(webType: String) = runApplication<TestApplication>(
     )
 }
 
+object ShowcaseActionBehavior {
+    private data class Config(
+        val enabled: Boolean,
+        val maxDelayMs: Long,
+        val failureRate: Double,
+    )
+
+    private val configRef = AtomicReference(Config(enabled = false, maxDelayMs = 0L, failureRate = 0.0))
+
+    fun configure(enabled: Boolean, maxDelayMs: Long, failureRate: Double) {
+        configRef.set(
+            Config(
+                enabled = enabled,
+                maxDelayMs = maxDelayMs.coerceAtLeast(0),
+                failureRate = failureRate.coerceIn(0.0, 1.0),
+            ),
+        )
+    }
+
+    fun apply(actionName: String, isShowcaseInstance: Boolean) {
+        val config = configRef.get()
+        if (!config.enabled || !isShowcaseInstance) return
+
+        val delayMs = if (config.maxDelayMs == 0L) 0L else ThreadLocalRandom.current().nextLong(config.maxDelayMs + 1)
+        if (delayMs > 0) {
+            showcaseLog.info { "Showcase delay for action '$actionName': ${delayMs}ms" }
+            try {
+                Thread.sleep(delayMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return
+            }
+        }
+
+        if (config.failureRate > 0.0 && ThreadLocalRandom.current().nextDouble() < config.failureRate) {
+            throw IllegalStateException("Showcase simulated failure in action '$actionName'")
+        }
+    }
+}
+
+private val showcaseLog = KotlinLogging.logger {}
+
 private class ShowcaseFlowSeeder(
     private val engine: Engine,
     enabled: Boolean,
@@ -201,7 +246,7 @@ private class ShowcaseFlowSeeder(
             isOnboardingAutomated = true,
             isExecutiveRole = false,
             isSecurityClearanceRequired = false,
-            isRemoteEmployee = true,
+            isShowcaseInstance = true,
         )
         val employeeId = engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, employee)
         engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.EmployeeDocumentsSigned)
@@ -334,6 +379,7 @@ private fun createEmployeeOnboardingTable(jdbc: NamedParameterJdbcTemplate) {
             is_full_onboarding_required boolean not null,
             is_manager_or_director_role boolean not null,
             is_remote_employee boolean not null,
+            is_showcase_instance boolean not null,
             user_created_in_system boolean not null,
             employee_activated boolean not null,
             security_clearance_updated boolean not null,

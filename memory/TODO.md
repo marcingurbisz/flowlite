@@ -1,8 +1,3 @@
-## [IN PROGRESS 2026-03-07] Showcase improvements
-* Describe our appoach to showcase application in README E.g. how Seeder works
-* Move ShowcaseActionBehavior to testApplication.kt
-* isRemoteEmployee used for isShowcaseInstance - maybe dedicated/explicite attribute for this in EmployeeOnboarding?
-
 ## Move tables definitions outside testApplication.kt 
 Put them into seperate file or files? Prepare for more db to suppport but now only provide scripts for h2 and mssql
 
@@ -121,6 +116,15 @@ Pack cockpit-ui into jar
 
 ## [WAITING FOR BETTER SPEC] Duplicate copkpit but in Kotlin 
 Create a duplicate of cockpit-ui but written in Kotlin (cockpit-ui-kotlin)
+
+## [DONE 2026-03-07] Showcase improvements
+Completed changes:
+- Added README showcase-mode documentation describing how `ShowcaseFlowSeeder` works, what gets seeded, and which properties control demo behavior.
+- Moved `ShowcaseActionBehavior` into `test/testApplication.kt` so showcase bootstrap and showcase-only action behavior live together.
+- Added explicit `isShowcaseInstance` state to `EmployeeOnboarding` and its schema, and updated the seeder to use it instead of overloading `isRemoteEmployee`.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## [DONE 2026-03-06] Failed on step Test + Coverage
 See https://github.com/marcingurbisz/flowlite/actions/runs/22705767837/job/65832358931

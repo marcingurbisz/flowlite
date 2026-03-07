@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-07 – Showcase mode cleanup.
+  - Outcome: Documented showcase seeding/config in the README, moved `ShowcaseActionBehavior` into `testApplication.kt`, and replaced the employee showcase marker with an explicit `isShowcaseInstance` field plus matching schema column.
+  - Learning: Demo metadata should stay explicit and local to bootstrap code rather than piggybacking on real business flags such as `isRemoteEmployee`.
+
 - 2026-03-06 – Showcase mode action simulation.
   - Outcome: Added configurable showcase-only random action delays and occasional simulated failures, wired through seeder config and showcase instance markers.
   - Learning: Tagging showcase instances in domain state keeps demo chaos behavior isolated from standard deterministic test flows.

@@ -1,3 +1,27 @@
+## Update keep render live workflow to execute every 10min between 6:00 and 24:00 Warsaw time every day
+
+## Plan for implementing refreshing "Flows" tab using websockets
+Prepare plan document explaining the technical details. I think we should do live refresh only on Flows tab, what do you think?
+Any other tab that could benefit from that? Or maybe live update toggle for everything? Or maybe better just add refresh buttons?
+
+## Cockpit and engine func improvements
+For every change implement new or adjust existing playwright test. Func changes/fixes:
+* Closing modals with esc
+* Modals (Instance details) should be bookmarkable
+* It should be possible to set 1min to long running treshold. In playwright make sure that you can see some long running instance.
+* Do we set state to null when instance complete or is cancelled? I think we should. What do you think?
+* Event history is not clear now. What about changing event history in following way:
+  * add date not only time
+  * for stage changes in StageChanged and Started event the new stage name is the most important information but now is less visible
+  * maybe type of event in separate column?
+  * When completed stage should be empty/null
+* Add copy button/thing next to instance id on list and details
+* Details are not refreshing after clicking on cancel/change stage/retry
+* I think it is better to have dedicated event type for manual change of stage. Now this is represented as two events in history (StageChanged and StatusChanged). So either replace these to with one event for manual change or add additional event. Similar for retry.
+* Check if after state change and retry we enque tick
+
+## [IN PREPARATON] Concept for "Auto-retry" and "User retriable"
+
 ## [DONE 2026-03-07] More playwright tests
 Completed changes:
 - Added URL query-state syncing and browser-history support in `cockpit-ui/src/App.tsx` so cockpit tabs and applied filters are bookmarkable and respond to the back button.

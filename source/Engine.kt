@@ -80,8 +80,8 @@ class Engine(
             error("Cannot retry $flowId/$flowInstanceId because status is ${current.stageStatus}")
         }
         val reset = current.copy(stageStatus = StageStatus.Pending)
-        persister.save(reset)
-        historyStore.recordStatusChanged(flowId, current, from = StageStatus.Error, to = StageStatus.Pending)
+        val saved = persister.save(reset)
+        historyStore.recordRetried(flowId, saved)
         enqueueTick(flowId, flowInstanceId)
     }
 
@@ -110,16 +110,17 @@ class Engine(
                 "currentStatus=${current.stageStatus} currentStage=${current.stage}"
         }
 
-        if (current.stage != resolvedTarget) {
+        if (current.stage != resolvedTarget || current.stageStatus != StageStatus.Pending) {
             val before = current
-            current = persister.save(current.copy(stage = resolvedTarget))
-            historyStore.recordStageChanged(flowId, before, from = before.stage, to = resolvedTarget)
-        }
-
-        if (current.stageStatus != StageStatus.Pending) {
-            val before = current
-            current = persister.save(current.copy(stageStatus = StageStatus.Pending))
-            historyStore.recordStatusChanged(flowId, before, from = before.stageStatus, to = StageStatus.Pending)
+            current = persister.save(current.copy(stage = resolvedTarget, stageStatus = StageStatus.Pending))
+            historyStore.recordManualStageChanged(
+                flowId = flowId,
+                data = current,
+                fromStage = before.stage,
+                toStage = resolvedTarget,
+                fromStatus = before.stageStatus,
+                toStatus = StageStatus.Pending,
+            )
         }
 
         enqueueTick(flowId, flowInstanceId)

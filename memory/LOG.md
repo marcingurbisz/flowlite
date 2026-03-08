@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-08 – Cockpit modal/history usability and manual-action history cleanup.
+  - Outcome: Added bookmarkable/ESC-closable instance details, minute-based long-running thresholds, copy buttons, clearer event history rendering, fresh detail reloading after actions, and dedicated `Retried` / `ManualStageChanged` history entries with matching engine tests.
+  - Learning: Treating the selected instance as URL state plus a derived snapshot is simpler than storing a detached object in React state because modal details automatically refresh after list updates.
+
 - 2026-03-08 – Flows live-refresh planning.
   - Outcome: Added `memory/FlowsLiveRefreshPlan.md` and chose a phased approach: live updates only for the `Flows` tab first, manual refresh buttons everywhere, and a flows-only `Live` toggle.
   - Learning: The current Cockpit architecture is better served by transport-agnostic invalidation + refetch than by streaming deltas; for one-way dashboard updates SSE is a simpler fit than full WebSocket infrastructure.

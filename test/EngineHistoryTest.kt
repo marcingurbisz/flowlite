@@ -91,6 +91,52 @@ class EngineHistoryTest : BehaviorSpec({
             }
         }
 
+        `when`("manual retry and manual stage change are requested") {
+            val flow = eventlessFlow<HistAutoState, HistAutoStage> {
+                stage(HistAutoStage.Start)
+                stage(HistAutoStage.Done)
+            }
+
+            val eventStore = HistoryInMemoryEventStore()
+            val tickScheduler = HistoryManualTickScheduler()
+            val persister = HistoryInMemoryStatePersister<HistAutoState>()
+            val history = CapturingHistoryStore()
+
+            val engine = Engine(eventStore, tickScheduler, history).also {
+                it.registerFlow("hist-manual", flow, persister)
+            }
+
+            val id = java.util.UUID.randomUUID()
+            persister.save(
+                io.flowlite.InstanceData(
+                    flowInstanceId = id,
+                    state = HistAutoState(),
+                    stage = HistAutoStage.Start,
+                    stageStatus = StageStatus.Error,
+                ),
+            )
+
+            engine.retry("hist-manual", id)
+            engine.changeStage("hist-manual", id, HistAutoStage.Done.name)
+
+            then("it records dedicated history entries for both actions") {
+                history.entries.any {
+                    it.type == HistoryEntryType.Retried &&
+                        it.stage == HistAutoStage.Start.name &&
+                        it.fromStatus == StageStatus.Error &&
+                        it.toStatus == StageStatus.Pending
+                } shouldBe true
+
+                history.entries.any {
+                    it.type == HistoryEntryType.ManualStageChanged &&
+                        it.fromStage == HistAutoStage.Start.name &&
+                        it.toStage == HistAutoStage.Done.name &&
+                        it.fromStatus == StageStatus.Pending &&
+                        it.toStatus == StageStatus.Pending
+                } shouldBe true
+            }
+        }
+
         `when`("the history store throws") {
             val flow = eventlessFlow<HistThrowState, HistThrowStage> {
                 stage(HistThrowStage.Start)

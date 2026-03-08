@@ -307,6 +307,23 @@ fun FlowLiteHistoryRow.toHistoryEntry() =
             toStage = toStage,
             event = event,
         )
+        HistoryEntryType.Retried -> HistoryEntry.Retried(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            occurredAt = occurredAt,
+            stage = stage,
+            fromStatus = fromStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+            toStatus = toStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+        )
+        HistoryEntryType.ManualStageChanged -> HistoryEntry.ManualStageChanged(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            occurredAt = occurredAt,
+            fromStage = fromStage,
+            toStage = toStage,
+            fromStatus = fromStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+            toStatus = toStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+        )
         HistoryEntryType.Cancelled -> HistoryEntry.Cancelled(
             flowId = flowId,
             flowInstanceId = flowInstanceId,

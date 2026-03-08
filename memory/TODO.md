@@ -1,3 +1,5 @@
+## [IN PREPARATON] Concept for "Auto-retry" and "User retriable"
+
 ## [DONE 2026-03-08] Update keep render live workflow to execute every 10min between 6:00 and 24:00 Warsaw time every day
 Completed changes:
 - Updated `.github/workflows/keep-render-alive.yml` to schedule every 10 minutes across the UTC range that covers the Warsaw window and added a Warsaw-time gate so pings only run from 06:00 until midnight local time.
@@ -15,23 +17,19 @@ Completed changes:
 Validation:
 - Design-only task; no runtime code changes were required.
 
-## Cockpit and engine func improvements
-For every change implement new or adjust existing playwright test. Func changes/fixes:
-* Closing modals with esc
-* Modals (Instance details) should be bookmarkable
-* It should be possible to set 1min to long running treshold. In playwright make sure that you can see some long running instance.
-* Do we set state to null when instance complete or is cancelled? I think we should. What do you think?
-* Event history is not clear now. What about changing event history in following way:
-  * add date not only time
-  * for stage changes in StageChanged and Started event the new stage name is the most important information but now is less visible
-  * maybe type of event in separate column?
-  * When completed stage should be empty/null
-* Add copy button/thing next to instance id on list and details
-* Details are not refreshing after clicking on cancel/change stage/retry
-* I think it is better to have dedicated event type for manual change of stage. Now this is represented as two events in history (StageChanged and StatusChanged). So either replace these to with one event for manual change or add additional event. Similar for retry.
-* Check if after state change and retry we enque tick
+## [DONE 2026-03-08] Cockpit and engine func improvements
+Completed changes:
+- Added `Escape` handling for the Cockpit modals, made instance-details URLs bookmarkable, and kept the selected instance in sync with URL/back-forward navigation.
+- Switched the long-running threshold control from fractional hours to integer minutes so `1` minute is a valid input, and updated Playwright coverage around that workflow.
+- Improved instance-details UX with copy buttons, UTC date+time formatting, a clearer history table (`Timestamp` / `Type` / `Stage` / `Details`), and blank stage cells for terminal completion/cancel rows.
+- Fixed stale details after retry/cancel/change-stage by deriving the selected instance from the refreshed instance snapshot and reloading its timeline when data changes.
+- Added dedicated history event types for manual retry and manual stage change, updated cockpit projections to understand them, and added engine test coverage proving both retry and change-stage enqueue ticks.
+- Decision: keep persisted terminal state non-null for now. Clearing it would require a broader breaking refactor of `InstanceData<T : Any>`, persister contracts, and domain schemas, so it is better handled as a separate deliberate change rather than folded into this UI/history batch.
 
-## [IN PREPARATON] Concept for "Auto-retry" and "User retriable"
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
+
+## Flowlite is MIT license - add this info to the project in a way other open source MIT projects do.
 
 ## [DONE 2026-03-07] More playwright tests
 Completed changes:

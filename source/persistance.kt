@@ -98,6 +98,8 @@ enum class HistoryEntryType {
     EventAppended,
     StatusChanged,
     StageChanged,
+    Retried,
+    ManualStageChanged,
     Cancelled,
     Error,
 }
@@ -177,6 +179,42 @@ sealed class HistoryEntry(
         fromStage = fromStage,
         toStage = toStage,
         event = event,
+    )
+
+    data class Retried(
+        override val flowId: String,
+        override val flowInstanceId: UUID,
+        override val occurredAt: Instant = Instant.now(),
+        override val stage: String? = null,
+        override val fromStatus: StageStatus? = StageStatus.Error,
+        override val toStatus: StageStatus? = StageStatus.Pending,
+    ) : HistoryEntry(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        type = HistoryEntryType.Retried,
+        occurredAt = occurredAt,
+        stage = stage,
+        fromStatus = fromStatus,
+        toStatus = toStatus,
+    )
+
+    data class ManualStageChanged(
+        override val flowId: String,
+        override val flowInstanceId: UUID,
+        override val occurredAt: Instant = Instant.now(),
+        override val fromStage: String? = null,
+        override val toStage: String? = null,
+        override val fromStatus: StageStatus? = null,
+        override val toStatus: StageStatus? = null,
+    ) : HistoryEntry(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        type = HistoryEntryType.ManualStageChanged,
+        occurredAt = occurredAt,
+        fromStage = fromStage,
+        toStage = toStage,
+        fromStatus = fromStatus,
+        toStatus = toStatus,
     )
 
     data class Cancelled(
@@ -293,6 +331,38 @@ internal fun HistoryStore.recordStageChanged(flowId: String, data: InstanceData<
             fromStage = historyValueOf(from),
             toStage = historyValueOf(to),
             event = event?.let { historyValueOf(it) },
+        ),
+    )
+}
+
+internal fun HistoryStore.recordRetried(flowId: String, data: InstanceData<Any>) {
+    appendBestEffort(
+        HistoryEntry.Retried(
+            flowId = flowId,
+            flowInstanceId = data.flowInstanceId,
+            stage = historyValueOf(data.stage),
+            fromStatus = StageStatus.Error,
+            toStatus = StageStatus.Pending,
+        ),
+    )
+}
+
+internal fun HistoryStore.recordManualStageChanged(
+    flowId: String,
+    data: InstanceData<Any>,
+    fromStage: Stage,
+    toStage: Stage,
+    fromStatus: StageStatus,
+    toStatus: StageStatus,
+) {
+    appendBestEffort(
+        HistoryEntry.ManualStageChanged(
+            flowId = flowId,
+            flowInstanceId = data.flowInstanceId,
+            fromStage = historyValueOf(fromStage),
+            toStage = historyValueOf(toStage),
+            fromStatus = fromStatus,
+            toStatus = toStatus,
         ),
     )
 }

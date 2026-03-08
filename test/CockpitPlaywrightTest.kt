@@ -489,6 +489,49 @@ class CockpitPlaywrightTest : BehaviorSpec({
             }
         }
 
+        `when`("using bookmarkable detail modals and keyboard dismissal") {
+            then("it syncs the instance modal with the URL, supports copy buttons, and closes modals with escape") {
+                val fixture = seedRichFixture()
+
+                withRecordedContext("it-bookmarks-and-dismisses-modals-with-escape") { page ->
+                    navigateToCockpit(page, "tab=instances")
+
+                    page.getByTestId("copy-instance-list-id-${fixture.orderPendingId}").click()
+                    assertThat(page.getByTestId("copy-instance-list-id-${fixture.orderPendingId}")).containsText("Copied")
+
+                    instanceRow(page, fixture.orderPendingId).click()
+                    assertThat(page.getByTestId("instance-details-modal")).isVisible()
+                    page.url().shouldContain("instanceFlowId=$ORDER_CONFIRMATION_FLOW_ID")
+                    page.url().shouldContain("instanceId=${fixture.orderPendingId}")
+
+                    page.getByTestId("copy-instance-details-id").click()
+                    assertThat(page.getByTestId("copy-instance-details-id")).containsText("Copied")
+
+                    val bookmarkUrl = page.url()
+                    page.navigate(bookmarkUrl)
+                    assertThat(page.getByTestId("instance-details-modal")).isVisible()
+
+                    page.keyboard().press("Escape")
+                    assertThat(page.getByTestId("instance-details-modal")).hasCount(0)
+
+                    page.getByTestId("tab-flows").click()
+                    page.getByTestId("flow-view-diagram-order-confirmation").click()
+                    assertThat(page.getByTestId("flow-diagram-modal")).isVisible()
+                    page.keyboard().press("Escape")
+                    assertThat(page.getByTestId("flow-diagram-modal")).hasCount(0)
+
+                    page.getByTestId("tab-errors").click()
+                    page.getByTestId("error-instance-${fixture.orderErrorChangeStageId}").click()
+                    assertThat(page.getByTestId("instance-details-modal")).isVisible()
+                    page.getByTestId("instance-change-stage").click()
+                    assertThat(page.getByTestId("change-stage-modal")).isVisible()
+                    page.keyboard().press("Escape")
+                    assertThat(page.getByTestId("change-stage-modal")).hasCount(0)
+                    assertThat(page.getByTestId("instance-details-modal")).isVisible()
+                }
+            }
+        }
+
         `when`("using flow definition shortcuts and browser navigation") {
             then("it supports long running, incomplete, stage and error jumps with bookmarkable URLs") {
                 seedRichFixture()
@@ -645,11 +688,14 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     assertThat(page.getByTestId("long-running-row-${fixture.employeeLongRunningId}")).hasCount(0)
 
                     page.getByTestId("long-running-flow-filter").selectOption("all")
-                    page.getByTestId("long-running-threshold").fill("3")
+                    page.getByTestId("long-running-threshold").fill("181")
                     assertThat(page.getByTestId("long-running-row-${fixture.employeeLongRunningId}")).isVisible()
                     assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).hasCount(0)
 
                     page.getByTestId("long-running-threshold").fill("1")
+                    assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).isVisible()
+                    assertThat(page.getByTestId("long-running-row-${fixture.employeeLongRunningId}")).isVisible()
+
                     page.getByTestId("long-running-flow-filter").selectOption(ORDER_CONFIRMATION_FLOW_ID)
                     page.getByTestId("long-running-checkbox-${fixture.orderLongRunningId}").check()
                     assertThat(page.getByTestId("long-running-selection-bar")).containsText("1 long running instance(s) selected")
@@ -665,6 +711,38 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     page.getByTestId("instances-search").fill(fixture.orderLongRunningId.toString())
                     assertThat(instanceRow(page, fixture.orderLongRunningId)).isVisible()
                     assertThat(page.getByTestId("instance-status-${fixture.orderLongRunningId}")).containsText(StageStatus.Pending.name)
+                }
+            }
+        }
+
+        `when`("updating instances from the detail modal") {
+            then("it refreshes the modal stage, status, and history after change-stage and cancel actions") {
+                val fixture = seedRichFixture()
+
+                withRecordedContext("it-refreshes-detail-modal-after-actions") { page ->
+                    navigateToCockpit(page, "tab=errors")
+
+                    page.getByTestId("error-instance-${fixture.orderErrorChangeStageId}").click()
+                    assertThat(page.getByTestId("instance-details-stage")).containsText(OrderConfirmationStage.InformingCustomer.name)
+                    assertThat(page.getByTestId("instance-details-status")).containsText(StageStatus.Error.name)
+
+                    page.getByTestId("instance-change-stage").click()
+                    assertThat(page.getByTestId("change-stage-modal")).isVisible()
+                    page.getByTestId("change-stage-select").selectOption(OrderConfirmationStage.WaitingForConfirmation.name)
+                    page.getByTestId("change-stage-confirm").click()
+
+                    assertThat(page.getByTestId("instance-details-modal")).isVisible()
+                    assertThat(page.getByTestId("instance-details-stage")).containsText(OrderConfirmationStage.WaitingForConfirmation.name)
+                    assertThat(page.getByTestId("instance-details-status")).containsText(StageStatus.Pending.name)
+                    assertThat(page.getByTestId("instance-history-type-2")).containsText("ManualStageChanged")
+                    page.getByTestId("instance-details-close").click()
+
+                    page.getByTestId("error-instance-${fixture.employeeErrorCancelId}").click()
+                    assertThat(page.getByTestId("instance-details-status")).containsText(StageStatus.Error.name)
+                    page.getByTestId("instance-cancel").click()
+                    assertThat(page.getByTestId("instance-details-modal")).isVisible()
+                    assertThat(page.getByTestId("instance-details-status")).containsText(StageStatus.Cancelled.name)
+                    assertThat(page.getByTestId("instance-history-type-2")).containsText("Cancelled")
                 }
             }
         }
@@ -708,6 +786,12 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     page.url().shouldContain("tab=instances")
                     assertThat(instanceRow(page, fixture.orderPendingId)).isVisible()
                     assertThat(instanceRow(page, fixture.employeeCompletedId)).isVisible()
+
+                    page.getByTestId("instances-search").fill(fixture.employeeCompletedId.toString())
+                    instanceRow(page, fixture.employeeCompletedId).click()
+                    assertThat(page.getByTestId("instance-history-timestamp-1")).containsText("UTC")
+                    assertThat(page.getByTestId("instance-history-type-1")).containsText(HistoryEntryType.StatusChanged.name)
+                    assertThat(page.getByTestId("instance-history-stage-1")).containsText("—")
                 }
             }
         }

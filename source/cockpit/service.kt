@@ -52,12 +52,15 @@ class CockpitService(
         val STAGE_ROW_TYPES = setOf(
             HistoryEntryType.Started,
             HistoryEntryType.StageChanged,
+            HistoryEntryType.ManualStageChanged,
             HistoryEntryType.Error,
         )
 
         val STATUS_ROW_TYPES = setOf(
             HistoryEntryType.Started,
             HistoryEntryType.StatusChanged,
+            HistoryEntryType.Retried,
+            HistoryEntryType.ManualStageChanged,
             HistoryEntryType.Cancelled,
             HistoryEntryType.Error,
         )

@@ -226,6 +226,45 @@ class EngineBehaviorTest : BehaviorSpec({
             }
         }
 
+        `when`("manual retry and change stage are requested") {
+            val eventStore = InMemoryEventStore()
+            val tickScheduler = ManualTickScheduler()
+            val persister = InMemoryStatePersister<EngineState>()
+            val engine = Engine(eventStore, tickScheduler).also {
+                it.registerFlow("manual-actions", automaticTransitionFlow(), persister)
+            }
+
+            val retryId = UUID.randomUUID()
+            persister.save(
+                InstanceData(
+                    flowInstanceId = retryId,
+                    state = EngineState(flag = false),
+                    stage = EngineStage.Start,
+                    stageStatus = StageStatus.Error,
+                ),
+            )
+
+            val changeStageId = UUID.randomUUID()
+            persister.save(
+                InstanceData(
+                    flowInstanceId = changeStageId,
+                    state = EngineState(flag = false),
+                    stage = EngineStage.Start,
+                    stageStatus = StageStatus.Pending,
+                ),
+            )
+
+            then("both actions enqueue ticks") {
+                tickScheduler.scheduledCount() shouldBe 0
+
+                engine.retry("manual-actions", retryId)
+                tickScheduler.scheduledCount() shouldBe 1
+
+                engine.changeStage("manual-actions", changeStageId, EngineStage.Done.name)
+                tickScheduler.scheduledCount() shouldBe 2
+            }
+        }
+
         `when`("calling sendEvent and startInstance for an unregistered flow") {
             val eventStore = InMemoryEventStore()
             val tickScheduler = ManualTickScheduler()
@@ -289,6 +328,8 @@ class EngineBehaviorTest : BehaviorSpec({
         override fun scheduleTick(flowId: String, flowInstanceId: UUID) {
             queue.addLast(flowId to flowInstanceId)
         }
+
+        fun scheduledCount() = queue.size
 
         fun drain(limit: Int = 1000) {
             val h = handler ?: error("Tick handler not set")

@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-08 – Flows live-refresh planning.
+  - Outcome: Added `memory/FlowsLiveRefreshPlan.md` and chose a phased approach: live updates only for the `Flows` tab first, manual refresh buttons everywhere, and a flows-only `Live` toggle.
+  - Learning: The current Cockpit architecture is better served by transport-agnostic invalidation + refetch than by streaming deltas; for one-way dashboard updates SSE is a simpler fit than full WebSocket infrastructure.
+
 - 2026-03-08 – Render keepalive schedule update.
   - Outcome: Changed the keepalive workflow to run every 10 minutes during the requested 06:00-24:00 Warsaw window and updated the matching docs.
   - Learning: Because GitHub Actions cron uses UTC, the most robust way to express a local-time window across DST is to schedule the broader UTC range and gate the actual work using `TZ=Europe/Warsaw` inside the job.

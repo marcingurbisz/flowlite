@@ -6,9 +6,14 @@ Completed changes:
 Validation:
 - `git diff --check` → no issues.
 
-## Plan for implementing refreshing "Flows" tab using websockets
-Prepare plan document explaining the technical details. I think we should do live refresh only on Flows tab, what do you think?
-Any other tab that could benefit from that? Or maybe live update toggle for everything? Or maybe better just add refresh buttons?
+## [DONE 2026-03-08] Plan for implementing refreshing "Flows" tab using websockets
+Completed changes:
+- Added planning note `memory/FlowsLiveRefreshPlan.md` covering scope, transport choice, backend/frontend design, rollout, and test strategy.
+- Recommended phase-1 live refresh only for the `Flows` tab, with manual refresh buttons on every tab and a `Live` toggle only on `Flows`.
+- Recommended invalidation + refetch as the data strategy, with SSE as the preferred phase-1 transport and WebSocket kept as a future transport swap if broader bidirectional live features are later needed.
+
+Validation:
+- Design-only task; no runtime code changes were required.
 
 ## Cockpit and engine func improvements
 For every change implement new or adjust existing playwright test. Func changes/fixes:

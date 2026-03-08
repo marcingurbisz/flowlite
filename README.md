@@ -511,7 +511,7 @@ Quick start:
 
 Optional keepalive:
 - Set GitHub repository variable `FLOWLITE_RENDER_URL` to your deployed service URL (for example, `https://flowlite-test-instance.onrender.com`).
-- Keep `.github/workflows/keep-render-alive.yml` enabled to ping `/api/flows` every 14 minutes.
+- Keep `.github/workflows/keep-render-alive.yml` enabled to ping `/api/flows` every 10 minutes during 06:00-24:00 Warsaw time.
 
 ### Coverage (Local + GitHub)
 

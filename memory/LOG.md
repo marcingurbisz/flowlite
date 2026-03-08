@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-08 – Render keepalive schedule update.
+  - Outcome: Changed the keepalive workflow to run every 10 minutes during the requested 06:00-24:00 Warsaw window and updated the matching docs.
+  - Learning: Because GitHub Actions cron uses UTC, the most robust way to express a local-time window across DST is to schedule the broader UTC range and gate the actual work using `TZ=Europe/Warsaw` inside the job.
+
 - 2026-03-07 – Render Docker build fix for packaged app.
   - Outcome: Added a prebuilt-Cockpit Gradle switch, moved Cockpit UI compilation into a dedicated Node Docker stage, and kept the packaged app bundle build green without requiring `npm` in the JDK stage.
   - Learning: Separating frontend compilation from JVM packaging keeps the Docker build reproducible and avoids assuming Node tooling exists in the Java base image.

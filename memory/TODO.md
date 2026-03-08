@@ -1,4 +1,10 @@
-## Update keep render live workflow to execute every 10min between 6:00 and 24:00 Warsaw time every day
+## [DONE 2026-03-08] Update keep render live workflow to execute every 10min between 6:00 and 24:00 Warsaw time every day
+Completed changes:
+- Updated `.github/workflows/keep-render-alive.yml` to schedule every 10 minutes across the UTC range that covers the Warsaw window and added a Warsaw-time gate so pings only run from 06:00 until midnight local time.
+- Updated `README.md` and `AGENTS.md` to describe the new keepalive cadence.
+
+Validation:
+- `git diff --check` → no issues.
 
 ## Plan for implementing refreshing "Flows" tab using websockets
 Prepare plan document explaining the technical details. I think we should do live refresh only on Flows tab, what do you think?

@@ -2,7 +2,7 @@ name: Keep Render Test Instance Alive
 
 on:
   schedule:
-    - cron: "*/14 * * * *"
+    - cron: "*/10 4-23 * * *"
   workflow_dispatch:
 
 jobs:
@@ -10,7 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check Warsaw keepalive window
+        id: keepalive_window
+        run: |
+          warsaw_hour=$(TZ=Europe/Warsaw date +%H)
+          if (( 10#${warsaw_hour} < 6 )); then
+            echo "Current Warsaw hour is ${warsaw_hour}; outside 06:00-24:00 keepalive window. Skipping ping."
+            echo "should_ping=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_ping=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Ping configured Render URL
+        if: steps.keepalive_window.outputs.should_ping == 'true'
         env:
           FLOWLITE_RENDER_URL: ${{ vars.FLOWLITE_RENDER_URL }}
         run: |

@@ -1,4 +1,11 @@
-## [IN PREPARATON] Concept for "Auto-retry" and "User retriable"
+## [DONE 2026-03-08] Concept for "Auto-retry" and "User retriable"
+Completed changes:
+- Added planning note `memory/AutoRetryConcept.md` describing the current gap, the recommended hybrid design, retry directives, delayed tick scheduling, cockpit implications, and rollout phases.
+- Chose the main architectural split: retry mechanics and bookkeeping should live in core FlowLite, while retry/failure classification should stay application-provided.
+- Recommended separate engine-owned retry metadata rather than forcing every domain table to grow retry columns.
+
+Validation:
+- Design-only task; no runtime code changes were required.
 
 ## [DONE 2026-03-08] Update keep render live workflow to execute every 10min between 6:00 and 24:00 Warsaw time every day
 Completed changes:

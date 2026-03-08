@@ -2,7 +2,7 @@ name: Keep Render Test Instance Alive
 
 on:
   schedule:
-    - cron: "*/10 4-23 * * *"
+    - cron: "*/5 4-23 * * *"
   workflow_dispatch:
 
 jobs:

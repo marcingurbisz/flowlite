@@ -40,7 +40,7 @@ interface StatePersister<T : Any> {
      * - merge engine-owned fields (stage, stageStatus) with a freshly loaded domain snapshot,
      *   to avoid losing concurrent updates made by external writers.
      *
-     * Returns refreshed data on success.
+        * Returns refreshed data on success.
      */
     fun save(instanceData: InstanceData<T>): InstanceData<T>
 

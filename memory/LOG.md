@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-08 – Schema split and scoped nullability cleanup.
+  - Outcome: Split engine table DDL from test-domain table DDL, updated the schema loader to apply both resources, and narrowed the nullable-column change so only `stage` / `stage_status` lost `NOT NULL` while business fields stayed required.
+  - Learning: Mixing engine metadata and demo-domain fields in the same tables makes broad nullable refactors look larger than they really are; separating the schema files first makes the boundary much clearer.
+
 - 2026-03-08 – MIT license project metadata.
   - Outcome: Added a root `LICENSE` file, documented the MIT license in README/AGENTS, and aligned Maven publishing metadata with the real GitHub repository coordinates.
   - Learning: The standard open-source baseline is not just the license text itself but also consistent discovery points in docs and published artifact metadata.

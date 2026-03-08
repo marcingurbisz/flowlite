@@ -1,3 +1,13 @@
+## [DONE 2026-03-08] Split engine schema from test schemas and keep nullability scoped to stage metadata
+
+Completed changes:
+- Split the test-app DDL into engine-owned resources (`test/schema/h2.sql`, `test/schema/mssql.sql`) and separate domain-table resources (`test/schema/h2-test-tables.sql`, `test/schema/mssql-test-tables.sql`), then updated `test/testDatabaseSchema.kt` to apply both scripts per dialect.
+- Reverted the attempted nullable-business-state refactor in the demo domains/runtime so `OrderConfirmation` and `EmployeeOnboarding` business fields stay non-null in code.
+- Limited the `NOT NULL` relaxation in the test domain-table DDL to only `stage` and `stage_status`; all other business columns remain required.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
+
 ## [DONE 2026-03-08] Concept for "Auto-retry" and "User retriable"
 Completed changes:
 - Added planning note `memory/AutoRetryConcept.md` describing the current gap, the recommended hybrid design, retry directives, delayed tick scheduling, cockpit implications, and rollout phases.

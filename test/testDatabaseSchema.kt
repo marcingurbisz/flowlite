@@ -5,15 +5,29 @@ import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator
 
 enum class TestDatabaseDialect(
-    val schemaResourcePath: String,
+    val schemaResourcePaths: List<String>,
 ) {
-    H2("schema/h2.sql"),
-    MSSQL("schema/mssql.sql"),
+    H2(
+        listOf(
+            "schema/h2.sql",
+            "schema/h2-test-tables.sql",
+        ),
+    ),
+    MSSQL(
+        listOf(
+            "schema/mssql.sql",
+            "schema/mssql-test-tables.sql",
+        ),
+    ),
 }
 
 fun initializeTestSchema(
     dataSource: DataSource,
     dialect: TestDatabaseDialect,
 ) {
-    ResourceDatabasePopulator(ClassPathResource(dialect.schemaResourcePath)).execute(dataSource)
+    val populator = ResourceDatabasePopulator()
+    dialect.schemaResourcePaths.forEach { resourcePath ->
+        populator.addScript(ClassPathResource(resourcePath))
+    }
+    populator.execute(dataSource)
 }

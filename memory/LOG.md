@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-08 – MIT license project metadata.
+  - Outcome: Added a root `LICENSE` file, documented the MIT license in README/AGENTS, and aligned Maven publishing metadata with the real GitHub repository coordinates.
+  - Learning: The standard open-source baseline is not just the license text itself but also consistent discovery points in docs and published artifact metadata.
+
 - 2026-03-08 – Auto-retry and user-retriable concept.
   - Outcome: Added `memory/AutoRetryConcept.md` and recommended a hybrid design where FlowLite owns retry orchestration/scheduling while applications provide the failure-classification policy.
   - Learning: Auto-retry becomes much easier to keep generic if retry metadata is engine-owned instead of being pushed into every domain schema.

@@ -36,7 +36,14 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Flowlite is MIT license - add this info to the project in a way other open source MIT projects do.
+## [DONE 2026-03-08] Flowlite is MIT license - add this info to the project in a way other open source MIT projects do.
+Completed changes:
+- Added a root `LICENSE` file with the standard MIT license text.
+- Added a `License` section to `README.md` and `AGENTS.md` pointing readers to the license file.
+- Updated Maven publishing metadata in `build.gradle.kts` to publish the real repository URL, SCM coordinates, and MIT license information.
+
+Validation:
+- `./gradlew help` → BUILD SUCCESSFUL.
 
 ## [DONE 2026-03-07] More playwright tests
 Completed changes:

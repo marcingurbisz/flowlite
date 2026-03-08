@@ -250,18 +250,22 @@ publishing {
             pom {
                 name.set("FlowLite")
                 description.set("A lightweight, developer-friendly workflow engine for Kotlin")
-                url.set("https://github.com/yourusername/flowlite")
+                url.set("https://github.com/marcingurbisz/flowlite")
                 licenses {
                     license {
                         name.set("MIT License")
                         url.set("https://opensource.org/licenses/MIT")
                     }
                 }
+                scm {
+                    url.set("https://github.com/marcingurbisz/flowlite")
+                    connection.set("scm:git:https://github.com/marcingurbisz/flowlite.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/marcingurbisz/flowlite.git")
+                }
                 developers {
                     developer {
-                        id.set("developer")
-                        name.set("Developer Name")
-                        email.set("developer@example.com")
+                        id.set("marcingurbisz")
+                        name.set("Marcin Gurbisz")
                     }
                 }
             }

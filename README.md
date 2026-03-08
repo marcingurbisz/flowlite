@@ -547,5 +547,11 @@ File naming:
 - Keep architectural & usage docs in this README
 - Remember to update "Table of Contents" in README when adding new chapter or changing existing
 
+## License
+
+FlowLite is available under the MIT License.
+
+See `LICENSE` for the full license text.
+
 ### Special notes for agent
 - After changing the source code, always run `./gradlew test` before returning to user.

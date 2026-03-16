@@ -800,6 +800,22 @@ const FlowLiteCockpit = () => {
     setSelectedInstances(new Set());
   };
 
+  const clearErrorFilters = () => {
+    openErrorsView({});
+  };
+
+  const selectAllErrorsInGroup = (instanceIds: string[]) => {
+    const next = new Set(selectedInstances);
+    instanceIds.forEach((instanceId) => next.add(instanceId));
+    setSelectedInstances(next);
+  };
+
+  const deselectErrorsInGroup = (instanceIds: string[]) => {
+    const next = new Set(selectedInstances);
+    instanceIds.forEach((instanceId) => next.delete(instanceId));
+    setSelectedInstances(next);
+  };
+
   const clearInstanceFilters = () => {
     openInstancesView({});
   };
@@ -1022,6 +1038,13 @@ const FlowLiteCockpit = () => {
                 onChange={(e) => setErrorMessageFilterErrors(e.target.value)}
                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
               />
+              <button
+                data-testid="errors-clear-filters"
+                onClick={clearErrorFilters}
+                className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+              >
+                Clear Filters
+              </button>
             </div>
 
             {selectedInstances.size > 0 && (
@@ -1070,6 +1093,7 @@ const FlowLiteCockpit = () => {
                 const groupInstances = instances.filter(
                   (i) => i.flowId === group.flowId && i.stage === (group.stage ?? '') && i.status === 'Error',
                 );
+                const groupTestIdSuffix = `${group.flowId}-${toTestIdFragment(group.stage)}`;
 
                 return (
                   <div key={idx} data-testid={`error-group-${group.flowId}-${toTestIdFragment(group.stage)}`} className="bg-zinc-900 border border-red-900/30 rounded-lg p-6">
@@ -1078,7 +1102,23 @@ const FlowLiteCockpit = () => {
                         <h3 className="text-lg font-bold text-zinc-50 font-mono">{group.flowId}</h3>
                         <p className="text-sm text-zinc-500 mt-1">Stage: <span className="font-mono">{group.stage}</span></p>
                       </div>
-                      <div className="px-3 py-1 bg-red-500/20 text-red-400 rounded text-xs font-mono">{group.count} errors</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          data-testid={`error-group-select-all-${groupTestIdSuffix}`}
+                          onClick={() => selectAllErrorsInGroup(groupInstances.map((instance) => instance.id))}
+                          className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          data-testid={`error-group-deselect-all-${groupTestIdSuffix}`}
+                          onClick={() => deselectErrorsInGroup(groupInstances.map((instance) => instance.id))}
+                          className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors"
+                        >
+                          Deselect All
+                        </button>
+                        <div className="px-3 py-1 bg-red-500/20 text-red-400 rounded text-xs font-mono">{group.count} errors</div>
+                      </div>
                     </div>
 
                     <div className="space-y-2 mt-4">

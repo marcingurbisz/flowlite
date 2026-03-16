@@ -89,10 +89,14 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## "Errors" tab changes
-Change and write/update tests for changes:
-* add "clear filters" button like in cockpit-ui/claude-prototype.jsx
-* add select/deselect all for errors in stage group like in cockpit-ui/claude-prototype.jsx
+## [DONE 2026-03-16] "Errors" tab changes
+Completed changes:
+- Added an `Errors` tab `Clear Filters` action that resets the flow, stage, and message filters back to their default state.
+- Added per-group `Select All` and `Deselect All` controls so operators can bulk-select every error instance in the visible flow/stage group.
+- Extended Playwright coverage to verify both the filter reset behavior and the group-level selection flow.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Show "Incomplete Only" filter 
 ... when navigated from incomplete link from Flows tab to Instances tab (like in prototype). Add/modify test for it.

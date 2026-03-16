@@ -630,10 +630,22 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     assertThat(page.getByTestId("error-group-employee-onboarding-UpdateHRSystem")).isVisible()
                     assertThat(page.getByTestId("error-group-order-confirmation-InformingCustomer")).hasCount(0)
 
-                    page.getByTestId("errors-message-filter").fill("")
-                    page.getByTestId("error-instance-checkbox-${fixture.orderErrorRetryId}").check()
-                    page.getByTestId("error-instance-checkbox-${fixture.employeeErrorCancelId}").check()
+                    page.getByTestId("errors-clear-filters").click()
+                    assertThat(page.getByTestId("errors-flow-filter")).hasValue("all")
+                    assertThat(page.getByTestId("errors-stage-filter")).hasValue("")
+                    assertThat(page.getByTestId("errors-message-filter")).hasValue("")
+                    assertThat(page.getByTestId("error-group-order-confirmation-InformingCustomer")).isVisible()
+                    assertThat(page.getByTestId("error-group-employee-onboarding-UpdateHRSystem")).isVisible()
+
+                    page.getByTestId("error-group-select-all-order-confirmation-InformingCustomer").click()
                     assertThat(page.getByTestId("errors-selection-bar")).containsText("2 error(s) selected")
+
+                    page.getByTestId("error-group-select-all-employee-onboarding-UpdateHRSystem").click()
+                    assertThat(page.getByTestId("errors-selection-bar")).containsText("3 error(s) selected")
+
+                    page.getByTestId("error-group-deselect-all-order-confirmation-InformingCustomer").click()
+                    assertThat(page.getByTestId("errors-selection-bar")).containsText("1 error(s) selected")
+
                     page.getByTestId("errors-deselect-selected").click()
                     assertThat(page.getByTestId("errors-selection-bar")).hasCount(0)
 

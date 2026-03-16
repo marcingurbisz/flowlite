@@ -30,8 +30,16 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## timer() implementation
-timer(Delay5Min, actions::delay5Min) - should suspend execution of flow instance for 5min without blocking worker thread. Second argument should probably a function that calculates wake-up time not action.
+## [DONE 2026-03-16] timer() implementation
+Completed changes:
+- Reworked `timer(...)` so it now accepts a wake-up calculator returning `Instant`, persists timer metadata separately from domain rows, and schedules delayed ticks instead of running a stage action immediately.
+- Extended the Spring Data JDBC tick scheduler with due-time support plus stale-timer guarding metadata, and added a dedicated `flowlite_timer` table to keep delayed timer state durable across restarts.
+- Updated the employee onboarding example so timer stages compute wake-up times instead of mutating state, and added clock-controlled tests that advance through both delayed onboarding timers without blocking worker threads.
+- Updated README and AGENTS so the documented timer contract matches the new runtime semantics.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
+- `./gradlew updateReadme` → BUILD SUCCESSFUL.
 
 ## "Long Running" tab improvements
 Consider below. In case for change write/update tests for changes:

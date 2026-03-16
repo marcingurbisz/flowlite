@@ -1,6 +1,7 @@
 package io.flowlite
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -22,6 +23,9 @@ data class FlowLiteTick(
     val id: UUID,
     val flowId: String,
     val flowInstanceId: UUID,
+    val notBefore: Instant,
+    val targetStage: String? = null,
+    val timerToken: UUID? = null,
     @Version
     var version: Long? = null, // Only so Spring Data JDBC treats the aggregate as "new" with an assigned (non-null) id.
 )
@@ -31,24 +35,42 @@ interface FlowLiteTickRepository : CrudRepository<FlowLiteTick, UUID> {
         """
         select *
         from flowlite_tick
-        order by id asc
+        where not_before <= :now
+        order by not_before asc, id asc
         limit :limit
         """,
     )
-    fun findNextBatch(limit: Int): List<FlowLiteTick>
+    fun findDueBatch(now: Instant, limit: Int): List<FlowLiteTick>
+}
+
+@Table("FLOWLITE_TIMER")
+data class FlowLiteTimer(
+    @Id
+    val id: UUID,
+    val flowId: String,
+    val flowInstanceId: UUID,
+    val stage: String,
+    val wakeUpAt: Instant,
+    @Version
+    var version: Long? = null,
+)
+
+interface FlowLiteTimerRepository : CrudRepository<FlowLiteTimer, UUID> {
+    fun findByFlowIdAndFlowInstanceIdAndStage(flowId: String, flowInstanceId: UUID, stage: String): FlowLiteTimer?
 }
 
 class SpringDataJdbcTickScheduler(
     private val tickRepo: FlowLiteTickRepository,
     private val idleDelay: Duration = Duration.ofMillis(1000),
     workerThreads: Int = 20,
+    private val clock: Clock = Clock.systemUTC(),
 ) : TickScheduler, SmartLifecycle {
 
     private companion object {
         private val log = KotlinLogging.logger {}
     }
 
-    @Volatile private var tickHandler: ((String, UUID) -> Unit)? = null
+    @Volatile private var tickHandler: ((ScheduledTick) -> Unit)? = null
     private val shutdownInitiated = AtomicBoolean(false)
 
     @Volatile private var pollerThread: Thread? = null
@@ -69,16 +91,25 @@ class SpringDataJdbcTickScheduler(
             }
     }
 
-    override fun setTickHandler(handler: (String, UUID) -> Unit) {
+    override fun setTickHandler(handler: (ScheduledTick) -> Unit) {
         tickHandler = handler
     }
 
-    override fun scheduleTick(flowId: String, flowInstanceId: UUID) {
+    override fun scheduleTick(
+        flowId: String,
+        flowInstanceId: UUID,
+        notBefore: Instant,
+        targetStage: String?,
+        timerToken: UUID?,
+    ) {
         tickRepo.save(
             FlowLiteTick(
                 id = UUID.randomUUID(),
                 flowId = flowId,
                 flowInstanceId = flowInstanceId,
+                notBefore = notBefore,
+                targetStage = targetStage,
+                timerToken = timerToken,
             ),
         )
     }
@@ -87,7 +118,7 @@ class SpringDataJdbcTickScheduler(
         val handler = requireNotNull(tickHandler)
         while (!shutdownInitiated.get()) {
             try {
-                val ticks = tickRepo.findNextBatch(batchSize)
+                val ticks = tickRepo.findDueBatch(clock.instant(), batchSize)
                 if (ticks.isEmpty()) {
                     Thread.sleep(idleDelay.toMillis())
                     continue
@@ -117,9 +148,17 @@ class SpringDataJdbcTickScheduler(
         }
     }
 
-    private fun handleTick(handler: (String, UUID) -> Unit, tick: FlowLiteTick) {
+    private fun handleTick(handler: (ScheduledTick) -> Unit, tick: FlowLiteTick) {
         try {
-            handler(tick.flowId, tick.flowInstanceId)
+            handler(
+                ScheduledTick(
+                    flowId = tick.flowId,
+                    flowInstanceId = tick.flowInstanceId,
+                    notBefore = tick.notBefore,
+                    targetStage = tick.targetStage,
+                    timerToken = tick.timerToken,
+                ),
+            )
         } catch (e: Exception) {
             log.error(e) { "Tick handler failed for ${tick.flowId}/${tick.flowInstanceId}" }
         }
@@ -150,6 +189,46 @@ class SpringDataJdbcTickScheduler(
 
     override fun isRunning() = pollerThread != null && !shutdownInitiated.get()
 }
+
+class SpringDataJdbcTimerStore(
+    private val repo: FlowLiteTimerRepository,
+) : TimerStore {
+    override fun load(flowId: String, flowInstanceId: UUID, stage: String): ScheduledTimer? =
+        repo.findByFlowIdAndFlowInstanceIdAndStage(flowId, flowInstanceId, stage)?.toScheduledTimer()
+
+    override fun save(timer: ScheduledTimer): ScheduledTimer {
+        val existing = repo.findByFlowIdAndFlowInstanceIdAndStage(timer.flowId, timer.flowInstanceId, timer.stage)
+        val saved = if (existing == null) {
+            repo.save(
+                FlowLiteTimer(
+                    id = timer.token,
+                    flowId = timer.flowId,
+                    flowInstanceId = timer.flowInstanceId,
+                    stage = timer.stage,
+                    wakeUpAt = timer.wakeUpAt,
+                ),
+            )
+        } else {
+            repo.save(existing.copy(wakeUpAt = timer.wakeUpAt))
+        }
+        return saved.toScheduledTimer()
+    }
+
+    override fun delete(flowId: String, flowInstanceId: UUID, stage: String): Boolean {
+        val existing = repo.findByFlowIdAndFlowInstanceIdAndStage(flowId, flowInstanceId, stage) ?: return false
+        repo.delete(existing)
+        return true
+    }
+}
+
+private fun FlowLiteTimer.toScheduledTimer() =
+    ScheduledTimer(
+        token = id,
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        stage = stage,
+        wakeUpAt = wakeUpAt,
+    )
 
 // --- Event store ---
 

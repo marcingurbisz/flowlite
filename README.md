@@ -63,7 +63,7 @@ stateDiagram-v2
 - **Wait stage**: `stage(WaitingForConfirmation, waitFor = Confirmed)` pauses until that event is available.
 - **Condition**: Structured branching with `_if { ... } _else { ... }`. Renders as a choice node on diagram.
 - **Implicit join**: Branches rejoin automatically at the next statement after an `_if` block.
-- **Timer stage**: `timer(...)` declares a delay/business-time step using the same action signature as normal stages.
+- **Timer stage**: `timer(...)` declares a delay/business-time step whose callback calculates the wake-up timestamp for the next engine attempt.
 - **Flow**: Immutable definition produced by `flow { ... }` and held in-memory.
 - **StageStatus**: Lifecycle state of the single active stage:
     - `Pending` – Active stage awaiting action execution or matching event.
@@ -72,7 +72,7 @@ stateDiagram-v2
     - `Error` – Action failed; requires manual retry.
 - **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
     - A tick carries no business payload;
-    - Ticks are emitted on `startInstance`, `sendEvent`, and `retry`.
+    - Ticks are emitted on `startInstance`, `sendEvent`, `retry`, and delayed timer scheduling.
 - Client that uses FlowLite provides the persistence for both FlowLite specific (id, stage, stage status) and domain-specific data
 - Single-token model: only one active stage at any moment (no parallelism within one flow).
 - Code-first definitions → diagrams are generated from code.
@@ -120,6 +120,8 @@ FlowLite now uses a procedural builder with four main building blocks:
    }
    ```
 
+    `waitForBusinessHours(...)` should return the `Instant` when the stage may wake up again. The worker thread is released immediately after the timer is scheduled.
+
 Event waiting semantics:
 - A stage declared with `waitFor = EventX` moves forward when `EventX` is received.
 - If `EventX` was emitted earlier (before workflow reached this stage), it is persisted and consumed once the stage becomes eligible.
@@ -139,16 +141,22 @@ Branches automatically rejoin at the next statement after the conditional block.
 
 - Prefer `stage(..., waitFor = EventX)` for single-event wait states.
 - Use `_if { ... } _else { ... }` for branch logic and let the next statement act as the implicit join.
-- Use `timer(...)` for delay/business-time steps and keep timer actions small and deterministic.
+- Use `timer(...)` for delay/business-time steps and keep timer wake-up calculators small and deterministic.
 
 ### Action functions
 
 - Signature: `(context: ActionContext, state: T) -> T?` (state-only function references like `::myAction` are still supported)
-    - `ActionContext` exposes `flowId` and `flowInstanceId` for runtime metadata.
+    - `ActionContext` exposes `flowId`, `flowInstanceId`, and `now` for runtime metadata.
     - Return a new state to persist or `null` to indicate no state changes.
     - Any changes to engine managed fields will be overridden before engine persist them.
 - Guidelines:
     - Keep actions small and focused.
+
+### Timer functions
+
+- Signature: `(context: ActionContext, state: T) -> Instant` (state-only function references like `::wakeAt` are still supported)
+- Return the next wake-up timestamp for the timer stage.
+- Keep timer functions free of persistence side effects; state mutations belong in regular stages before or after the timer.
   
 ## More examples
 

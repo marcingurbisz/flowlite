@@ -181,6 +181,10 @@ class MermaidGenerator {
             val actionName = stageDefinition.actionName ?: extractActionName(action)
             sb.append("    $currentStage: $currentStage $actionName()\n")
         }
+        stageDefinition.timer?.let { timer ->
+            val timerName = stageDefinition.timerName ?: extractActionName(timer)
+            sb.append("    $currentStage: $currentStage $timerName()\n")
+        }
         
         // Process condition handler if present
         stageDefinition.conditionHandler?.let { conditionHandler ->

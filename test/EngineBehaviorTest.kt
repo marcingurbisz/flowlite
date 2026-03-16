@@ -1,8 +1,10 @@
 package io.flowlite.test
 
+import io.flowlite.ActionContext
 import io.flowlite.Event
 import io.flowlite.Engine
 import io.flowlite.InstanceData
+import io.flowlite.ScheduledTick
 import io.flowlite.Stage
 import io.flowlite.StageStatus
 import io.flowlite.StatePersister
@@ -13,6 +15,10 @@ import io.flowlite.flow
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 
 private enum class EngineStage : Stage {
@@ -315,18 +321,53 @@ class EngineBehaviorTest : BehaviorSpec({
                 }
             }
         }
+
+        `when`("a timer stage waits until its wake-up time") {
+            val clock = AdjustableClock(Clock.fixed(Instant.parse("2026-03-16T10:00:00Z"), ZoneOffset.UTC))
+            val eventStore = InMemoryEventStore()
+            val tickScheduler = ManualTickScheduler(clock)
+            val persister = InMemoryStatePersister<EngineState>()
+            val engine = Engine(eventStore = eventStore, tickScheduler = tickScheduler, clock = clock).also {
+                it.registerFlow("timer-flow", timerFlow(), persister)
+            }
+
+            val id = engine.startInstance("timer-flow", EngineState(flag = false))
+            tickScheduler.drain()
+
+            then("it stays pending until the delayed tick becomes due") {
+                engine.getStatus("timer-flow", id) shouldBe (EngineStage.Wait to StageStatus.Pending)
+
+                tickScheduler.scheduleTick("timer-flow", id)
+                tickScheduler.drain()
+
+                engine.getStatus("timer-flow", id) shouldBe (EngineStage.Wait to StageStatus.Pending)
+
+                clock.advanceBy(Duration.ofMinutes(5))
+                tickScheduler.drain()
+
+                engine.getStatus("timer-flow", id) shouldBe (EngineStage.Done to StageStatus.Completed)
+            }
+        }
     }
 }) {
-    private class ManualTickScheduler : TickScheduler {
-        private var handler: ((String, UUID) -> Unit)? = null
-        private val queue = ArrayDeque<Pair<String, UUID>>()
+    private class ManualTickScheduler(
+        private val clock: Clock = Clock.systemUTC(),
+    ) : TickScheduler {
+        private var handler: ((ScheduledTick) -> Unit)? = null
+        private val queue = mutableListOf<ScheduledTick>()
 
-        override fun setTickHandler(handler: (String, UUID) -> Unit) {
+        override fun setTickHandler(handler: (ScheduledTick) -> Unit) {
             this.handler = handler
         }
 
-        override fun scheduleTick(flowId: String, flowInstanceId: UUID) {
-            queue.addLast(flowId to flowInstanceId)
+        override fun scheduleTick(
+            flowId: String,
+            flowInstanceId: UUID,
+            notBefore: Instant,
+            targetStage: String?,
+            timerToken: UUID?,
+        ) {
+            queue += ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, timerToken)
         }
 
         fun scheduledCount() = queue.size
@@ -334,10 +375,12 @@ class EngineBehaviorTest : BehaviorSpec({
         fun drain(limit: Int = 1000) {
             val h = handler ?: error("Tick handler not set")
             var steps = 0
-            while (queue.isNotEmpty()) {
+            while (true) {
+                val nextIndex = queue.indexOfFirst { !it.notBefore.isAfter(clock.instant()) }
+                if (nextIndex == -1) return
                 if (steps++ > limit) error("Exceeded tick drain limit ($limit)")
-                val (flowId, id) = queue.removeFirst()
-                h(flowId, id)
+                val tick = queue.removeAt(nextIndex)
+                h(tick)
             }
         }
     }
@@ -423,6 +466,12 @@ class EngineBehaviorTest : BehaviorSpec({
                 stage(EngineStage.Done)
             }
 
+        fun timerFlow() =
+            eventlessFlow<EngineState, EngineStage> {
+                timer(EngineStage.Wait, ::wakeInFiveMinutes)
+                stage(EngineStage.Done)
+            }
+
         fun terminalNoActionFlow() =
             eventlessFlow<EngineState, EngineStage> {
                 stage(EngineStage.Terminal)
@@ -468,4 +517,7 @@ class EngineBehaviorTest : BehaviorSpec({
         }
     }
 }
+
+private fun wakeInFiveMinutes(context: ActionContext, state: EngineState): Instant =
+    context.now.plus(Duration.ofMinutes(5))
 

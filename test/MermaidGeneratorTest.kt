@@ -6,6 +6,7 @@ import io.flowlite.Stage
 import io.flowlite.flow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.string.shouldContain
+import java.time.Instant
 
 private enum class DiagramStage : Stage {
     TrueStage,
@@ -68,6 +69,19 @@ class MermaidGeneratorTest : BehaviorSpec({
             }
         }
     }
+
+    given("a flow with a timer stage") {
+        val flow = createTimerDiagramFlow()
+        val generator = MermaidGenerator()
+
+        `when`("generating a diagram") {
+            val diagram = generator.generateDiagram(flow)
+
+            then("it renders the timer calculator name on the stage") {
+                diagram shouldContain "AfterEvent: AfterEvent calculateWakeUp()"
+            }
+        }
+    }
 })
 
 private fun createDiagramFlow() =
@@ -107,4 +121,12 @@ private fun isReady(state: InferredState) = state.ready
 private fun createInferredDescriptionFlow() =
     flow<InferredState, DiagramStage, DiagramEvent> {
         _if(::isReady) { stage(DiagramStage.TrueStage) } _else { stage(DiagramStage.FalseStage) }
+    }
+
+private fun calculateWakeUp(state: InferredState): Instant = Instant.EPOCH
+
+private fun createTimerDiagramFlow() =
+    flow<InferredState, DiagramStage, DiagramEvent> {
+        timer(DiagramStage.AfterEvent, ::calculateWakeUp)
+        stage(DiagramStage.End)
     }

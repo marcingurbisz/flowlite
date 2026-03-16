@@ -7,6 +7,7 @@ import io.flowlite.flow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.shouldBe
+import java.time.Instant
 
 private enum class ReceiverStage : Stage {
     Start,
@@ -77,9 +78,24 @@ class DslTest : BehaviorSpec({
                 startCondition.falseStage shouldBe ReceiverStage.Informing
             }
         }
+
+        `when`("building a flow with a timer step") {
+            val built = eventlessFlow<ReceiverState, ReceiverStage> {
+                timer(ReceiverStage.Wait, ::wakeAtNow)
+                stage(ReceiverStage.Done, ::noOp)
+            }
+
+            then("it stores timer metadata separately from actions") {
+                val wait = requireNotNull(built.stages[ReceiverStage.Wait])
+                wait.timerName shouldBe "wakeAtNow"
+                wait.action shouldBe null
+                wait.nextStage shouldBe ReceiverStage.Done
+            }
+        }
     }
 })
 
 private fun noOp(state: ReceiverState) = state
+private fun wakeAtNow(state: ReceiverState): Instant = Instant.EPOCH
 
 private fun isFlagTrue(state: ReceiverState) = state.flag

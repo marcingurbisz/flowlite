@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-16 – Delayed timer runtime.
+  - Outcome: Reworked `timer(...)` into a wake-up-time calculator, added durable timer metadata plus due-time ticks, and updated the onboarding example/tests to advance delayed stages via a controllable clock.
+  - Learning: Delayed timers need both durable wake-up metadata and stale-tick guarding; due-time polling alone is not enough once operators can manually change stages while old delayed ticks are still queued.
+
 - 2026-03-16 – Tick scheduler default concurrency increase.
   - Outcome: Raised the default `SpringDataJdbcTickScheduler` worker-thread limit from 4 to 20 while leaving the constructor override in place for explicit tuning.
   - Learning: This repo already derives poll batch size from the worker count, so increasing the default concurrency also increases the claim batch without needing a second code change.

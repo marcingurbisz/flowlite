@@ -2,7 +2,11 @@ package io.flowlite.test
 
 import io.flowlite.Stage
 import io.flowlite.StageStatus
+import java.time.Clock
 import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.util.concurrent.atomic.AtomicReference
 import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.repository.CrudRepository
 
@@ -52,4 +56,29 @@ inline fun <T : Any, ID : Any> CrudRepository<T, ID>.saveWithOptimisticLockRetry
     }
 
     throw requireNotNull(last) { "saveWithOptimisticLockRetry exhausted retries" }
+}
+
+class AdjustableClock private constructor(
+    private val baseClock: Clock,
+    private val offsetRef: AtomicReference<Duration>,
+) : Clock() {
+    constructor(baseClock: Clock = Clock.systemUTC()) : this(baseClock, AtomicReference(Duration.ZERO))
+
+    override fun getZone(): ZoneId = baseClock.zone
+
+    override fun withZone(zone: ZoneId): Clock = AdjustableClock(baseClock.withZone(zone), offsetRef)
+
+    override fun instant(): Instant = baseClock.instant().plus(offsetRef.get())
+
+    fun advanceBy(duration: Duration) {
+        offsetRef.updateAndGet { it.plus(duration) }
+    }
+
+    fun resetOffset() {
+        offsetRef.set(Duration.ZERO)
+    }
+
+    companion object {
+        fun systemUTC() = AdjustableClock(Clock.systemUTC())
+    }
 }

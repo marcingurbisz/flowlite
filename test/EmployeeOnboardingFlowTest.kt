@@ -5,12 +5,15 @@ import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.HistoryEntryType
 import io.flowlite.MermaidGenerator
 import io.flowlite.StageStatus
+import io.flowlite.test.EmployeeStage.Delay5Min
+import io.flowlite.test.EmployeeStage.DelayAfterHRUpdate
 import io.flowlite.test.EmployeeEvent.ManualApproval
 import io.flowlite.test.EmployeeEvent.OnboardingAgreementSigned
 import io.flowlite.test.EmployeeStage.CompleteOnboarding
 import io.flowlite.test.EmployeeStage.CreateEmployeeProfile
 import io.flowlite.test.EmployeeStage.WaitingForOnboardingAgreementSigned
 import io.kotest.core.spec.style.BehaviorSpec
+import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -22,6 +25,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
     val engine = TestApplicationExtension.context().getBean<Engine>()
     val repo = TestApplicationExtension.context().getBean<EmployeeOnboardingRepository>()
     val historyRepo = TestApplicationExtension.context().getBean<FlowLiteHistoryRepository>()
+    val clock = TestApplicationExtension.context().getBean<AdjustableClock>()
 
     given("an employee onboarding flow") {
         `when`("generating a mermaid diagram") {
@@ -38,6 +42,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
     }
 
     given("employee onboarding flow - manual approval path") {
+        clock.resetOffset()
         val flowInstanceId = engine.startInstance(
             flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
             initialState = EmployeeOnboarding(
@@ -61,6 +66,15 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
             then("it finishes onboarding") {
                 awaitStatus(
+                    timeout = Duration.ofSeconds(5),
+                    fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
+                    expected = Delay5Min to StageStatus.Pending,
+                )
+
+                clock.advanceBy(Duration.ofMinutes(5))
+
+                awaitStatus(
+                    timeout = Duration.ofSeconds(5),
                     fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
                     expected = CompleteOnboarding to StageStatus.Completed,
                 )
@@ -79,6 +93,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
         }
 
         `when`("an external update happens during action execution") {
+            clock.resetOffset()
             val id = UUID.randomUUID()
 
             val entered = CountDownLatch(1)
@@ -124,6 +139,23 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                     awaitLatch(saved, "saved")
 
                     awaitStatus(
+                        timeout = Duration.ofSeconds(5),
+                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                        expected = Delay5Min to StageStatus.Pending,
+                    )
+
+                    clock.advanceBy(Duration.ofMinutes(5))
+
+                    awaitStatus(
+                        timeout = Duration.ofSeconds(5),
+                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                        expected = DelayAfterHRUpdate to StageStatus.Pending,
+                    )
+
+                    clock.advanceBy(Duration.ofMinutes(5))
+
+                    awaitStatus(
+                        timeout = Duration.ofSeconds(5),
                         fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
                         expected = CompleteOnboarding to StageStatus.Completed,
                     )
@@ -138,6 +170,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
         }
 
         `when`("an external update happens after action saves but before it returns") {
+            clock.resetOffset()
             val id = UUID.randomUUID()
 
             val entered = CountDownLatch(1)
@@ -183,6 +216,23 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                     allowReturnAfterSave.countDown()
 
                     awaitStatus(
+                        timeout = Duration.ofSeconds(5),
+                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                        expected = Delay5Min to StageStatus.Pending,
+                    )
+
+                    clock.advanceBy(Duration.ofMinutes(5))
+
+                    awaitStatus(
+                        timeout = Duration.ofSeconds(5),
+                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                        expected = DelayAfterHRUpdate to StageStatus.Pending,
+                    )
+
+                    clock.advanceBy(Duration.ofMinutes(5))
+
+                    awaitStatus(
+                        timeout = Duration.ofSeconds(5),
                         fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
                         expected = CompleteOnboarding to StageStatus.Completed,
                     )

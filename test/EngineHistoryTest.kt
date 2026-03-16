@@ -176,15 +176,21 @@ private class CapturingHistoryStore : HistoryStore {
 }
 
 private class HistoryManualTickScheduler : io.flowlite.TickScheduler {
-    private var handler: ((String, java.util.UUID) -> Unit)? = null
-    private val queue = ArrayDeque<Pair<String, java.util.UUID>>()
+    private var handler: ((io.flowlite.ScheduledTick) -> Unit)? = null
+    private val queue = ArrayDeque<io.flowlite.ScheduledTick>()
 
-    override fun setTickHandler(handler: (String, java.util.UUID) -> Unit) {
+    override fun setTickHandler(handler: (io.flowlite.ScheduledTick) -> Unit) {
         this.handler = handler
     }
 
-    override fun scheduleTick(flowId: String, flowInstanceId: java.util.UUID) {
-        queue.addLast(flowId to flowInstanceId)
+    override fun scheduleTick(
+        flowId: String,
+        flowInstanceId: java.util.UUID,
+        notBefore: java.time.Instant,
+        targetStage: String?,
+        timerToken: java.util.UUID?,
+    ) {
+        queue.addLast(io.flowlite.ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, timerToken))
     }
 
     fun drain(limit: Int = 1000) {
@@ -192,8 +198,7 @@ private class HistoryManualTickScheduler : io.flowlite.TickScheduler {
         var steps = 0
         while (queue.isNotEmpty()) {
             if (steps++ > limit) error("Exceeded tick drain limit ($limit)")
-            val (flowId, id) = queue.removeFirst()
-            h(flowId, id)
+            h(queue.removeFirst())
         }
     }
 }

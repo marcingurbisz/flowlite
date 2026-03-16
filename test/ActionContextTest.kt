@@ -4,6 +4,7 @@ import io.flowlite.ActionContext
 import io.flowlite.Event
 import io.flowlite.Engine
 import io.flowlite.InstanceData
+import io.flowlite.ScheduledTick
 import io.flowlite.Stage
 import io.flowlite.StageStatus
 import io.flowlite.StatePersister
@@ -12,6 +13,7 @@ import io.flowlite.TickScheduler
 import io.flowlite.eventlessFlow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
+import java.time.Instant
 import java.util.UUID
 
 private enum class ActionContextStage : Stage {
@@ -61,15 +63,21 @@ class ActionContextTest : BehaviorSpec({
 })
 
 private class ContextManualTickScheduler : TickScheduler {
-    private var handler: ((String, UUID) -> Unit)? = null
-    private val queue = ArrayDeque<Pair<String, UUID>>()
+    private var handler: ((ScheduledTick) -> Unit)? = null
+    private val queue = ArrayDeque<ScheduledTick>()
 
-    override fun setTickHandler(handler: (String, UUID) -> Unit) {
+    override fun setTickHandler(handler: (ScheduledTick) -> Unit) {
         this.handler = handler
     }
 
-    override fun scheduleTick(flowId: String, flowInstanceId: UUID) {
-        queue.addLast(flowId to flowInstanceId)
+    override fun scheduleTick(
+        flowId: String,
+        flowInstanceId: UUID,
+        notBefore: Instant,
+        targetStage: String?,
+        timerToken: UUID?,
+    ) {
+        queue.addLast(ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, timerToken))
     }
 
     fun drain(limit: Int = 1000) {
@@ -77,8 +85,7 @@ private class ContextManualTickScheduler : TickScheduler {
         var steps = 0
         while (queue.isNotEmpty()) {
             if (steps++ > limit) error("Exceeded tick drain limit ($limit)")
-            val (flowId, id) = queue.removeFirst()
-            h(flowId, id)
+            h(queue.removeFirst())
         }
     }
 }

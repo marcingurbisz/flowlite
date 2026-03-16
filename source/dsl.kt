@@ -1,5 +1,6 @@
 package io.flowlite
 
+import java.time.Instant
 import java.util.UUID
 import kotlin.reflect.KFunction
 import kotlin.reflect.KFunction1
@@ -16,9 +17,11 @@ enum class NoEvent : Event
 data class ActionContext(
     val flowId: String,
     val flowInstanceId: UUID,
+    val now: Instant,
 )
 
 typealias StageAction<T> = (ActionContext, T) -> T?
+typealias TimerSchedule<T> = (ActionContext, T) -> Instant
 
 data class Flow<T : Any, S : Stage, E : Event>(
     internal val initialStage: S?,
@@ -82,12 +85,12 @@ internal constructor() where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
         addLinearStep(stage = stage, waitFor = waitFor)
     }
 
-    fun timer(stage: S, action: KFunction1<T, T?>) {
-        addLinearStep(stage = stage, action = { _, state -> action(state) }, actionName = action.name)
+    fun timer(stage: S, schedule: KFunction1<T, Instant>) {
+        addLinearStep(stage = stage, timer = { _, state -> schedule(state) }, timerName = schedule.name)
     }
 
-    fun timer(stage: S, action: StageAction<T>) {
-        addLinearStep(stage = stage, action = action, actionName = inferActionName(action))
+    fun timer(stage: S, schedule: TimerSchedule<T>) {
+        addLinearStep(stage = stage, timer = schedule, timerName = inferActionName(schedule))
     }
 
     fun _if(
@@ -112,15 +115,20 @@ internal constructor() where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
         stage: S,
         action: StageAction<T>? = null,
         actionName: String? = null,
+        timer: TimerSchedule<T>? = null,
+        timerName: String? = null,
         waitFor: E? = null,
     ) {
-        require(action == null || waitFor == null) {
-            "Stage $stage cannot define both action and waitFor"
+        val configuredTransitions = listOfNotNull(action, timer, waitFor).size
+        require(configuredTransitions <= 1) {
+            "Stage $stage cannot define more than one of action, timer, or waitFor"
         }
         steps += LinearStep(
             stage = stage,
             action = action,
             actionName = actionName,
+            timer = timer,
+            timerName = timerName,
             waitFor = waitFor,
         )
     }
@@ -145,6 +153,8 @@ data class StageDefinition<T : Any, S : Stage, E : Event>(
     val stage: S,
     val action: StageAction<T>? = null,
     val actionName: String? = null,
+    val timer: TimerSchedule<T>? = null,
+    val timerName: String? = null,
 ) {
     val eventHandlers = mutableMapOf<E, EventHandler<T, S, E>>()
     var conditionHandler: ConditionHandler<T, S>? = null
@@ -173,6 +183,8 @@ internal data class LinearStep<T : Any, S, E>(
     val stage: S,
     val action: StageAction<T>?,
     val actionName: String?,
+    val timer: TimerSchedule<T>?,
+    val timerName: String?,
     val waitFor: E?,
 ) : FlowStep<T, S, E>
 where S : Enum<S>, S : Stage, E : Event, E : Enum<E>
@@ -237,7 +249,7 @@ where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
         step: LinearStep<T, S, E>,
         continuation: FlowEntry<T, S>?,
     ): FlowEntry<T, S> {
-        val definition = defineStage(step.stage, step.action, step.actionName)
+        val definition = defineStage(step.stage, step.action, step.actionName, step.timer, step.timerName)
 
         if (step.waitFor != null) {
             val resolved = requireNotNull(continuation) {
@@ -281,12 +293,14 @@ where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
         stage: S,
         action: StageAction<T>?,
         actionName: String?,
+        timer: TimerSchedule<T>?,
+        timerName: String?,
     ): StageDefinition<T, S, E> {
         if (stage in stages) {
             error("Stage $stage already defined - each stage should be defined only once")
         }
 
-        return StageDefinition<T, S, E>(stage, action, actionName).also { definition ->
+        return StageDefinition<T, S, E>(stage, action, actionName, timer, timerName).also { definition ->
             stages[stage] = definition
         }
     }
@@ -320,8 +334,11 @@ private fun <T : Any, S, E> validateDefinitions(
 ) where S : Enum<S>, S : Stage, E : Event, E : Enum<E> {
     val eventToStage = mutableMapOf<E, S>()
     stages.values.forEach { def ->
-        if (def.action != null && def.eventHandlers.isNotEmpty()) {
-            error("Stage ${def.stage} cannot declare both an action and event handlers")
+        if (def.action != null && def.timer != null) {
+            error("Stage ${def.stage} cannot declare both an action and a timer")
+        }
+        if ((def.action != null || def.timer != null) && def.eventHandlers.isNotEmpty()) {
+            error("Stage ${def.stage} cannot declare both an action/timer and event handlers")
         }
         if (def.eventHandlers.isNotEmpty() && (def.nextStage != null || def.conditionHandler != null)) {
             error("Stage ${def.stage} cannot mix event handlers with direct or conditional transitions")

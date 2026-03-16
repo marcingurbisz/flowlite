@@ -34,6 +34,10 @@ import io.flowlite.test.EmployeeStage.WaitingForContractSigned
 import io.flowlite.test.EmployeeStage.WaitingForManualApproval
 import io.flowlite.test.EmployeeStage.WaitingForOnboardingAgreementSigned
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.time.DayOfWeek
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -97,17 +101,14 @@ data class EmployeeOnboarding(
     val isShowcaseInstance: Boolean = false,
     val employeeProfileCreated: Boolean = false,
     val systemAccessActivated: Boolean = false,
-    val itBusinessHoursResolved: Boolean = false,
     val externalAccountsCreated: Boolean = false,
     val benefitsEnrollmentUpdated: Boolean = false,
     val securityClearanceLevelsSet: Boolean = false,
     val documentsGenerated: Boolean = false,
     val contractSentForSigning: Boolean = false,
     val removedFromSigningQueue: Boolean = false,
-    val delay5MinCompleted: Boolean = false,
     val specializedAccessActivated: Boolean = false,
     val hrUpdated: Boolean = false,
-    val delayAfterHrUpdateCompleted: Boolean = false,
     val employeeRecordsFetched: Boolean = false,
     val departmentAssignmentUpdated: Boolean = false,
     val organizationChartLinked: Boolean = false,
@@ -222,10 +223,8 @@ class EmployeeOnboardingActions(
             it.copy(systemAccessActivated = true)
         }
 
-    fun effectiveITWorkingDateTime(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
-        saveProgress(context, employee, "effectiveITWorkingDateTime", "Resolving effective IT working date time") {
-            it.copy(itBusinessHoursResolved = true)
-        }
+    fun effectiveITWorkingDateTime(context: ActionContext, employee: EmployeeOnboarding): Instant =
+        nextITWorkingDateTime(context.now)
 
     fun createAccountsInExternalSystems(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
         saveProgress(context, employee, "createAccountsInExternalSystems", "Creating accounts in external systems") {
@@ -257,10 +256,8 @@ class EmployeeOnboardingActions(
             it.copy(removedFromSigningQueue = true)
         }
 
-    fun delay5Min(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
-        saveProgress(context, employee, "delay5Min", "Recording five-minute delay marker") {
-            it.copy(delay5MinCompleted = true)
-        }
+    fun delay5Min(context: ActionContext, employee: EmployeeOnboarding): Instant =
+        context.now.plus(FIVE_MINUTES)
 
     fun activateSpecializedAccess(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
         saveProgress(context, employee, "activateSpecializedAccess", "Activating specialized access") {
@@ -272,10 +269,8 @@ class EmployeeOnboardingActions(
             it.copy(hrUpdated = true)
         }
 
-    fun delayAfterHRUpdate(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
-        saveProgress(context, employee, "delayAfterHRUpdate", "Recording post-HR-update delay marker") {
-            it.copy(delayAfterHrUpdateCompleted = true)
-        }
+    fun delayAfterHRUpdate(context: ActionContext, employee: EmployeeOnboarding): Instant =
+        context.now.plus(FIVE_MINUTES)
 
     fun fetchEmployeeRecords(context: ActionContext, employee: EmployeeOnboarding): EmployeeOnboarding =
         saveProgress(context, employee, "fetchEmployeeRecords", "Fetching employee records") {
@@ -374,6 +369,34 @@ class SpringDataEmployeeOnboardingPersister(
         )
     }
 }
+
+private val IT_SUPPORT_ZONE: ZoneId = ZoneId.of("Europe/Warsaw")
+private val FIVE_MINUTES: Duration = Duration.ofMinutes(5)
+
+private fun nextITWorkingDateTime(now: Instant): Instant {
+    val zonedNow = now.atZone(IT_SUPPORT_ZONE)
+    val businessStart = zonedNow.withHour(8).withMinute(0).withSecond(0).withNano(0)
+    val businessEnd = zonedNow.withHour(17).withMinute(0).withSecond(0).withNano(0)
+
+    if (zonedNow.dayOfWeek.isBusinessDay() && !zonedNow.isBefore(businessStart) && zonedNow.isBefore(businessEnd)) {
+        return zonedNow.toInstant()
+    }
+
+    var candidate = if (zonedNow.dayOfWeek.isBusinessDay() && zonedNow.isBefore(businessStart)) {
+        businessStart
+    } else {
+        zonedNow.plusDays(1).withHour(8).withMinute(0).withSecond(0).withNano(0)
+    }
+
+    while (!candidate.dayOfWeek.isBusinessDay()) {
+        candidate = candidate.plusDays(1).withHour(8).withMinute(0).withSecond(0).withNano(0)
+    }
+
+    return candidate.toInstant()
+}
+
+private fun DayOfWeek.isBusinessDay(): Boolean =
+    this != DayOfWeek.SATURDAY && this != DayOfWeek.SUNDAY
 
 object EmployeeOnboardingTestHooks {
     private val actionHooksByInstanceId = ConcurrentHashMap<UUID, EmployeeOnboardingActionHooks>()

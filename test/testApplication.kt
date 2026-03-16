@@ -3,10 +3,12 @@ package io.flowlite.test
 import io.flowlite.Engine
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteTickRepository
+import io.flowlite.FlowLiteTimerRepository
 import io.flowlite.PendingEventRepository
 import io.flowlite.SpringDataJdbcEventStore
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.SpringDataJdbcTickScheduler
+import io.flowlite.SpringDataJdbcTimerStore
 import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.cockpitRouter
@@ -58,8 +60,15 @@ object Beans {
             NamedParameterJdbcTemplate(bean<DataSource>())
         }
 
+        registerBean<AdjustableClock> {
+            AdjustableClock.systemUTC()
+        }
+
         registerBean {
-            SpringDataJdbcTickScheduler(bean<FlowLiteTickRepository>())
+            SpringDataJdbcTickScheduler(
+                tickRepo = bean<FlowLiteTickRepository>(),
+                clock = bean<AdjustableClock>(),
+            )
         }
 
         registerBean {
@@ -68,6 +77,10 @@ object Beans {
 
         registerBean {
             SpringDataJdbcHistoryStore(bean<FlowLiteHistoryRepository>())
+        }
+
+        registerBean {
+            SpringDataJdbcTimerStore(bean<FlowLiteTimerRepository>())
         }
 
         registerBean {
@@ -92,11 +105,18 @@ object Beans {
             val eventStore = bean<SpringDataJdbcEventStore>()
             val tickScheduler = bean<SpringDataJdbcTickScheduler>()
             val historyStore = bean<SpringDataJdbcHistoryStore>()
+            val timerStore = bean<SpringDataJdbcTimerStore>()
             val orderPersister = bean<SpringDataOrderConfirmationPersister>()
             val onboardingPersister = bean<SpringDataEmployeeOnboardingPersister>()
             val onboardingActions = bean<EmployeeOnboardingActions>()
 
-            Engine(eventStore = eventStore, tickScheduler = tickScheduler, historyStore = historyStore).also { engine ->
+            Engine(
+                eventStore = eventStore,
+                tickScheduler = tickScheduler,
+                historyStore = historyStore,
+                timerStore = timerStore,
+                clock = bean<AdjustableClock>(),
+            ).also { engine ->
                 engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)
                 engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(onboardingActions), onboardingPersister)
             }

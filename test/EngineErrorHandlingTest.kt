@@ -2,8 +2,9 @@ package io.flowlite.test
 
 import io.flowlite.*
 import io.kotest.core.spec.style.BehaviorSpec
-import io.kotest.matchers.shouldBe
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.shouldBe
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -61,15 +62,21 @@ class EngineErrorHandlingTest : BehaviorSpec({
 })
 
 private class ManualTickScheduler : TickScheduler {
-    private var handler: ((String, UUID) -> Unit)? = null
-    private val queue = ArrayDeque<Pair<String, UUID>>()
+    private var handler: ((ScheduledTick) -> Unit)? = null
+    private val queue = ArrayDeque<ScheduledTick>()
 
-    override fun setTickHandler(handler: (String, UUID) -> Unit) {
+    override fun setTickHandler(handler: (ScheduledTick) -> Unit) {
         this.handler = handler
     }
 
-    override fun scheduleTick(flowId: String, flowInstanceId: UUID) {
-        queue.addLast(flowId to flowInstanceId)
+    override fun scheduleTick(
+        flowId: String,
+        flowInstanceId: UUID,
+        notBefore: Instant,
+        targetStage: String?,
+        timerToken: UUID?,
+    ) {
+        queue.addLast(ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, timerToken))
     }
 
     fun drain(limit: Int = 1000) {
@@ -77,8 +84,7 @@ private class ManualTickScheduler : TickScheduler {
         var steps = 0
         while (queue.isNotEmpty()) {
             if (steps++ > limit) error("Exceeded tick drain limit ($limit)")
-            val (flowId, id) = queue.removeFirst()
-            h(flowId, id)
+            h(queue.removeFirst())
         }
     }
 }

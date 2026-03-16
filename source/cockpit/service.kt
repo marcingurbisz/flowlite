@@ -1,10 +1,14 @@
 package io.flowlite.cockpit
 
 import io.flowlite.Engine
+import io.flowlite.Event
+import io.flowlite.Flow
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
 import io.flowlite.HistoryEntryType
 import io.flowlite.MermaidGenerator
+import io.flowlite.Stage
+import io.flowlite.StageDefinition
 import io.flowlite.StageStatus
 import io.flowlite.historyValueOf
 import io.flowlite.toHistoryEntry
@@ -35,6 +39,7 @@ data class CockpitInstanceDto(
     val flowInstanceId: UUID,
     val stage: String?,
     val status: StageStatus?,
+    val activityStatus: CockpitActivityStatus?,
     val lastUpdatedAt: Instant,
     val lastErrorMessage: String? = null,
 )
@@ -50,6 +55,13 @@ enum class CockpitInstanceBucket {
     Active,
     Error,
     Completed,
+}
+
+enum class CockpitActivityStatus {
+    Running,
+    Pending,
+    WaitingForTimer,
+    WaitingForEvent,
 }
 
 class CockpitService(
@@ -83,13 +95,13 @@ class CockpitService(
             .thenBy { it.id?.toString() ?: "" }
     }
 
-    fun listFlows(longRunningThresholdMinutes: Long = 60): List<CockpitFlowDto> {
+    fun listFlows(longRunningThresholdSeconds: Long = 3600): List<CockpitFlowDto> {
         val registered = engine.registeredFlows()
         val summariesByFlow = loadInstanceSummaries(flowId = null)
             .filter { registered.containsKey(it.flowId) }
             .groupBy { it.flowId }
         val now = Instant.now()
-        val longRunningThreshold = Duration.ofMinutes(longRunningThresholdMinutes.coerceAtLeast(1))
+        val longRunningThreshold = Duration.ofSeconds(longRunningThresholdSeconds.coerceAtLeast(1))
 
         return registered.keys.sorted().mapNotNull { flowId ->
             val flow = registered[flowId] ?: return@mapNotNull null
@@ -109,7 +121,7 @@ class CockpitService(
                 }
                 .sortedBy { it.stage }
             val longRunningCount = summaries.count {
-                it.status == StageStatus.Running && Duration.between(it.lastUpdatedAt, now) > longRunningThreshold
+                it.activityStatus.isCountedAsLongInactiveByDefault() && Duration.between(it.lastUpdatedAt, now) > longRunningThreshold
             }
 
             CockpitFlowDto(
@@ -187,7 +199,10 @@ class CockpitService(
 
     private data class InstanceKey(val flowId: String, val flowInstanceId: UUID)
 
+    private typealias StageDefinitionsByFlow = Map<String, Map<String, StageDefinition<Any, Stage, Event>>>
+
     private fun loadInstanceSummaries(flowId: String?): List<CockpitInstanceDto> {
+        val stageDefinitionsByFlow = stageDefinitionsByFlow()
         val rowsByKey = historyRepo.findLatestRowsPerType(flowId, INSTANCE_SUMMARY_ROW_TYPES)
             .groupBy { it.asKey() }
 
@@ -195,6 +210,8 @@ class CockpitService(
             val stage = rows.latestStageRow()
             val status = rows.latestOfType(STATUS_ROW_TYPES)
             val error = rows.latestOfType(ERROR_ROW_TYPES)
+            val stageValue = stage?.stageValue()
+            val statusValue = status?.statusValue()
 
             val lastUpdated = listOfNotNull(stage?.occurredAt, status?.occurredAt, error?.occurredAt)
                 .maxOrNull()
@@ -203,8 +220,9 @@ class CockpitService(
             CockpitInstanceDto(
                 flowId = key.flowId,
                 flowInstanceId = key.flowInstanceId,
-                stage = stage?.stageValue(),
-                status = status?.statusValue(),
+                stage = stageValue,
+                status = statusValue,
+                activityStatus = classifyActivityStatus(stageDefinitionsByFlow[key.flowId], stageValue, statusValue),
                 lastUpdatedAt = lastUpdated,
                 lastErrorMessage = error?.errorMessage,
             )
@@ -217,6 +235,35 @@ class CockpitService(
         val completed = count { it.status == StageStatus.Completed || it.status == StageStatus.Cancelled }
         val notCompleted = size - completed
         return FlowCounts(active = active, error = error, completed = completed, notCompleted = notCompleted)
+    }
+
+    private fun stageDefinitionsByFlow(): StageDefinitionsByFlow {
+        return engine.registeredFlows().mapValues { (_, flow) ->
+            flow.stages.entries.associate { (stage, definition) -> historyValueOf(stage) to definition }
+        }
+    }
+
+    private fun classifyActivityStatus(
+        stageDefinitions: Map<String, StageDefinition<Any, Stage, Event>>?,
+        stage: String?,
+        status: StageStatus?,
+    ): CockpitActivityStatus? {
+        return when (status) {
+            StageStatus.Running -> CockpitActivityStatus.Running
+            StageStatus.Pending -> {
+                val definition = stage?.let { stageDefinitions?.get(it) }
+                when {
+                    definition?.timer != null -> CockpitActivityStatus.WaitingForTimer
+                    definition?.eventHandlers?.isNotEmpty() == true -> CockpitActivityStatus.WaitingForEvent
+                    else -> CockpitActivityStatus.Pending
+                }
+            }
+            else -> null
+        }
+    }
+
+    private fun CockpitActivityStatus?.isCountedAsLongInactiveByDefault(): Boolean {
+        return this == CockpitActivityStatus.Running || this == CockpitActivityStatus.Pending || this == CockpitActivityStatus.WaitingForTimer
     }
 
     private fun FlowLiteHistoryRow.asKey() = InstanceKey(flowId = flowId, flowInstanceId = flowInstanceId)

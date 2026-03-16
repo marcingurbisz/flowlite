@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, AlertCircle, CheckCircle, Clock, RefreshCw, ChevronRight, X, Search, Database, Copy } from 'lucide-react';
 
 type InstanceStatus = 'Pending' | 'Running' | 'Completed' | 'Error' | 'Cancelled';
+type ActivityStatus = 'Running' | 'Pending' | 'WaitingForTimer' | 'WaitingForEvent';
 type HistoryEventType = 'Started' | 'EventAppended' | 'StatusChanged' | 'StageChanged' | 'Retried' | 'ManualStageChanged' | 'Cancelled' | 'Error';
 type ActiveView = 'flows' | 'errors' | 'long-running' | 'instances';
 type StatusFilter = 'all' | InstanceStatus;
+type LongRunningActivityFilter = 'default' | 'all' | ActivityStatus;
 
 interface FlowDto {
   flowId: string;
@@ -27,6 +29,7 @@ interface InstanceDto {
   flowInstanceId: string;
   stage: string | null;
   status: InstanceStatus | null;
+  activityStatus: ActivityStatus | null;
   lastUpdatedAt: string;
   lastErrorMessage: string | null;
 }
@@ -57,6 +60,7 @@ interface UiInstance {
   flowId: string;
   stage: string;
   status: InstanceStatus;
+  activityStatus: ActivityStatus | null;
   updatedAt: Date;
   createdAt: Date;
   errorMessage: string | null;
@@ -80,14 +84,18 @@ interface CockpitLocationState {
   errorStageFilter: string;
   errorMessageFilterErrors: string;
   longRunningFlowFilter: string;
-  longRunningThresholdMinutes: number;
+  longRunningActivityFilter: LongRunningActivityFilter;
+  longRunningThreshold: string;
   selectedInstanceFlowId: string | null;
   selectedInstanceId: string | null;
 }
 
 const activeViews: ActiveView[] = ['flows', 'errors', 'long-running', 'instances'];
 const statusFilters: StatusFilter[] = ['all', 'Pending', 'Running', 'Completed', 'Error', 'Cancelled'];
-const defaultLongRunningThresholdMinutes = 60;
+const activityStatuses: ActivityStatus[] = ['Running', 'Pending', 'WaitingForTimer', 'WaitingForEvent'];
+const longRunningActivityFilters: LongRunningActivityFilter[] = ['default', 'all', ...activityStatuses];
+const defaultLongRunningThreshold = '1h';
+const defaultLongRunningThresholdSeconds = 60 * 60;
 
 const defaultLocationState: CockpitLocationState = {
   activeView: 'flows',
@@ -100,7 +108,8 @@ const defaultLocationState: CockpitLocationState = {
   errorStageFilter: 'all',
   errorMessageFilterErrors: '',
   longRunningFlowFilter: 'all',
-  longRunningThresholdMinutes: defaultLongRunningThresholdMinutes,
+  longRunningActivityFilter: 'default',
+  longRunningThreshold: defaultLongRunningThreshold,
   selectedInstanceFlowId: null,
   selectedInstanceId: null,
 };
@@ -111,15 +120,47 @@ const isActiveView = (value: string | null): value is ActiveView =>
 const isStatusFilter = (value: string | null): value is StatusFilter =>
   value !== null && statusFilters.includes(value as StatusFilter);
 
+const isLongRunningActivityFilter = (value: string | null): value is LongRunningActivityFilter =>
+  value !== null && longRunningActivityFilters.includes(value as LongRunningActivityFilter);
+
 const normalizeFilterValue = (value: string | null) => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : 'all';
+};
+
+const normalizeLongRunningThreshold = (value: string | null) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : defaultLongRunningThreshold;
 };
 
 const parsePositiveNumber = (value: string | null, fallback: number) => {
   const parsed = value ? Number.parseFloat(value) : Number.NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
+
+const parseDurationToSecondsOrNull = (value: string | null) => {
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, '') ?? '';
+  if (!normalized) return null;
+
+  const matches = Array.from(normalized.matchAll(/(\d+(?:\.\d+)?)(h|m|s)/g));
+  if (matches.length === 0) return null;
+
+  const consumed = matches.map((match) => match[0]).join('');
+  if (consumed !== normalized) return null;
+
+  const totalSeconds = matches.reduce((total, [, rawValue, unit]) => {
+    const amount = Number.parseFloat(rawValue);
+    if (!Number.isFinite(amount) || amount <= 0) return total;
+    if (unit === 'h') return total + amount * 60 * 60;
+    if (unit === 'm') return total + amount * 60;
+    return total + amount;
+  }, 0);
+
+  return totalSeconds > 0 ? Math.round(totalSeconds) : null;
+};
+
+const parseDurationToSeconds = (value: string | null, fallback: number) =>
+  parseDurationToSecondsOrNull(value) ?? fallback;
 
 const toTestIdFragment = (value: string | null) =>
   (value ?? 'none').replace(/[^a-zA-Z0-9-]+/g, '-');
@@ -128,6 +169,30 @@ const padDateTimePart = (value: number) => value.toString().padStart(2, '0');
 
 const formatDateTime = (date: Date) =>
   `${date.getUTCFullYear()}-${padDateTimePart(date.getUTCMonth() + 1)}-${padDateTimePart(date.getUTCDate())} ${padDateTimePart(date.getUTCHours())}:${padDateTimePart(date.getUTCMinutes())}:${padDateTimePart(date.getUTCSeconds())} UTC`;
+
+const formatElapsedDuration = (durationMs: number) => {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+};
+
+const isDefaultLongRunningActivity = (activityStatus: ActivityStatus | null) =>
+  activityStatus !== null && activityStatus !== 'WaitingForEvent';
+
+const matchesLongRunningActivityFilter = (
+  activityStatus: ActivityStatus | null,
+  filter: LongRunningActivityFilter,
+) => {
+  if (activityStatus === null) return false;
+  if (filter === 'default') return isDefaultLongRunningActivity(activityStatus);
+  if (filter === 'all') return true;
+  return activityStatus === filter;
+};
 
 const historyStageLabel = (event: HistoryEntryDto) => {
   if (event.type === 'StageChanged' || event.type === 'ManualStageChanged') {
@@ -175,12 +240,8 @@ const readLocationState = (): CockpitLocationState => {
   const params = new URLSearchParams(window.location.search);
   const activeViewParam = params.get('tab');
   const statusFilterParam = params.get('status');
-  const legacyLongRunningThresholdHours = params.get('lrThreshold');
   const selectedInstanceFlowId = params.get('instanceFlowId')?.trim() || null;
   const selectedInstanceId = params.get('instanceId')?.trim() || null;
-  const fallbackLongRunningThresholdMinutes = legacyLongRunningThresholdHours
-    ? parsePositiveNumber(legacyLongRunningThresholdHours, defaultLongRunningThresholdMinutes / 60) * 60
-    : defaultLongRunningThresholdMinutes;
 
   return {
     activeView: isActiveView(activeViewParam) ? activeViewParam : defaultLocationState.activeView,
@@ -193,7 +254,10 @@ const readLocationState = (): CockpitLocationState => {
     errorStageFilter: normalizeFilterValue(params.get('errorStage')),
     errorMessageFilterErrors: params.get('errorMessage') ?? defaultLocationState.errorMessageFilterErrors,
     longRunningFlowFilter: normalizeFilterValue(params.get('lrFlow')),
-    longRunningThresholdMinutes: parsePositiveNumber(params.get('lrThresholdMin'), fallbackLongRunningThresholdMinutes),
+    longRunningActivityFilter: isLongRunningActivityFilter(params.get('lrActivity'))
+      ? params.get('lrActivity') as LongRunningActivityFilter
+      : defaultLocationState.longRunningActivityFilter,
+    longRunningThreshold: normalizeLongRunningThreshold(params.get('lrThreshold')),
     selectedInstanceFlowId: selectedInstanceFlowId && selectedInstanceId ? selectedInstanceFlowId : null,
     selectedInstanceId: selectedInstanceFlowId && selectedInstanceId ? selectedInstanceId : null,
   };
@@ -212,8 +276,9 @@ const buildLocationSearch = (state: CockpitLocationState) => {
   if (state.errorStageFilter !== 'all') params.set('errorStage', state.errorStageFilter);
   if (state.errorMessageFilterErrors) params.set('errorMessage', state.errorMessageFilterErrors);
   if (state.longRunningFlowFilter !== 'all') params.set('lrFlow', state.longRunningFlowFilter);
-  if (state.longRunningThresholdMinutes !== defaultLongRunningThresholdMinutes) {
-    params.set('lrThresholdMin', state.longRunningThresholdMinutes.toString());
+  if (state.longRunningActivityFilter !== 'default') params.set('lrActivity', state.longRunningActivityFilter);
+  if (state.longRunningThreshold.trim() && state.longRunningThreshold.trim() !== defaultLongRunningThreshold) {
+    params.set('lrThreshold', state.longRunningThreshold.trim());
   }
   if (state.selectedInstanceFlowId && state.selectedInstanceId) params.set('instanceFlowId', state.selectedInstanceFlowId);
   if (state.selectedInstanceFlowId && state.selectedInstanceId) params.set('instanceId', state.selectedInstanceId);
@@ -230,6 +295,13 @@ const statusConfig: Record<InstanceStatus, { bg: string; text: string; label: st
   Cancelled: { bg: 'bg-zinc-500/20', text: 'text-zinc-400', label: 'Cancelled' },
 };
 
+const activityStatusStyles: Record<ActivityStatus, { bg: string; text: string; label: string }> = {
+  Running: { bg: 'bg-blue-500/20', text: 'text-blue-300', label: 'Running' },
+  Pending: { bg: 'bg-amber-500/20', text: 'text-amber-300', label: 'Pending' },
+  WaitingForTimer: { bg: 'bg-violet-500/20', text: 'text-violet-300', label: 'Waiting for timer' },
+  WaitingForEvent: { bg: 'bg-zinc-700', text: 'text-zinc-300', label: 'Waiting for event' },
+};
+
 const StatusBadge = ({ status }: { status: InstanceStatus }) => {
   const style = statusConfig[status];
 
@@ -243,6 +315,12 @@ const StatusBadge = ({ status }: { status: InstanceStatus }) => {
       {style.label}
     </span>
   );
+};
+
+const ActivityBadge = ({ activityStatus }: { activityStatus: ActivityStatus }) => {
+  const style = activityStatusStyles[activityStatus];
+
+  return <span className={`px-2 py-1 rounded text-xs font-mono ${style.bg} ${style.text}`}>{style.label}</span>;
 };
 
 const FlowLiteCockpit = () => {
@@ -263,12 +341,13 @@ const FlowLiteCockpit = () => {
   const [errorStageFilter, setErrorStageFilter] = useState(initialLocationState.errorStageFilter);
   const [errorMessageFilterErrors, setErrorMessageFilterErrors] = useState(initialLocationState.errorMessageFilterErrors);
   const [longRunningFlowFilter, setLongRunningFlowFilter] = useState(initialLocationState.longRunningFlowFilter);
+  const [longRunningActivityFilter, setLongRunningActivityFilter] = useState<LongRunningActivityFilter>(initialLocationState.longRunningActivityFilter);
   const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
   const [showDiagram, setShowDiagram] = useState(false);
   const [showStackTrace, setShowStackTrace] = useState(false);
   const [expandedHistoryErrors, setExpandedHistoryErrors] = useState<Set<number>>(new Set());
   const [mermaidLoaded, setMermaidLoaded] = useState(false);
-  const [longRunningThresholdMinutes, setLongRunningThresholdMinutes] = useState(initialLocationState.longRunningThresholdMinutes);
+  const [longRunningThreshold, setLongRunningThreshold] = useState(initialLocationState.longRunningThreshold);
   const [showChangeStageModal, setShowChangeStageModal] = useState(false);
   const [changeStageTargetInstances, setChangeStageTargetInstances] = useState<string[]>([]);
   const [newStage, setNewStage] = useState('');
@@ -282,6 +361,10 @@ const FlowLiteCockpit = () => {
   const selectedInstance = useMemo(
     () => instances.find((instance) => instance.flowId === selectedInstanceFlowId && instance.id === selectedInstanceId) ?? null,
     [instances, selectedInstanceFlowId, selectedInstanceId],
+  );
+  const longRunningThresholdSeconds = useMemo(
+    () => parseDurationToSeconds(longRunningThreshold, defaultLongRunningThresholdSeconds),
+    [longRunningThreshold],
   );
 
   async function apiGet<T>(path: string): Promise<T> {
@@ -302,7 +385,7 @@ const FlowLiteCockpit = () => {
   }
 
   const refreshData = async (view: ActiveView = activeView) => {
-    const flowPath = `/api/flows?longRunningThresholdMinutes=${encodeURIComponent(longRunningThresholdMinutes.toString())}`;
+    const flowPath = `/api/flows?longRunningThresholdSeconds=${encodeURIComponent(longRunningThresholdSeconds.toString())}`;
     const needsInstances = view !== 'flows' || (!!selectedInstanceFlowId && !!selectedInstanceId);
     const needsErrors = view === 'errors';
 
@@ -325,6 +408,7 @@ const FlowLiteCockpit = () => {
             flowId: it.flowId,
             stage: it.stage ?? '',
             status: it.status as InstanceStatus,
+            activityStatus: it.activityStatus,
             updatedAt: new Date(it.lastUpdatedAt),
             createdAt: new Date(it.lastUpdatedAt),
             errorMessage: it.lastErrorMessage,
@@ -396,7 +480,7 @@ const FlowLiteCockpit = () => {
     </button>
   );
 
-  const flowRefreshToken = activeView === 'flows' ? longRunningThresholdMinutes : null;
+  const flowRefreshToken = activeView === 'flows' ? longRunningThresholdSeconds : null;
 
   useEffect(() => {
     void refreshData(activeView);
@@ -424,7 +508,8 @@ const FlowLiteCockpit = () => {
       setErrorStageFilter(next.errorStageFilter);
       setErrorMessageFilterErrors(next.errorMessageFilterErrors);
       setLongRunningFlowFilter(next.longRunningFlowFilter);
-      setLongRunningThresholdMinutes(next.longRunningThresholdMinutes);
+      setLongRunningActivityFilter(next.longRunningActivityFilter);
+      setLongRunningThreshold(next.longRunningThreshold);
       setSelectedInstances(new Set());
       setSelectedInstanceFlowId(next.selectedInstanceFlowId);
       setSelectedInstanceId(next.selectedInstanceId);
@@ -456,7 +541,8 @@ const FlowLiteCockpit = () => {
       errorStageFilter,
       errorMessageFilterErrors,
       longRunningFlowFilter,
-      longRunningThresholdMinutes,
+      longRunningActivityFilter,
+      longRunningThreshold,
       selectedInstanceFlowId,
       selectedInstanceId,
     });
@@ -486,7 +572,8 @@ const FlowLiteCockpit = () => {
     errorStageFilter,
     errorMessageFilterErrors,
     longRunningFlowFilter,
-    longRunningThresholdMinutes,
+    longRunningActivityFilter,
+    longRunningThreshold,
     selectedInstanceFlowId,
     selectedInstanceId,
   ]);
@@ -654,21 +741,19 @@ const FlowLiteCockpit = () => {
   );
 
   const longRunningInstances = useMemo(() => {
-    const thresholdMs = longRunningThresholdMinutes * 60 * 1000;
+    const thresholdMs = longRunningThresholdSeconds * 1000;
     const now = Date.now();
 
     return instances
-      .filter((i) => i.status === 'Running')
-      .filter((i) => i.status === 'Running')
+      .filter((i) => matchesLongRunningActivityFilter(i.activityStatus, longRunningActivityFilter))
       .filter((i) => longRunningFlowFilter === 'all' || i.flowId === longRunningFlowFilter)
       .map((instance) => ({
         ...instance,
-        runningDuration: now - instance.updatedAt.getTime(),
-        runningMinutes: (now - instance.updatedAt.getTime()) / (60 * 1000),
+        inactiveDuration: now - instance.updatedAt.getTime(),
       }))
-      .filter((instance) => instance.runningDuration > thresholdMs)
-      .sort((a, b) => b.runningDuration - a.runningDuration);
-  }, [instances, longRunningThresholdMinutes, longRunningFlowFilter]);
+      .filter((instance) => instance.inactiveDuration > thresholdMs)
+      .sort((a, b) => b.inactiveDuration - a.inactiveDuration);
+  }, [instances, longRunningActivityFilter, longRunningFlowFilter, longRunningThresholdSeconds]);
 
   const toggleSelectInstance = (instanceId: string) => {
     const next = new Set(selectedInstances);
@@ -803,7 +888,7 @@ const FlowLiteCockpit = () => {
                     : 'border-transparent text-zinc-500 hover:text-zinc-300')
                 }
               >
-                {view === 'long-running' ? 'Long Running' : view.charAt(0).toUpperCase() + view.slice(1)}
+                {view === 'long-running' ? 'Long Inactive' : view.charAt(0).toUpperCase() + view.slice(1)}
               </button>
             ))}
           </div>
@@ -840,7 +925,7 @@ const FlowLiteCockpit = () => {
                           }}
                           className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded text-xs font-mono transition-colors"
                         >
-                          {flow.longRunningCount} long running ⚠
+                          {flow.longRunningCount} long inactive ⚠
                         </button>
                       )}
                       <button
@@ -1035,8 +1120,8 @@ const FlowLiteCockpit = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 data-testid="long-running-heading" className="text-xl font-bold text-zinc-50">Long Running Instances</h2>
-                <p className="text-sm text-zinc-500 mt-1">Instances in RUNNING state longer than threshold</p>
+                <h2 data-testid="long-running-heading" className="text-xl font-bold text-zinc-50">Long Inactive Instances</h2>
+                <p className="text-sm text-zinc-500 mt-1">Instances with no stage or status change beyond the threshold. Waiting for event is excluded by default.</p>
               </div>
               <div className="flex items-center gap-3">
                 <select
@@ -1050,23 +1135,34 @@ const FlowLiteCockpit = () => {
                     <option key={flow.flowId} value={flow.flowId}>{flow.flowId}</option>
                   ))}
                 </select>
+                <select
+                  data-testid="long-running-activity-filter"
+                  value={longRunningActivityFilter}
+                  onChange={(e) => setLongRunningActivityFilter(e.target.value as LongRunningActivityFilter)}
+                  className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="default">Running + actionable pending</option>
+                  <option value="all">All activity kinds</option>
+                  <option value="Running">Running only</option>
+                  <option value="Pending">Pending only</option>
+                  <option value="WaitingForTimer">Waiting for timer</option>
+                  <option value="WaitingForEvent">Waiting for event</option>
+                </select>
                 <label className="text-sm text-zinc-400">Threshold:</label>
                 <input
                   data-testid="long-running-threshold"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={longRunningThresholdMinutes}
-                  onChange={(e) => setLongRunningThresholdMinutes(Math.max(1, parseInt(e.target.value, 10) || defaultLongRunningThresholdMinutes))}
-                  className="w-20 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                  type="text"
+                  value={longRunningThreshold}
+                  onChange={(e) => setLongRunningThreshold(e.target.value)}
+                  className="w-28 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
                 />
-                <span className="text-sm text-zinc-400">minutes</span>
+                <span className="text-xs text-zinc-500">Examples: 30s, 1m, 1h 30m</span>
               </div>
             </div>
 
             {selectedLongRunningIds.length > 0 && (
               <div data-testid="long-running-selection-bar" className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
-                <span className="text-sm text-emerald-400">{selectedLongRunningIds.length} long running instance(s) selected</span>
+                <span className="text-sm text-emerald-400">{selectedLongRunningIds.length} long inactive instance(s) selected</span>
                 <div className="flex gap-2">
                   <button
                     data-testid="long-running-retry-selected"
@@ -1089,7 +1185,7 @@ const FlowLiteCockpit = () => {
             {longRunningInstances.length === 0 ? (
               <div data-testid="long-running-empty" className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
                 <CheckCircle size={48} className="mx-auto mb-4 text-emerald-500 opacity-50" />
-                <p className="text-lg font-medium text-zinc-300 mb-2">No long running instances</p>
+                <p className="text-lg font-medium text-zinc-300 mb-2">No long inactive instances</p>
               </div>
             ) : (
               <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
@@ -1100,15 +1196,14 @@ const FlowLiteCockpit = () => {
                       <th className="px-4 py-3 font-medium">Instance ID</th>
                       <th className="px-4 py-3 font-medium">Flow</th>
                       <th className="px-4 py-3 font-medium">Stage</th>
-                      <th className="px-4 py-3 font-medium">Running Duration</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Activity</th>
+                      <th className="px-4 py-3 font-medium">Inactive Duration</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800">
                     {longRunningInstances.map((instance) => {
-                      const totalMinutes = Math.floor(instance.runningMinutes);
-                      const hours = Math.floor(totalMinutes / 60);
-                      const minutes = totalMinutes % 60;
-                      const durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+                      const durationText = formatElapsedDuration(instance.inactiveDuration);
 
                       return (
                         <tr
@@ -1134,6 +1229,14 @@ const FlowLiteCockpit = () => {
                           </td>
                           <td className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
                           <td className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage}</td>
+                          <td className="px-4 py-3"><div data-testid={`long-running-status-${instance.id}`}><StatusBadge status={instance.status} /></div></td>
+                          <td className="px-4 py-3">
+                            {instance.activityStatus && (
+                              <div data-testid={`long-running-activity-${instance.id}`}>
+                                <ActivityBadge activityStatus={instance.activityStatus} />
+                              </div>
+                            )}
+                          </td>
                           <td className="px-4 py-3"><span className="px-2 py-1 rounded text-xs font-mono bg-amber-500/20 text-amber-400">{durationText}</span></td>
                         </tr>
                       );

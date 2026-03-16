@@ -79,18 +79,15 @@ Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 - `./gradlew updateReadme` → BUILD SUCCESSFUL.
 
-## "Long Running" tab improvements
-Consider below. In case for change write/update tests for changes:
-* I think we also need to be able to see instances that are for a long time in Pending status. But I do not want to see pending on event (at least not by default). Maybe worth to introduce additional status WaitingForEvent? 
-* Should long time pending be classified as long running or as some other group? Maybe whole tab rename to "Long inactive" or "Long running and inactive"? Show status in the list and add filter for status?
-* What do you think about allowing entering period as threshold? E.g. 1h, 1m, 30s, 1h 30m. 
+## [DONE 2026-03-16] Long Running tab improvements
+Completed changes:
+- Kept core `StageStatus` unchanged and added Cockpit-only activity classification for active instances: `Running`, `Pending`, `WaitingForTimer`, and `WaitingForEvent`, derived from registered stage definitions.
+- Changed the long-running view text to `Long Inactive`, included long-pending timer/plain-pending instances, and excluded `WaitingForEvent` by default while adding an explicit activity filter.
+- Replaced the numeric minute threshold with human-readable duration input such as `30s`, `1m`, and `1h 30m`, and updated the flow-card counts to use the same long-inactive definition.
+- Updated Cockpit service tests and Playwright coverage for the new pending classification, default filtering, and human-readable thresholds.
 
-Comments to Agent recommendations:
-* Keep core StageStatus unchanged and classify pending instances in Cockpit as waiting for event, waiting for timer, or plain pending.
-> MG: how we find out what is pending for event without additional status?
-* Rename the UI text to Long Inactive, exclude waiting for event by default, and add an activity/status filter.
-Accept human-readable thresholds like 1h, 30s, and 1h 30m, while keeping current URLs backward-compatible.
-> MG: no need for backward-compatibility. I wonder if "Long Inactive" is not misleading for instances which are in RUNNING state for a long time without any state/stage change but maybe not. They are in runnings state but inactive (in the sens of no change from engine point of view). I agree with the rest.
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## "Errors" tab changes
 Change and write/update tests for changes:

@@ -42,6 +42,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
         val orderErrorChangeStageId: UUID = testUuid(1004),
         val employeeLongRunningId: UUID = testUuid(2001),
         val employeePendingId: UUID = testUuid(2002),
+        val employeeTimerPendingId: UUID = testUuid(2006),
         val employeeErrorCancelId: UUID = testUuid(2003),
         val employeeCompletedId: UUID = testUuid(2004),
         val employeeCancelledId: UUID = testUuid(2005),
@@ -377,6 +378,22 @@ class CockpitPlaywrightTest : BehaviorSpec({
         )
 
         saveEmployeeInstance(
+            id = fixtureIds.employeeTimerPendingId,
+            stage = EmployeeStage.DelayAfterHRUpdate,
+            status = StageStatus.Pending,
+        )
+        historyRepo.save(
+            historyRow(
+                occurredAt = now.minus(Duration.ofMinutes(125)),
+                flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
+                flowInstanceId = fixtureIds.employeeTimerPendingId,
+                type = HistoryEntryType.Started,
+                stage = EmployeeStage.DelayAfterHRUpdate.name,
+                toStatus = StageStatus.Pending,
+            ),
+        )
+
+        saveEmployeeInstance(
             id = fixtureIds.employeeErrorCancelId,
             stage = EmployeeStage.UpdateHRSystem,
             status = StageStatus.Error,
@@ -533,7 +550,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
         }
 
         `when`("using flow definition shortcuts and browser navigation") {
-            then("it supports long running, incomplete, stage and error jumps with bookmarkable URLs") {
+            then("it supports long inactive, incomplete, stage and error jumps with bookmarkable URLs") {
                 seedRichFixture()
 
                 withRecordedContext("it-supports-flow-shortcuts-and-bookmarks") { page ->
@@ -673,8 +690,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
             }
         }
 
-        `when`("working with long running instances") {
-            then("it filters, selects, deselects, and retries selected rows") {
+        `when`("working with long inactive instances") {
+            then("it filters by flow, activity, and threshold while excluding event waits by default") {
                 val fixture = seedRichFixture()
 
                 withRecordedContext("it-filters-and-retries-long-running-instances") { page ->
@@ -682,23 +699,41 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
                     assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).isVisible()
                     assertThat(page.getByTestId("long-running-row-${fixture.employeeLongRunningId}")).isVisible()
+                    assertThat(page.getByTestId("long-running-row-${fixture.employeeTimerPendingId}")).isVisible()
+                    assertThat(page.getByTestId("long-running-row-${fixture.orderPendingId}")).hasCount(0)
+                    assertThat(page.getByTestId("long-running-row-${fixture.employeePendingId}")).hasCount(0)
+                    assertThat(page.getByTestId("long-running-activity-${fixture.employeeTimerPendingId}")).containsText("Waiting for timer")
 
                     page.getByTestId("long-running-flow-filter").selectOption(ORDER_CONFIRMATION_FLOW_ID)
                     assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).isVisible()
                     assertThat(page.getByTestId("long-running-row-${fixture.employeeLongRunningId}")).hasCount(0)
+                    assertThat(page.getByTestId("long-running-row-${fixture.employeeTimerPendingId}")).hasCount(0)
 
                     page.getByTestId("long-running-flow-filter").selectOption("all")
-                    page.getByTestId("long-running-threshold").fill("181")
+                    page.getByTestId("long-running-threshold").fill("3h 1m")
                     assertThat(page.getByTestId("long-running-row-${fixture.employeeLongRunningId}")).isVisible()
                     assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).hasCount(0)
+                    assertThat(page.getByTestId("long-running-row-${fixture.employeeTimerPendingId}")).hasCount(0)
 
-                    page.getByTestId("long-running-threshold").fill("1")
+                    page.getByTestId("long-running-threshold").fill("30s")
                     assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).isVisible()
                     assertThat(page.getByTestId("long-running-row-${fixture.employeeLongRunningId}")).isVisible()
+                    assertThat(page.getByTestId("long-running-row-${fixture.employeeTimerPendingId}")).isVisible()
+
+                    page.getByTestId("long-running-activity-filter").selectOption("WaitingForEvent")
+                    assertThat(page.getByTestId("long-running-row-${fixture.orderPendingId}")).isVisible()
+                    assertThat(page.getByTestId("long-running-row-${fixture.employeePendingId}")).isVisible()
+                    assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).hasCount(0)
+
+                    page.getByTestId("long-running-activity-filter").selectOption("Running")
+                    assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).isVisible()
+                    assertThat(page.getByTestId("long-running-row-${fixture.employeeTimerPendingId}")).hasCount(0)
+
+                    page.getByTestId("long-running-activity-filter").selectOption("default")
 
                     page.getByTestId("long-running-flow-filter").selectOption(ORDER_CONFIRMATION_FLOW_ID)
                     page.getByTestId("long-running-checkbox-${fixture.orderLongRunningId}").check()
-                    assertThat(page.getByTestId("long-running-selection-bar")).containsText("1 long running instance(s) selected")
+                    assertThat(page.getByTestId("long-running-selection-bar")).containsText("1 long inactive instance(s) selected")
 
                     page.getByTestId("long-running-deselect-selected").click()
                     assertThat(page.getByTestId("long-running-selection-bar")).hasCount(0)

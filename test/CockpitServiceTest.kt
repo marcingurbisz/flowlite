@@ -4,6 +4,7 @@ import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
 import io.flowlite.HistoryEntryType
 import io.flowlite.StageStatus
+import io.flowlite.cockpit.CockpitActivityStatus
 import io.flowlite.cockpit.CockpitErrorGroupDto
 import io.flowlite.cockpit.CockpitInstanceBucket
 import io.flowlite.cockpit.CockpitService
@@ -100,36 +101,46 @@ class CockpitServiceTest : BehaviorSpec({
     given("listFlows") {
         `when`("registered flows have mixed instance statuses") {
             val orderActive = UUID.fromString("00000000-0000-0000-0000-000000000101")
+            val orderWaitingForEvent = UUID.fromString("00000000-0000-0000-0000-000000000105")
             val orderError = UUID.fromString("00000000-0000-0000-0000-000000000102")
             val onboardingCompleted = UUID.fromString("00000000-0000-0000-0000-000000000103")
+            val onboardingWaitingForTimer = UUID.fromString("00000000-0000-0000-0000-000000000106")
             val unknownFlow = UUID.fromString("00000000-0000-0000-0000-000000000104")
 
             then("it returns diagrams and per-flow counters only for registered flows") {
                 historyRepo.deleteAll()
                 historyRepo.save(historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
+                historyRepo.save(historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending))
                 historyRepo.save(historyRow("2026-03-04T09:01:00Z", ORDER_CONFIRMATION_FLOW_ID, orderError, HistoryEntryType.Error, stage = "InformingCustomer", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "order-failed"))
                 historyRepo.save(historyRow("2026-03-04T09:02:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingCompleted, HistoryEntryType.StatusChanged, stage = "CompleteOnboarding", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed))
+                historyRepo.save(historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending))
                 historyRepo.save(historyRow("2026-03-04T09:03:00Z", "unknown-flow", unknownFlow, HistoryEntryType.StatusChanged, stage = "X", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
 
-                val flows = service.listFlows()
+                val flows = service.listFlows(longRunningThresholdSeconds = 3600)
 
                 flows.map { it.flowId } shouldContainExactly listOf(EMPLOYEE_ONBOARDING_FLOW_ID, ORDER_CONFIRMATION_FLOW_ID)
 
                 val onboarding = flows.first { it.flowId == EMPLOYEE_ONBOARDING_FLOW_ID }
-                onboarding.activeCount shouldBe 0
+                onboarding.activeCount shouldBe 1
                 onboarding.errorCount shouldBe 0
                 onboarding.completedCount shouldBe 1
-                onboarding.longRunningCount shouldBe 0
-                onboarding.notCompletedCount shouldBe 0
-                onboarding.stageBreakdown shouldBe emptyList()
+                onboarding.longRunningCount shouldBe 1
+                onboarding.notCompletedCount shouldBe 1
+                onboarding.stageBreakdown shouldContainExactly listOf(
+                    io.flowlite.cockpit.CockpitFlowStageDto(
+                        stage = "DelayAfterHRUpdate",
+                        totalCount = 1,
+                        errorCount = 0,
+                    ),
+                )
                 onboarding.diagram.contains("stateDiagram-v2") shouldBe true
 
                 val order = flows.first { it.flowId == ORDER_CONFIRMATION_FLOW_ID }
-                order.activeCount shouldBe 1
+                order.activeCount shouldBe 2
                 order.errorCount shouldBe 1
                 order.completedCount shouldBe 0
                 order.longRunningCount shouldBe 1
-                order.notCompletedCount shouldBe 2
+                order.notCompletedCount shouldBe 3
                 order.stageBreakdown shouldContainExactly listOf(
                     io.flowlite.cockpit.CockpitFlowStageDto(
                         stage = "InformingCustomer",
@@ -138,11 +149,24 @@ class CockpitServiceTest : BehaviorSpec({
                     ),
                     io.flowlite.cockpit.CockpitFlowStageDto(
                         stage = "WaitingForConfirmation",
-                        totalCount = 1,
+                        totalCount = 2,
                         errorCount = 0,
                     ),
                 )
                 order.diagram.contains("stateDiagram-v2") shouldBe true
+            }
+
+            then("it derives cockpit activity status for pending event and timer stages") {
+                historyRepo.deleteAll()
+                historyRepo.save(historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
+                historyRepo.save(historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending))
+                historyRepo.save(historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending))
+
+                val instances = service.listInstances().associateBy { it.flowInstanceId }
+
+                instances[orderActive]?.activityStatus shouldBe CockpitActivityStatus.Running
+                instances[orderWaitingForEvent]?.activityStatus shouldBe CockpitActivityStatus.WaitingForEvent
+                instances[onboardingWaitingForTimer]?.activityStatus shouldBe CockpitActivityStatus.WaitingForTimer
             }
         }
     }

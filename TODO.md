@@ -116,8 +116,14 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Add sending events for instances in some random times 
-... so we see sometimes processes waiting for events
+## [DONE 2026-03-16] Add sending events for instances in some random times
+Completed changes:
+- Changed the showcase seeder so demo events are no longer sent immediately at instance creation; each event now waits for the instance to reach its matching wait stage first.
+- Added random showcase event delays after those wait stages so the public demo surfaces real `Waiting for event` instances without changing the underlying flow definitions.
+- Documented the new `flowlite.showcase.max-event-delay-ms` property and added test coverage for delayed order confirmations in showcase mode.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## cdn.tailwindcss.com should not be used in production
 I guess we should fix it?

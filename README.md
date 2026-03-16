@@ -500,11 +500,13 @@ Showcase-only behavior is intentionally explicit:
 - Order confirmations are tagged by `orderNumber` values prefixed with `SHOW-`.
 - Employee onboarding uses a dedicated `isShowcaseInstance` field instead of overloading business flags such as `isRemoteEmployee`.
 - `ShowcaseActionBehavior` adds random per-action delays and optional simulated failures only for showcase-tagged instances.
+- Showcase events are sent only after an instance actually reaches the matching wait stage, then delayed by a random per-event delay so Cockpit shows real `Waiting for event` states.
 
 Relevant properties:
 - `flowlite.showcase.enabled` - turns showcase seeding and showcase action behavior on/off.
 - `flowlite.showcase.max-action-delay-ms` - maximum random delay applied to a showcase action (default `60000`).
 - `flowlite.showcase.action-failure-rate` - probability of a simulated showcase action failure from `0.0` to `1.0` (default `0.1`).
+- `flowlite.showcase.max-event-delay-ms` - maximum random delay applied after a showcase instance reaches an event-waiting stage before the matching event is sent (default `60000`).
 
 This keeps demo traffic visually interesting in Cockpit without changing normal deterministic test flows.
 

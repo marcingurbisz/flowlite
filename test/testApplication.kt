@@ -1,9 +1,11 @@
 package io.flowlite.test
 
 import io.flowlite.Engine
+import io.flowlite.Event
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteTickRepository
 import io.flowlite.PendingEventRepository
+import io.flowlite.StageStatus
 import io.flowlite.SpringDataJdbcEventStore
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.SpringDataJdbcTickScheduler
@@ -12,6 +14,7 @@ import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.cockpitRouter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.TimeUnit
@@ -121,6 +124,7 @@ object Beans {
                 enabled = environment.getProperty("flowlite.showcase.enabled", Boolean::class.java, false),
                 maxActionDelayMs = environment.getProperty("flowlite.showcase.max-action-delay-ms", Long::class.java, 60_000L),
                 actionFailureRate = environment.getProperty("flowlite.showcase.action-failure-rate", Double::class.java, 0.1),
+                maxEventDelayMs = environment.getProperty("flowlite.showcase.max-event-delay-ms", Long::class.java, 60_000L),
             )
         }
 
@@ -199,13 +203,27 @@ object ShowcaseActionBehavior {
 
 private val showcaseLog = KotlinLogging.logger {}
 
-private class ShowcaseFlowSeeder(
+internal class ShowcaseFlowSeeder(
     private val engine: Engine,
     enabled: Boolean,
     maxActionDelayMs: Long,
     actionFailureRate: Double,
+    private val maxEventDelayMs: Long,
+    private val eventDelayProvider: (Long) -> Long = { maxDelayMs ->
+        ThreadLocalRandom.current().nextLong(maxDelayMs) + 1
+    },
 ) : AutoCloseable {
+    private data class PendingShowcaseEvent(
+        val flowId: String,
+        val flowInstanceId: UUID,
+        val waitingStage: String,
+        val event: Event,
+        var sendAfterMillis: Long? = null,
+        var matchedWaitingStage: Boolean = false,
+    )
+
     private val sequence = AtomicLong(0)
+    private val pendingEvents = ConcurrentHashMap<String, PendingShowcaseEvent>()
     private val executor =
         if (enabled) {
             Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -225,11 +243,17 @@ private class ShowcaseFlowSeeder(
         if (enabled) {
             seedOnce()
             executor?.scheduleAtFixedRate(::seedOnceSafely, 5, 5, TimeUnit.SECONDS)
+            executor?.scheduleWithFixedDelay(::processPendingEventsSafely, 0, 1, TimeUnit.SECONDS)
         }
     }
 
     private fun seedOnceSafely() {
         runCatching { seedOnce() }
+    }
+
+    private fun processPendingEventsSafely() {
+        runCatching { processPendingEvents() }
+            .onFailure { error -> showcaseLog.error(error) { "Showcase pending-event sweep failed" } }
     }
 
     private fun seedOnce() {
@@ -243,7 +267,12 @@ private class ShowcaseFlowSeeder(
             customerName = "Showcase Customer $index",
         )
         val orderId = engine.startInstance(ORDER_CONFIRMATION_FLOW_ID, order)
-        engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, orderId, OrderConfirmationEvent.Confirmed)
+        queuePendingEvent(
+            flowId = ORDER_CONFIRMATION_FLOW_ID,
+            flowInstanceId = orderId,
+            waitingStage = OrderConfirmationStage.WaitingForConfirmation.name,
+            event = OrderConfirmationEvent.Confirmed,
+        )
 
         val employee = EmployeeOnboarding(
             stage = EmployeeStage.CreateEmployeeProfile,
@@ -259,12 +288,129 @@ private class ShowcaseFlowSeeder(
             isShowcaseInstance = true,
         )
         val employeeId = engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, employee)
-        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.ContractSigned)
-        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.OnboardingAgreementSigned)
-        engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, employeeId, EmployeeEvent.ComplianceComplete)
+        queuePendingEvent(
+            flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
+            flowInstanceId = employeeId,
+            waitingStage = EmployeeStage.WaitingForContractSigned.name,
+            event = EmployeeEvent.ContractSigned,
+        )
+        queuePendingEvent(
+            flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
+            flowInstanceId = employeeId,
+            waitingStage = EmployeeStage.WaitingForOnboardingAgreementSigned.name,
+            event = EmployeeEvent.OnboardingAgreementSigned,
+        )
+        if (employee.isNotManualPath && !employee.isExecutiveOrManagement && employee.hasComplianceChecks) {
+            queuePendingEvent(
+                flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
+                flowInstanceId = employeeId,
+                waitingStage = EmployeeStage.WaitingForComplianceComplete.name,
+                event = EmployeeEvent.ComplianceComplete,
+            )
+        }
+        if (!employee.isNotManualPath) {
+            queuePendingEvent(
+                flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
+                flowInstanceId = employeeId,
+                waitingStage = EmployeeStage.WaitingForManualApproval.name,
+                event = EmployeeEvent.ManualApproval,
+            )
+        }
     }
 
+    private fun queuePendingEvent(
+        flowId: String,
+        flowInstanceId: UUID,
+        waitingStage: String,
+        event: Event,
+    ) {
+        pendingEvents[pendingEventKey(flowId, flowInstanceId, waitingStage, event)] = PendingShowcaseEvent(
+            flowId = flowId,
+            flowInstanceId = flowInstanceId,
+            waitingStage = waitingStage,
+            event = event,
+        )
+    }
+
+    private fun processPendingEvents() {
+        val nowMillis = System.currentTimeMillis()
+        pendingEvents.entries.toList().forEach { (key, pending) ->
+            val status = runCatching { engine.getStatus(pending.flowId, pending.flowInstanceId) }
+                .getOrElse {
+                    pendingEvents.remove(key)
+                    return@forEach
+                }
+            val currentStage = stageKey(status.first)
+            val currentStatus = status.second
+
+            if (currentStatus == StageStatus.Completed || currentStatus == StageStatus.Cancelled) {
+                pendingEvents.remove(key)
+                return@forEach
+            }
+
+            if (currentStage != pending.waitingStage || currentStatus != StageStatus.Pending) {
+                if (pending.matchedWaitingStage && currentStage != pending.waitingStage) {
+                    pendingEvents.remove(key)
+                    return@forEach
+                }
+                pending.sendAfterMillis = null
+                return@forEach
+            }
+
+            pending.matchedWaitingStage = true
+            val sendAfterMillis = pending.sendAfterMillis
+            if (sendAfterMillis == null) {
+                val delayMs = nextEventDelayMs()
+                if (delayMs == 0L) {
+                    engine.sendEvent(pending.flowId, pending.flowInstanceId, pending.event)
+                    pendingEvents.remove(key)
+                    return@forEach
+                }
+                pending.sendAfterMillis = nowMillis + delayMs
+                showcaseLog.info {
+                    "Showcase event ${pending.event} for ${pending.flowId}/${pending.flowInstanceId} will be sent in ${delayMs}ms while waiting on ${pending.waitingStage}"
+                }
+                return@forEach
+            }
+
+            if (sendAfterMillis > nowMillis) {
+                return@forEach
+            }
+
+            runCatching {
+                engine.sendEvent(pending.flowId, pending.flowInstanceId, pending.event)
+            }.onSuccess {
+                pendingEvents.remove(key)
+            }.onFailure { error ->
+                showcaseLog.error(error) {
+                    "Failed to send showcase event ${pending.event} for ${pending.flowId}/${pending.flowInstanceId}"
+                }
+            }
+        }
+    }
+
+    private fun nextEventDelayMs(): Long {
+        if (maxEventDelayMs <= 0L) return 0L
+        return eventDelayProvider(maxEventDelayMs).coerceIn(1L, maxEventDelayMs)
+    }
+
+    private fun stageKey(stage: Any): String =
+        (stage as? Enum<*>)?.name ?: stage.toString()
+
+    private fun pendingEventKey(
+        flowId: String,
+        flowInstanceId: UUID,
+        waitingStage: String,
+        event: Event,
+    ): String = "$flowId/$flowInstanceId/$waitingStage/${event::class.java.name}:${event}"
+
     override fun close() {
+        pendingEvents.clear()
+        ShowcaseActionBehavior.configure(
+            enabled = false,
+            maxDelayMs = 0L,
+            failureRate = 0.0,
+        )
         executor?.shutdownNow()
     }
 }

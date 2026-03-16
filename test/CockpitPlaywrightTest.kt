@@ -13,6 +13,7 @@ import io.flowlite.HistoryEntryType
 import io.flowlite.PendingEventRepository
 import io.flowlite.StageStatus
 import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
@@ -565,6 +566,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
                     page.getByTestId("flow-incomplete-order-confirmation").click()
                     assertThat(page.getByTestId("instances-search")).hasValue(ORDER_CONFIRMATION_FLOW_ID)
+                    assertThat(page.getByTestId("instances-incomplete-only")).isChecked()
                     page.url().shouldContain("tab=instances")
                     page.url().shouldContain("q=order-confirmation")
                     page.url().shouldContain("incomplete=1")
@@ -828,6 +830,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     page.getByTestId("instances-clear-filters").click()
                     assertThat(page.getByTestId("instances-search")).hasValue("")
                     assertThat(page.getByTestId("instances-status-filter")).hasValue("all")
+                    page.getByTestId("instances-incomplete-only").isChecked() shouldBe false
                     assertThat(page.getByTestId("instances-stage-filter")).hasValue("")
                     assertThat(page.getByTestId("instances-error-filter")).hasValue("")
                     page.url().shouldContain("tab=instances")

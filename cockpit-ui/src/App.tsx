@@ -1305,10 +1305,7 @@ const FlowLiteCockpit = () => {
               <select
                 data-testid="instances-status-filter"
                 value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value as StatusFilter);
-                  if (e.target.value !== 'all') setShowIncompleteOnly(false);
-                }}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
                 className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
               >
                 <option value="all">All Status</option>
@@ -1337,6 +1334,16 @@ const FlowLiteCockpit = () => {
                 onChange={(e) => setErrorMessageFilter(e.target.value)}
                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
               />
+              <label className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300">
+                <input
+                  data-testid="instances-incomplete-only"
+                  type="checkbox"
+                  checked={showIncompleteOnly}
+                  onChange={(e) => setShowIncompleteOnly(e.target.checked)}
+                  className="h-4 w-4 rounded border-zinc-600 bg-zinc-700"
+                />
+                <span>Incomplete Only</span>
+              </label>
               <button data-testid="instances-select-all" onClick={selectAllVisible} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Select All Actionable</button>
               <button data-testid="instances-deselect" onClick={deselectAll} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Deselect</button>
               <button data-testid="instances-clear-filters" onClick={clearInstanceFilters} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Clear Filters</button>

@@ -98,8 +98,14 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Show "Incomplete Only" filter 
-... when navigated from incomplete link from Flows tab to Instances tab (like in prototype). Add/modify test for it.
+## [DONE 2026-03-16] Show "Incomplete Only" filter
+Completed changes:
+- Exposed the existing `Incomplete Only` state as a visible checkbox in the `Instances` tab filter bar instead of keeping it as a hidden flow-shortcut-only state.
+- Kept the Flows-tab incomplete shortcut behavior so navigating from the flow card opens `Instances` with the checkbox already enabled.
+- Updated Playwright coverage to verify both the checked shortcut state and that `Clear Filters` resets it.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Retry, changes stage, cancel should have additional "Are you sure" modal with summary for the action
 Add/modify tests for that.

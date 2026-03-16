@@ -1,3 +1,45 @@
+## Render instance
+Remove keep-render-alive.yml - render instance is now kept alive by betterstack and uptimerobot.com. Update "Public test instance deployment" chapter with this info. Also remove info how to setup render as it is already done.
+
+## Support for large amount of instances
+* It looks that Flows tab is using data from /flows and /instances. For big amount of instances this is working slow. Should aggregation of all data for Flows tab be done on backend?
+Additional question: In our render flowlite instance in case of 10k instances FE is waiting for data around 8s. With 11k instances it takes around 40s so it seems to me that this time spent mainly in db? Maybe also some index is missing on db side?
+* Should "Errors" and "Long running" tabs depend on data from /instances?
+* Introduce virtual scrolling for "Instances" tab?
+* Worth to display "Apply filters to view instances" like in cockpit-ui/claude-prototype.jsx prototype for "Instances" tab?
+
+## Increase number of worker threads 
+... in SpringDataJdbcTickScheduler to 20 by default
+
+## timer() implementation
+timer(Delay5Min, actions::delay5Min) - should suspend execution of flow instance for 5min without blocking worker thread. Second argument should probably a function that calculates wake-up time not action.
+
+## "Long Running" tab improvements
+Consider below. In case for change write/update tests for changes:
+* I think we also need to be able to see instances that are for a long time in Pending status. But I do not want to see pending on event (at least not by default). Maybe worth to introduce additional status WaitingForEvent? 
+* Should long time pending be classified as long running or as some other group? Maybe whole tab rename to "Long inactive" or "Long running and inactive"? Show status in the list and add filter for status?
+* What do you think about allowing entering period as threshold? E.g. 1h, 1m, 30s, 1h 30m. 
+
+## "Errors" tab changes
+Change and write/update tests for changes:
+* add "clear filters" button like in cockpit-ui/claude-prototype.jsx
+* add select/deselect all for errors in stage group like in cockpit-ui/claude-prototype.jsx
+
+## Show "Incomplete Only" filter 
+... when navigated from incomplete link from Flows tab to Instances tab (like in prototype). Add/modify test for it.
+
+## Retry, changes stage, cancel should have additional "Are you sure" modal with summary for the action
+Add/modify tests for that.
+
+## Add sending events for instances in some random times 
+... so we see sometimes processes waiting for events
+
+## cdn.tailwindcss.com should not be used in production
+I guess we should fix it?
+(index):64 cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+
+## [FOR HUMAN] Review changes git changes
+
 ## [DONE 2026-03-08] Split engine schema from test schemas and keep nullability scoped to stage metadata
 
 Completed changes:
@@ -138,70 +180,4 @@ Completed changes:
 - Added explicit `isShowcaseInstance` state to `EmployeeOnboarding` and its schema, and updated the seeder to use it instead of overloading `isRemoteEmployee`.
 
 Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-06] Failed on step Test + Coverage
-See https://github.com/marcingurbisz/flowlite/actions/runs/22705767837/job/65832358931
-
-Completed changes:
-- Identified clean-checkout failure mode: `cockpit-ui/dist` was not versioned and not built before `CockpitPlaywrightTest`.
-- Added Gradle task `installCockpitUiDeps` (`npm ci`) and `buildCockpitUi` (`npm run build`) in `build.gradle.kts`.
-- Wired `tasks.test` to depend on `buildCockpitUi`, making CI/local test runs deterministic.
-
-Validation:
-- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
-- `./gradlew test jacocoTestReport` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-06] Why we need both private val distPath: Path = Paths.get("cockpit-ui", "dist") ?
-
-Decision:
-- Keep both derived locations in `CockpitUiStaticConfig`: `distLocation` for HTML/root files and `distAssetsLocation` for `/assets/**`.
-
-Rationale:
-- A simplification attempt that mapped `/assets/**` to `distLocation` caused `CockpitPlaywrightTest` to fail (UI heading not rendered due missing static asset resolution).
-- `distAssetsLocation` is therefore required for correct `/assets/**` serving in current setup.
-
-Validation:
-- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL (after reverting simplification).
-
-## [DONE 2026-03-06] Playwright test improvements
-Completed changes:
-- Improved Kotlin Playwright artifacts in `test/CockpitPlaywrightTest.kt`: screenshots and videos now use `<test-name>-<timestamp>` naming.
-- Added stable `data-testid` selectors in `cockpit-ui/src/App.tsx` for cockpit title, tabs, flow cards/actions, instances search/rows, instance details, and flow diagram modal.
-- Expanded Kotlin Playwright coverage with new scenarios:
-	- open/close flow diagram modal from a flow card,
-	- jump from flow card to instances view with pre-filled search.
-- Added scenario planning document: `memory/PlaywrightTestScenarios.md`.
-- Removed legacy TypeScript Playwright setup:
-	- deleted `cockpit-ui/playwright.config.ts`,
-	- deleted `cockpit-ui/tests/cockpit.spec.ts`,
-	- removed Playwright scripts/dependency from `cockpit-ui/package.json` and refreshed lockfile.
-
-Validation:
-- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
-- `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-06] Expose test instance publicly available - part 3
-Completed changes:
-- Added scheduled Render keepalive workflow: `.github/workflows/keep-render-alive.yml` (uses repository variable `FLOWLITE_RENDER_URL`).
-- Updated `README.md` deployment chapter to pure step-by-step instructions (removed provider-comparison narrative).
-- Removed obsolete local tunnel script: `tools/exposeTestInstance.sh`.
-
-Decision:
-- Keep runtime command on `./gradlew runTestApp` for now; moving to a Spring Boot jar is deferred because current public test app is test-source-set based and has no dedicated production-style bootJar pipeline yet.
-
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-06] Improve showcase mode
-Completed changes:
-- Added showcase behavior helper `test/showcaseActionBehavior.kt` that applies randomized action delay (`0..maxDelayMs`) and probabilistic failures for showcase-marked instances.
-- Wired showcase config in `ShowcaseFlowSeeder` with new properties:
-	- `flowlite.showcase.max-action-delay-ms` (default `60000`),
-	- `flowlite.showcase.action-failure-rate` (default `0.1`).
-- Marked showcase-seeded employee instances via `isRemoteEmployee = true` and applied behavior in all employee onboarding actions.
-- Applied showcase behavior in order-confirmation actions for `orderNumber` prefixed with `SHOW-`.
-
-Validation:
-- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
 - `./gradlew test` → BUILD SUCCESSFUL.

@@ -1,3 +1,10 @@
+type ConfirmationActionKind = 'retry' | 'cancel' | 'change-stage';
+
+interface ConfirmationActionState {
+  kind: ConfirmationActionKind;
+  instanceIds: string[];
+  targetStage?: string;
+}
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, AlertCircle, CheckCircle, Clock, RefreshCw, ChevronRight, X, Search, Database, Copy } from 'lucide-react';
 
@@ -351,6 +358,7 @@ const FlowLiteCockpit = () => {
   const [showChangeStageModal, setShowChangeStageModal] = useState(false);
   const [changeStageTargetInstances, setChangeStageTargetInstances] = useState<string[]>([]);
   const [newStage, setNewStage] = useState('');
+    const [actionConfirmation, setActionConfirmation] = useState<ConfirmationActionState | null>(null);
   const [selectedInstanceFlowId, setSelectedInstanceFlowId] = useState<string | null>(initialLocationState.selectedInstanceFlowId);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(initialLocationState.selectedInstanceId);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -431,6 +439,10 @@ const FlowLiteCockpit = () => {
     setShowChangeStageModal(false);
     setChangeStageTargetInstances([]);
     setNewStage('');
+  };
+
+  const closeActionConfirmation = () => {
+    setActionConfirmation(null);
   };
 
   const fallbackCopyText = (text: string) => {
@@ -596,6 +608,11 @@ const FlowLiteCockpit = () => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
 
+      if (actionConfirmation) {
+        closeActionConfirmation();
+        return;
+      }
+
       if (showChangeStageModal) {
         closeChangeStageModal();
         return;
@@ -615,7 +632,7 @@ const FlowLiteCockpit = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showChangeStageModal, selectedFlowForDiagram, selectedInstanceFlowId, selectedInstanceId]);
+  }, [actionConfirmation, showChangeStageModal, selectedFlowForDiagram, selectedInstanceFlowId, selectedInstanceId]);
 
   useEffect(() => {
     if ((window as MermaidWindow).mermaid) {
@@ -651,11 +668,11 @@ const FlowLiteCockpit = () => {
   }, [selectedInstanceFlowId, selectedInstanceId]);
 
   useEffect(() => {
-    document.body.style.overflow = selectedInstanceFlowId || selectedInstanceId || selectedFlowForDiagram || showChangeStageModal ? 'hidden' : 'unset';
+    document.body.style.overflow = selectedInstanceFlowId || selectedInstanceId || selectedFlowForDiagram || showChangeStageModal || actionConfirmation ? 'hidden' : 'unset';
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [selectedInstanceFlowId, selectedInstanceId, selectedFlowForDiagram, showChangeStageModal]);
+  }, [actionConfirmation, selectedInstanceFlowId, selectedInstanceId, selectedFlowForDiagram, showChangeStageModal]);
 
   useEffect(() => {
     setSelectedInstances(new Set());
@@ -827,7 +844,7 @@ const FlowLiteCockpit = () => {
 
   const deselectAll = () => setSelectedInstances(new Set());
 
-  const handleRetry = async (instanceIds: string[]) => {
+  const executeRetry = async (instanceIds: string[]) => {
     const selected = instances.filter((i) => instanceIds.includes(i.id));
     await Promise.all(
       selected.map((i) => {
@@ -841,7 +858,7 @@ const FlowLiteCockpit = () => {
     await refreshData();
   };
 
-  const handleCancel = async (instanceIds: string[]) => {
+  const executeCancel = async (instanceIds: string[]) => {
     const selected = instances.filter((i) => instanceIds.includes(i.id));
     await Promise.all(
       selected.map((i) => apiPost(`/api/instances/${encodeURIComponent(i.flowId)}/${encodeURIComponent(i.id)}/cancel`)),
@@ -850,17 +867,12 @@ const FlowLiteCockpit = () => {
     await refreshData();
   };
 
-  const handleChangeStage = (instanceIds: string[]) => {
-    setChangeStageTargetInstances(instanceIds);
-    setShowChangeStageModal(true);
-  };
-
-  const confirmChangeStage = async () => {
-    const selected = instances.filter((i) => changeStageTargetInstances.includes(i.id));
+  const executeChangeStage = async (instanceIds: string[], stage: string) => {
+    const selected = instances.filter((i) => instanceIds.includes(i.id));
     await Promise.all(
       selected.map((i) =>
         apiPost(
-          `/api/instances/${encodeURIComponent(i.flowId)}/${encodeURIComponent(i.id)}/change-stage?stage=${encodeURIComponent(newStage)}`,
+          `/api/instances/${encodeURIComponent(i.flowId)}/${encodeURIComponent(i.id)}/change-stage?stage=${encodeURIComponent(stage)}`,
         ),
       ),
     );
@@ -870,12 +882,58 @@ const FlowLiteCockpit = () => {
     await refreshData();
   };
 
+  const handleRetry = (instanceIds: string[]) => {
+    setActionConfirmation({ kind: 'retry', instanceIds });
+  };
+
+  const handleCancel = (instanceIds: string[]) => {
+    setActionConfirmation({ kind: 'cancel', instanceIds });
+  };
+
+  const handleChangeStage = (instanceIds: string[]) => {
+    closeActionConfirmation();
+    setChangeStageTargetInstances(instanceIds);
+    setShowChangeStageModal(true);
+  };
+
+  const confirmChangeStage = () => {
+    if (!newStage) return;
+    setActionConfirmation({ kind: 'change-stage', instanceIds: changeStageTargetInstances, targetStage: newStage });
+  };
+
+  const confirmAction = async () => {
+    if (!actionConfirmation) return;
+
+    if (actionConfirmation.kind === 'retry') {
+      await executeRetry(actionConfirmation.instanceIds);
+    } else if (actionConfirmation.kind === 'cancel') {
+      await executeCancel(actionConfirmation.instanceIds);
+    } else if (actionConfirmation.targetStage) {
+      await executeChangeStage(actionConfirmation.instanceIds, actionConfirmation.targetStage);
+    }
+
+    closeActionConfirmation();
+  };
+
   const visibleHistory = instanceHistory;
   const latestErrorStackTrace =
     visibleHistory.find((h) => h.type === 'Error' && h.errorStackTrace)?.errorStackTrace ?? null;
 
   const flowForSelectedInstance = selectedInstance ? flows.find((f) => f.flowId === selectedInstance.flowId) : null;
   const selectedLongRunningIds = longRunningInstances.filter((instance) => selectedInstances.has(instance.id)).map((instance) => instance.id);
+  const actionConfirmationInstances = actionConfirmation
+    ? instances.filter((instance) => actionConfirmation.instanceIds.includes(instance.id))
+    : [];
+  const actionConfirmationTitle = actionConfirmation?.kind === 'retry'
+    ? 'Are you sure you want to retry?'
+    : actionConfirmation?.kind === 'cancel'
+      ? 'Are you sure you want to cancel?'
+      : 'Are you sure you want to change stage?';
+  const actionConfirmationSummary = actionConfirmation?.kind === 'retry'
+    ? 'Retry on non-error rows requeues the current stage by sending the instance back through the same stage entry point.'
+    : actionConfirmation?.kind === 'cancel'
+      ? 'Cancelling marks the selected instance(s) as cancelled and removes them from active processing.'
+      : `Changing stage moves the selected instance(s) to ${actionConfirmation?.targetStage ?? 'the selected stage'} and reprocesses them from there on the next tick.`;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100" style={{ fontFamily: '"IBM Plex Mono", monospace' }}>
@@ -1574,7 +1632,41 @@ const FlowLiteCockpit = () => {
               </div>
               <div className="flex gap-2 justify-end">
                 <button data-testid="change-stage-cancel" onClick={closeChangeStageModal} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-sm font-medium">Cancel</button>
-                <button data-testid="change-stage-confirm" onClick={() => void confirmChangeStage()} disabled={!newStage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Change Stage</button>
+                <button data-testid="change-stage-confirm" onClick={confirmChangeStage} disabled={!newStage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Review Change</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {actionConfirmation && (
+        <div data-testid="action-confirmation-modal" className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={closeActionConfirmation}>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-zinc-900 border-b border-zinc-800 p-6 flex items-center justify-between">
+              <div>
+                <h3 data-testid="action-confirmation-title" className="text-lg font-bold text-zinc-50">{actionConfirmationTitle}</h3>
+                <p className="text-sm text-zinc-500 mt-1">{actionConfirmation.instanceIds.length} instance(s) selected</p>
+              </div>
+              <button data-testid="action-confirmation-close" onClick={closeActionConfirmation} className="p-2 hover:bg-zinc-800 rounded transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div data-testid="action-confirmation-summary" className="bg-zinc-800/50 rounded-lg p-4 space-y-2">
+                <p className="text-sm text-zinc-300">{actionConfirmationSummary}</p>
+                {actionConfirmation.targetStage && (
+                  <p className="text-xs text-zinc-400">Target stage: <span className="font-mono text-zinc-200">{actionConfirmation.targetStage}</span></p>
+                )}
+                <div className="text-xs text-zinc-500">
+                  {actionConfirmationInstances.slice(0, 3).map((instance) => (
+                    <div key={instance.id} className="font-mono">{instance.id} ({instance.flowId})</div>
+                  ))}
+                  {actionConfirmationInstances.length > 3 && (
+                    <div>…and {actionConfirmationInstances.length - 3} more</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button data-testid="action-confirmation-cancel" onClick={closeActionConfirmation} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-sm font-medium">Cancel</button>
+                <button data-testid="action-confirmation-confirm" onClick={() => void confirmAction()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors text-sm font-medium">Yes, continue</button>
               </div>
             </div>
           </div>

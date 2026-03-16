@@ -107,8 +107,14 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Retry, changes stage, cancel should have additional "Are you sure" modal with summary for the action
-Add/modify tests for that.
+## [DONE 2026-03-16] Retry, changes stage, cancel should have additional "Are you sure" modal with summary for the action
+Completed changes:
+- Added a shared cockpit confirmation modal for retry, cancel, and change-stage actions, including a short action summary plus the affected instance list.
+- Kept change-stage as a two-step flow: choose the target stage first, then confirm the summarized action before it is sent.
+- Updated Playwright coverage so bulk error actions, long-inactive retries, and detail-modal actions all pass through the new confirmation step.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Add sending events for instances in some random times 
 ... so we see sometimes processes waiting for events

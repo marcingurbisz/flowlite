@@ -675,6 +675,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
                     page.getByTestId("error-instance-checkbox-${fixture.orderErrorRetryId}").check()
                     page.getByTestId("errors-retry-selected").click()
+                    assertThat(page.getByTestId("action-confirmation-modal")).isVisible()
+                    page.getByTestId("action-confirmation-confirm").click()
                     assertThat(page.getByTestId("error-instance-${fixture.orderErrorRetryId}")).hasCount(0)
 
                     page.getByTestId("error-instance-checkbox-${fixture.orderErrorChangeStageId}").check()
@@ -682,10 +684,14 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     assertThat(page.getByTestId("change-stage-modal")).isVisible()
                     page.getByTestId("change-stage-select").selectOption(OrderConfirmationStage.WaitingForConfirmation.name)
                     page.getByTestId("change-stage-confirm").click()
+                    assertThat(page.getByTestId("action-confirmation-modal")).isVisible()
+                    page.getByTestId("action-confirmation-confirm").click()
                     assertThat(page.getByTestId("error-instance-${fixture.orderErrorChangeStageId}")).hasCount(0)
 
                     page.getByTestId("error-instance-checkbox-${fixture.employeeErrorCancelId}").check()
                     page.getByTestId("errors-cancel-selected").click()
+                    assertThat(page.getByTestId("action-confirmation-modal")).isVisible()
+                    page.getByTestId("action-confirmation-confirm").click()
                     assertThat(page.getByTestId("error-instance-${fixture.employeeErrorCancelId}")).hasCount(0)
                     assertThat(page.getByTestId("errors-empty")).isVisible()
 
@@ -754,6 +760,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
                     page.getByTestId("long-running-checkbox-${fixture.orderLongRunningId}").check()
                     page.getByTestId("long-running-retry-selected").click()
+                    assertThat(page.getByTestId("action-confirmation-modal")).isVisible()
+                    page.getByTestId("action-confirmation-confirm").click()
                     assertThat(page.getByTestId("long-running-row-${fixture.orderLongRunningId}")).hasCount(0)
 
                     page.getByTestId("tab-instances").click()
@@ -779,6 +787,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     assertThat(page.getByTestId("change-stage-modal")).isVisible()
                     page.getByTestId("change-stage-select").selectOption(OrderConfirmationStage.WaitingForConfirmation.name)
                     page.getByTestId("change-stage-confirm").click()
+                    assertThat(page.getByTestId("action-confirmation-modal")).isVisible()
+                    page.getByTestId("action-confirmation-confirm").click()
 
                     assertThat(page.getByTestId("instance-details-modal")).isVisible()
                     assertThat(page.getByTestId("instance-details-stage")).containsText(OrderConfirmationStage.WaitingForConfirmation.name)
@@ -789,6 +799,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     page.getByTestId("error-instance-${fixture.employeeErrorCancelId}").click()
                     assertThat(page.getByTestId("instance-details-status")).containsText(StageStatus.Error.name)
                     page.getByTestId("instance-cancel").click()
+                    assertThat(page.getByTestId("action-confirmation-modal")).isVisible()
+                    page.getByTestId("action-confirmation-confirm").click()
                     assertThat(page.getByTestId("instance-details-modal")).isVisible()
                     assertThat(page.getByTestId("instance-details-status")).containsText(StageStatus.Cancelled.name)
                     assertThat(page.getByTestId("instance-history-type-2")).containsText("Cancelled")

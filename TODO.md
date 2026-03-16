@@ -22,8 +22,13 @@ Validation:
 * Consider virtual scrolling for the `Instances` tab.
 * Consider showing `Apply filters to view instances` guidance like in `cockpit-ui/claude-prototype.jsx`.
 
-## Increase number of worker threads 
-... in SpringDataJdbcTickScheduler to 20 by default
+## [DONE 2026-03-16] Increase number of worker threads
+Completed changes:
+- Increased the default `SpringDataJdbcTickScheduler` worker-thread limit from `4` to `20`.
+- Kept the existing constructor override so callers can still tune the value explicitly if needed.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## timer() implementation
 timer(Delay5Min, actions::delay5Min) - should suspend execution of flow instance for 5min without blocking worker thread. Second argument should probably a function that calculates wake-up time not action.

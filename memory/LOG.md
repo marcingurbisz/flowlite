@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-16 – Tick scheduler default concurrency increase.
+  - Outcome: Raised the default `SpringDataJdbcTickScheduler` worker-thread limit from 4 to 20 while leaving the constructor override in place for explicit tuning.
+  - Learning: This repo already derives poll batch size from the worker count, so increasing the default concurrency also increases the claim batch without needing a second code change.
+
 - 2026-03-16 – Cockpit large-instance load reduction.
   - Outcome: Moved Flows-tab stage breakdown and long-running counts to `/api/flows`, stopped the Flows view from eagerly fetching `/api/instances` and `/api/errors`, and added a history summary index to better support cockpit latest-row aggregation.
   - Learning: The biggest immediate win was reducing cross-endpoint fan-out; frontend laziness plus backend aggregation helps more than micro-optimizing the existing client-side grouping alone.

@@ -188,9 +188,8 @@ private class HistoryManualTickScheduler : io.flowlite.TickScheduler {
         flowInstanceId: java.util.UUID,
         notBefore: java.time.Instant,
         targetStage: String?,
-        timerToken: java.util.UUID?,
     ) {
-        queue.addLast(io.flowlite.ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, timerToken))
+        queue.addLast(io.flowlite.ScheduledTick(flowId, flowInstanceId, notBefore, targetStage))
     }
 
     fun drain(limit: Int = 1000) {

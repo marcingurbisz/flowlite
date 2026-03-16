@@ -4,23 +4,11 @@ create table if not exists flowlite_tick (
     flow_instance_id uuid not null,
     not_before timestamp not null,
     target_stage varchar(128),
-    timer_token uuid,
     version bigint
 );
 
 create index if not exists idx_flowlite_tick_process on flowlite_tick(flow_id, flow_instance_id);
 create index if not exists idx_flowlite_tick_due on flowlite_tick(not_before, id);
-
-create table if not exists flowlite_timer (
-    id uuid not null primary key,
-    flow_id varchar(128) not null,
-    flow_instance_id uuid not null,
-    stage varchar(128) not null,
-    wake_up_at timestamp not null,
-    version bigint
-);
-
-create unique index if not exists idx_flowlite_timer_stage on flowlite_timer(flow_id, flow_instance_id, stage);
 
 create table if not exists pending_event (
     id uuid default random_uuid() primary key,

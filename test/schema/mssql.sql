@@ -6,7 +6,6 @@ BEGIN
         flow_instance_id uniqueidentifier NOT NULL,
         not_before datetime2 NOT NULL,
         target_stage varchar(128) NULL,
-        timer_token uniqueidentifier NULL,
         version bigint NULL
     )
 END;
@@ -29,28 +28,6 @@ IF NOT EXISTS (
 )
 BEGIN
     CREATE INDEX idx_flowlite_tick_due ON dbo.flowlite_tick(not_before, id)
-END;
-
-IF OBJECT_ID('dbo.flowlite_timer', 'U') IS NULL
-BEGIN
-    CREATE TABLE dbo.flowlite_timer (
-        id uniqueidentifier NOT NULL PRIMARY KEY,
-        flow_id varchar(128) NOT NULL,
-        flow_instance_id uniqueidentifier NOT NULL,
-        stage varchar(128) NOT NULL,
-        wake_up_at datetime2 NOT NULL,
-        version bigint NULL
-    )
-END;
-
-IF NOT EXISTS (
-    SELECT 1
-    FROM sys.indexes
-    WHERE name = 'idx_flowlite_timer_stage'
-      AND object_id = OBJECT_ID('dbo.flowlite_timer')
-)
-BEGIN
-    CREATE UNIQUE INDEX idx_flowlite_timer_stage ON dbo.flowlite_timer(flow_id, flow_instance_id, stage)
 END;
 
 IF OBJECT_ID('dbo.pending_event', 'U') IS NULL

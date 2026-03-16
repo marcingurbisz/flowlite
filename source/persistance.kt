@@ -3,7 +3,6 @@ package io.flowlite
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Instant
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Runtime status of a single active stage for a flow instance.
@@ -84,7 +83,6 @@ data class ScheduledTick(
     val flowInstanceId: UUID,
     val notBefore: Instant = Instant.now(),
     val targetStage: String? = null,
-    val timerToken: UUID? = null,
 )
 
 interface TickScheduler {
@@ -94,43 +92,9 @@ interface TickScheduler {
         flowInstanceId: UUID,
         notBefore: Instant = Instant.now(),
         targetStage: String? = null,
-        timerToken: UUID? = null,
-    )
-}
-
-data class ScheduledTimer(
-    val token: UUID = UUID.randomUUID(),
-    val flowId: String,
-    val flowInstanceId: UUID,
-    val stage: String,
-    val wakeUpAt: Instant,
-)
-
-interface TimerStore {
-    fun load(flowId: String, flowInstanceId: UUID, stage: String): ScheduledTimer?
-    fun save(timer: ScheduledTimer): ScheduledTimer
-    fun delete(flowId: String, flowInstanceId: UUID, stage: String): Boolean
-}
-
-class InMemoryTimerStore : TimerStore {
-    private data class Key(
-        val flowId: String,
-        val flowInstanceId: UUID,
-        val stage: String,
     )
 
-    private val timers = ConcurrentHashMap<Key, ScheduledTimer>()
-
-    override fun load(flowId: String, flowInstanceId: UUID, stage: String): ScheduledTimer? =
-        timers[Key(flowId, flowInstanceId, stage)]
-
-    override fun save(timer: ScheduledTimer): ScheduledTimer {
-        timers[Key(timer.flowId, timer.flowInstanceId, timer.stage)] = timer
-        return timer
-    }
-
-    override fun delete(flowId: String, flowInstanceId: UUID, stage: String): Boolean =
-        timers.remove(Key(flowId, flowInstanceId, stage)) != null
+    fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String): ScheduledTick? = null
 }
 
 /**

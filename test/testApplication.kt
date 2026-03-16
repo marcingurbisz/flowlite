@@ -3,12 +3,10 @@ package io.flowlite.test
 import io.flowlite.Engine
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteTickRepository
-import io.flowlite.FlowLiteTimerRepository
 import io.flowlite.PendingEventRepository
 import io.flowlite.SpringDataJdbcEventStore
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.SpringDataJdbcTickScheduler
-import io.flowlite.SpringDataJdbcTimerStore
 import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.cockpitRouter
@@ -80,10 +78,6 @@ object Beans {
         }
 
         registerBean {
-            SpringDataJdbcTimerStore(bean<FlowLiteTimerRepository>())
-        }
-
-        registerBean {
             SpringDataOrderConfirmationPersister(bean<OrderConfirmationRepository>())
         }
 
@@ -105,7 +99,6 @@ object Beans {
             val eventStore = bean<SpringDataJdbcEventStore>()
             val tickScheduler = bean<SpringDataJdbcTickScheduler>()
             val historyStore = bean<SpringDataJdbcHistoryStore>()
-            val timerStore = bean<SpringDataJdbcTimerStore>()
             val orderPersister = bean<SpringDataOrderConfirmationPersister>()
             val onboardingPersister = bean<SpringDataEmployeeOnboardingPersister>()
             val onboardingActions = bean<EmployeeOnboardingActions>()
@@ -114,7 +107,6 @@ object Beans {
                 eventStore = eventStore,
                 tickScheduler = tickScheduler,
                 historyStore = historyStore,
-                timerStore = timerStore,
                 clock = bean<AdjustableClock>(),
             ).also { engine ->
                 engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)

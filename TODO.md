@@ -1,35 +1,30 @@
-## LOGS.md and TODO.md
-We have now (example):
-
-```
-In TODO.md
-## [DONE 2026-03-16] Render instance
+## [DONE 2026-03-16] Clarify TODO/LOG template in shared AGENTS
 Completed changes:
-- Removed `.github/workflows/keep-render-alive.yml` because the Render test instance is now kept alive externally by Better Stack and UptimeRobot.
-- Updated the `Public test instance deployment` chapter in `README.md` and `AGENTS.md` to reflect the current operational state instead of repeating the original Render setup steps.
-- Removed the old GitHub keepalive variable/workflow instructions from the docs.
+- Updated the shared IEF guidance in `/workspaces/workplace/AGENTS.md` so `TODO.md` is the primary per-item execution log in `TODO.md` mode.
+- Added an explicit rule to avoid duplicating the same per-item summary in both `TODO.md` and `memory/LOG.md`; `memory/LOG.md` is now framed as a place for cross-item learnings and durable repo notes.
+- Expanded the recommended TODO item shape so it supports optional inline discussion / review notes in addition to completed changes, validation, and learning.
 
 Validation:
 - `git diff --check` → no issues.
 
-And in LOG.md:
-- 2026-03-16 – Render keepalive repo cleanup.
-  - Outcome: Removed the GitHub Actions Render keepalive workflow and updated README/AGENTS so the public-instance section now reflects the current externally monitored Render setup instead of the original setup instructions.
-  - Learning: Once operational ownership moves outside the repo, deployment docs should shift from bootstrap instructions to concise operational facts to avoid stale automation/config guidance.
-```
-
-There is quite some duplication between these two. I think we should combine them into one todo item template which contains Completed changes/Outcomes, Validation and Learning/Learnings.
-Update template in workspace/AGENT.md for todo item.
-
-See also "Further Cockpit scaling follow-ups" and "Further Cockpit scaling follow-ups" where I added inline comments for TODO items which works as a kind discussion on the todo item. I wonder if we can somehow frame it in todo item template and if it is worth framing it.
-
-Maybe worth that Agent add the comments for completed/changes inline directly under the part of the TODO so it is also easier for human to review and it reads as a discussion.
+Learning:
+- The repo still benefits from a separate memory file, but it should capture reusable facts rather than restating every completed TODO item.
 
 ## Timer questions
 * Due-time polling alone is not enough once operators can manually change stages while old delayed ticks are still queued - what you mean by that. I think duplicate ticks are not dangerous so I think we do not need special handling for manually state changes.
 * val existingTimer = timerStore.load(flowId, flowInstanceId, stageKey) - why we need to consider existing timers? Is it the case when tick comes but it is yet not the time for execution, right?
 * dedicated `flowlite_timer` table to keep delayed timer state durable - taking comment above into account maybe we can remove this new table and just have tick due time?
 * InMemoryTimerStore - we should not have such in persistence.kt. If needed move to test sources.
+
+## [DONE 2026-03-16] Simplify delayed timer persistence model
+Completed changes:
+- Removed the separate `TimerStore` / `flowlite_timer` persistence layer and made delayed timer wake-ups durable via the existing due-time tick rows only.
+- Extended `TickScheduler` with a scheduled-tick lookup so timer stages can detect an already-planned wake-up and avoid rescheduling it when duplicate immediate ticks arrive before the timer is due.
+- Kept only stage-based stale-tick guarding: delayed ticks are ignored if the instance is no longer on the target stage, but same-stage revisits are intentionally treated as acceptable duplicate-tick behavior.
+- Removed the production `InMemoryTimerStore` implementation entirely.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## README.md updates
 - Uptime is now maintained externally by Better Stack and UptimeRobot. - mention that pings done by these services keeps the instance up and running. Otherwise Render shuts its down after 15min of no requests.
@@ -71,8 +66,8 @@ Validation:
 
 ## [DONE 2026-03-16] timer() implementation
 Completed changes:
-- Reworked `timer(...)` so it now accepts a wake-up calculator returning `Instant`, persists timer metadata separately from domain rows, and schedules delayed ticks instead of running a stage action immediately.
-- Extended the Spring Data JDBC tick scheduler with due-time support plus stale-timer guarding metadata, and added a dedicated `flowlite_timer` table to keep delayed timer state durable across restarts.
+- Reworked `timer(...)` so it now accepts a wake-up calculator returning `Instant` and schedules delayed ticks instead of running a stage action immediately.
+- Extended the Spring Data JDBC tick scheduler with due-time support so delayed timer wake-ups survive restarts using the existing tick table.
 - Updated the employee onboarding example so timer stages compute wake-up times instead of mutating state, and added clock-controlled tests that advance through both delayed onboarding timers without blocking worker threads.
 - Updated README and AGENTS so the documented timer contract matches the new runtime semantics.
 

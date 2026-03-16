@@ -74,9 +74,8 @@ private class ManualTickScheduler : TickScheduler {
         flowInstanceId: UUID,
         notBefore: Instant,
         targetStage: String?,
-        timerToken: UUID?,
     ) {
-        queue.addLast(ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, timerToken))
+        queue.addLast(ScheduledTick(flowId, flowInstanceId, notBefore, targetStage))
     }
 
     fun drain(limit: Int = 1000) {

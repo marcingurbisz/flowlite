@@ -365,9 +365,14 @@ class EngineBehaviorTest : BehaviorSpec({
             flowInstanceId: UUID,
             notBefore: Instant,
             targetStage: String?,
-            timerToken: UUID?,
         ) {
-            queue += ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, timerToken)
+            queue += ScheduledTick(flowId, flowInstanceId, notBefore, targetStage)
+        }
+
+        override fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String): ScheduledTick? {
+            return queue
+                .filter { it.flowId == flowId && it.flowInstanceId == flowInstanceId && it.targetStage == targetStage }
+                .minByOrNull { it.notBefore }
         }
 
         fun scheduledCount() = queue.size

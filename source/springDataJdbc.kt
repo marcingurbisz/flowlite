@@ -25,7 +25,6 @@ data class FlowLiteTick(
     val flowInstanceId: UUID,
     val notBefore: Instant,
     val targetStage: String? = null,
-    val timerToken: UUID? = null,
     @Version
     var version: Long? = null, // Only so Spring Data JDBC treats the aggregate as "new" with an assigned (non-null) id.
 )
@@ -41,22 +40,19 @@ interface FlowLiteTickRepository : CrudRepository<FlowLiteTick, UUID> {
         """,
     )
     fun findDueBatch(now: Instant, limit: Int): List<FlowLiteTick>
-}
 
-@Table("FLOWLITE_TIMER")
-data class FlowLiteTimer(
-    @Id
-    val id: UUID,
-    val flowId: String,
-    val flowInstanceId: UUID,
-    val stage: String,
-    val wakeUpAt: Instant,
-    @Version
-    var version: Long? = null,
-)
-
-interface FlowLiteTimerRepository : CrudRepository<FlowLiteTimer, UUID> {
-    fun findByFlowIdAndFlowInstanceIdAndStage(flowId: String, flowInstanceId: UUID, stage: String): FlowLiteTimer?
+    @Query(
+        """
+        select *
+        from flowlite_tick
+        where flow_id = :flowId
+          and flow_instance_id = :flowInstanceId
+          and target_stage = :targetStage
+        order by not_before asc, id asc
+        limit 1
+        """,
+    )
+    fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String): FlowLiteTick?
 }
 
 class SpringDataJdbcTickScheduler(
@@ -100,7 +96,6 @@ class SpringDataJdbcTickScheduler(
         flowInstanceId: UUID,
         notBefore: Instant,
         targetStage: String?,
-        timerToken: UUID?,
     ) {
         tickRepo.save(
             FlowLiteTick(
@@ -109,10 +104,12 @@ class SpringDataJdbcTickScheduler(
                 flowInstanceId = flowInstanceId,
                 notBefore = notBefore,
                 targetStage = targetStage,
-                timerToken = timerToken,
             ),
         )
     }
+
+    override fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String): ScheduledTick? =
+        tickRepo.findScheduledTick(flowId, flowInstanceId, targetStage)?.toScheduledTick()
 
     private fun runPollLoop() {
         val handler = requireNotNull(tickHandler)
@@ -156,7 +153,6 @@ class SpringDataJdbcTickScheduler(
                     flowInstanceId = tick.flowInstanceId,
                     notBefore = tick.notBefore,
                     targetStage = tick.targetStage,
-                    timerToken = tick.timerToken,
                 ),
             )
         } catch (e: Exception) {
@@ -190,44 +186,12 @@ class SpringDataJdbcTickScheduler(
     override fun isRunning() = pollerThread != null && !shutdownInitiated.get()
 }
 
-class SpringDataJdbcTimerStore(
-    private val repo: FlowLiteTimerRepository,
-) : TimerStore {
-    override fun load(flowId: String, flowInstanceId: UUID, stage: String): ScheduledTimer? =
-        repo.findByFlowIdAndFlowInstanceIdAndStage(flowId, flowInstanceId, stage)?.toScheduledTimer()
-
-    override fun save(timer: ScheduledTimer): ScheduledTimer {
-        val existing = repo.findByFlowIdAndFlowInstanceIdAndStage(timer.flowId, timer.flowInstanceId, timer.stage)
-        val saved = if (existing == null) {
-            repo.save(
-                FlowLiteTimer(
-                    id = timer.token,
-                    flowId = timer.flowId,
-                    flowInstanceId = timer.flowInstanceId,
-                    stage = timer.stage,
-                    wakeUpAt = timer.wakeUpAt,
-                ),
-            )
-        } else {
-            repo.save(existing.copy(wakeUpAt = timer.wakeUpAt))
-        }
-        return saved.toScheduledTimer()
-    }
-
-    override fun delete(flowId: String, flowInstanceId: UUID, stage: String): Boolean {
-        val existing = repo.findByFlowIdAndFlowInstanceIdAndStage(flowId, flowInstanceId, stage) ?: return false
-        repo.delete(existing)
-        return true
-    }
-}
-
-private fun FlowLiteTimer.toScheduledTimer() =
-    ScheduledTimer(
-        token = id,
+private fun FlowLiteTick.toScheduledTick() =
+    ScheduledTick(
         flowId = flowId,
         flowInstanceId = flowInstanceId,
-        stage = stage,
-        wakeUpAt = wakeUpAt,
+        notBefore = notBefore,
+        targetStage = targetStage,
     )
 
 // --- Event store ---

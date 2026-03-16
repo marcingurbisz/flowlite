@@ -8,8 +8,8 @@ Template:
 ## Entries
 
 - 2026-03-16 – Delayed timer runtime.
-  - Outcome: Reworked `timer(...)` into a wake-up-time calculator, added durable timer metadata plus due-time ticks, and updated the onboarding example/tests to advance delayed stages via a controllable clock.
-  - Learning: Delayed timers need both durable wake-up metadata and stale-tick guarding; due-time polling alone is not enough once operators can manually change stages while old delayed ticks are still queued.
+  - Outcome: Reworked `timer(...)` into a wake-up-time calculator, kept delayed wake-ups durable in the due-time tick table, and updated the onboarding example/tests to advance delayed stages via a controllable clock.
+  - Learning: A separate timer table was not needed here; the key requirement was being able to detect that a delayed wake-up is already scheduled for the current stage so duplicate immediate ticks do not push the timer forward.
 
 - 2026-03-16 – Tick scheduler default concurrency increase.
   - Outcome: Raised the default `SpringDataJdbcTickScheduler` worker-thread limit from 4 to 20 while leaving the constructor override in place for explicit tuning.

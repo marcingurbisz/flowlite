@@ -8,7 +8,6 @@ class Engine(
     private val eventStore: EventStore,
     private val tickScheduler: TickScheduler,
     private val historyStore: HistoryStore = NoopHistoryStore,
-    private val timerStore: TimerStore = InMemoryTimerStore(),
     private val clock: Clock = Clock.systemUTC(),
 ) {
     private companion object {
@@ -82,7 +81,6 @@ class Engine(
         if (current.stageStatus != StageStatus.Error) {
             error("Cannot retry $flowId/$flowInstanceId because status is ${current.stageStatus}")
         }
-        clearTimer(flowId, flowInstanceId, current.stage)
         val reset = current.copy(stageStatus = StageStatus.Pending)
         val saved = persister.save(reset)
         historyStore.recordRetried(flowId, saved)
@@ -96,7 +94,6 @@ class Engine(
         log.info { "cancel(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
         if (current.stageStatus == StageStatus.Completed || current.stageStatus == StageStatus.Cancelled) return
 
-        clearTimer(flowId, flowInstanceId, current.stage)
         val cancelled = current.copy(stageStatus = StageStatus.Cancelled)
         persister.save(cancelled)
         historyStore.recordCancelled(flowId, current, from = current.stageStatus)
@@ -117,7 +114,6 @@ class Engine(
 
         if (current.stage != resolvedTarget || current.stageStatus != StageStatus.Pending) {
             val before = current
-            clearTimer(flowId, flowInstanceId, current.stage)
             current = persister.save(current.copy(stage = resolvedTarget, stageStatus = StageStatus.Pending))
             historyStore.recordManualStageChanged(
                 flowId = flowId,
@@ -161,9 +157,8 @@ class Engine(
         flowInstanceId: UUID,
         notBefore: java.time.Instant = clock.instant(),
         targetStage: String? = null,
-        timerToken: UUID? = null,
     ) {
-        tickScheduler.scheduleTick(flowId, flowInstanceId, notBefore, targetStage, timerToken)
+        tickScheduler.scheduleTick(flowId, flowInstanceId, notBefore, targetStage)
     }
 
     private fun processTick(tick: ScheduledTick) {
@@ -176,14 +171,6 @@ class Engine(
             if (currentStage != tick.targetStage) {
                 log.info {
                     "Ignoring stale timer tick for ${tick.flowId}/${tick.flowInstanceId}: currentStage=$currentStage targetStage=${tick.targetStage}"
-                }
-                return
-            }
-
-            val scheduledTimer = timerStore.load(tick.flowId, tick.flowInstanceId, tick.targetStage)
-            if (scheduledTimer == null || (tick.timerToken != null && scheduledTimer.token != tick.timerToken)) {
-                log.info {
-                    "Ignoring stale timer tick for ${tick.flowId}/${tick.flowInstanceId}: token=${tick.timerToken}"
                 }
                 return
             }
@@ -248,42 +235,32 @@ class Engine(
 
                 if (def.timer != null) {
                     val stageKey = historyValueOf(data.stage)
-                    val existingTimer = timerStore.load(flowId, flowInstanceId, stageKey)
                     val now = clock.instant()
+                    val existingTick = tickScheduler.findScheduledTick(flowId, flowInstanceId, stageKey)
+                    val isDueTimerTick = tick.targetStage == stageKey && !tick.notBefore.isAfter(now)
 
                     when {
-                        existingTimer == null -> {
+                        isDueTimerTick -> Unit
+                        existingTick != null -> {
+                            persister.save(data.copy(stageStatus = StageStatus.Pending))
+                            historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Pending)
+                            log.debug { "Timer stage ${data.stage} already has wake-up at ${existingTick.notBefore} ($flowId/$flowInstanceId)" }
+                            return
+                        }
+                        else -> {
                             val wakeUpAt = def.timer(ActionContext(flowId = flowId, flowInstanceId = flowInstanceId, now = now), data.state)
                             if (wakeUpAt.isAfter(now)) {
-                                val scheduledTimer = timerStore.save(
-                                    ScheduledTimer(
-                                        flowId = flowId,
-                                        flowInstanceId = flowInstanceId,
-                                        stage = stageKey,
-                                        wakeUpAt = wakeUpAt,
-                                    ),
-                                )
                                 enqueueTick(
                                     flowId = flowId,
                                     flowInstanceId = flowInstanceId,
                                     notBefore = wakeUpAt,
                                     targetStage = stageKey,
-                                    timerToken = scheduledTimer.token,
                                 )
                                 persister.save(data.copy(stageStatus = StageStatus.Pending))
                                 historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Pending)
                                 log.debug { "Timer stage ${data.stage} scheduled wake-up at $wakeUpAt ($flowId/$flowInstanceId)" }
                                 return
                             }
-                        }
-                        existingTimer.wakeUpAt.isAfter(now) -> {
-                            persister.save(data.copy(stageStatus = StageStatus.Pending))
-                            historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Pending)
-                            log.debug { "Timer stage ${data.stage} still waiting until ${existingTimer.wakeUpAt} ($flowId/$flowInstanceId)" }
-                            return
-                        }
-                        else -> {
-                            timerStore.delete(flowId, flowInstanceId, stageKey)
                         }
                     }
 
@@ -415,8 +392,4 @@ class Engine(
 
     private fun StageDefinition<*, *, *>.isTerminal(): Boolean =
         nextStage == null && conditionHandler == null && eventHandlers.isEmpty()
-
-    private fun clearTimer(flowId: String, flowInstanceId: UUID, stage: Stage) {
-        timerStore.delete(flowId, flowInstanceId, historyValueOf(stage))
-    }
 }

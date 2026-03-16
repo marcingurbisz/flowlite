@@ -1,3 +1,40 @@
+## LOGS.md and TODO.md
+We have now (example):
+
+```
+In TODO.md
+## [DONE 2026-03-16] Render instance
+Completed changes:
+- Removed `.github/workflows/keep-render-alive.yml` because the Render test instance is now kept alive externally by Better Stack and UptimeRobot.
+- Updated the `Public test instance deployment` chapter in `README.md` and `AGENTS.md` to reflect the current operational state instead of repeating the original Render setup steps.
+- Removed the old GitHub keepalive variable/workflow instructions from the docs.
+
+Validation:
+- `git diff --check` → no issues.
+
+And in LOG.md:
+- 2026-03-16 – Render keepalive repo cleanup.
+  - Outcome: Removed the GitHub Actions Render keepalive workflow and updated README/AGENTS so the public-instance section now reflects the current externally monitored Render setup instead of the original setup instructions.
+  - Learning: Once operational ownership moves outside the repo, deployment docs should shift from bootstrap instructions to concise operational facts to avoid stale automation/config guidance.
+```
+
+There is quite some duplication between these two. I think we should combine them into one todo item template which contains Completed changes/Outcomes, Validation and Learning/Learnings.
+Update template in workspace/AGENT.md for todo item.
+
+See also "Further Cockpit scaling follow-ups" and "Further Cockpit scaling follow-ups" where I added inline comments for TODO items which works as a kind discussion on the todo item. I wonder if we can somehow frame it in todo item template and if it is worth framing it.
+
+Maybe worth that Agent add the comments for completed/changes inline directly under the part of the TODO so it is also easier for human to review and it reads as a discussion.
+
+## Timer questions
+* Due-time polling alone is not enough once operators can manually change stages while old delayed ticks are still queued - what you mean by that. I think duplicate ticks are not dangerous so I think we do not need special handling for manually state changes.
+* val existingTimer = timerStore.load(flowId, flowInstanceId, stageKey) - why we need to consider existing timers? Is it the case when tick comes but it is yet not the time for execution, right?
+* dedicated `flowlite_timer` table to keep delayed timer state durable - taking comment above into account maybe we can remove this new table and just have tick due time?
+* InMemoryTimerStore - we should not have such in persistence.kt. If needed move to test sources.
+
+## README.md updates
+- Uptime is now maintained externally by Better Stack and UptimeRobot. - mention that pings done by these services keeps the instance up and running. Otherwise Render shuts its down after 15min of no requests.
+- Add url https://flowlite-test-instance.onrender.com/index.html
+
 ## [DONE 2026-03-16] Render instance
 Completed changes:
 - Removed `.github/workflows/keep-render-alive.yml` because the Render test instance is now kept alive externally by Better Stack and UptimeRobot.
@@ -19,7 +56,9 @@ Validation:
 ## Further Cockpit scaling follow-ups
 * Measure the current Render behavior again at 10k-11k instances after the Flows-tab fetch fan-out reduction.
 * Decide whether `Errors` and `Long Running` should get dedicated backend endpoints instead of relying on `/api/instances`.
-* Consider virtual scrolling for the `Instances` tab.
+  > MG: Do Errors and Long Runnings trigger do calls to /api/instances with some filtering or request all instances? If all that for sure is something we do not want to do
+* Consider virtual scrolling for the `Instances` tab. 
+  > MG: We can wait with that but we should do item below.
 * Consider showing `Apply filters to view instances` guidance like in `cockpit-ui/claude-prototype.jsx`.
 
 ## [DONE 2026-03-16] Increase number of worker threads
@@ -47,6 +86,13 @@ Consider below. In case for change write/update tests for changes:
 * Should long time pending be classified as long running or as some other group? Maybe whole tab rename to "Long inactive" or "Long running and inactive"? Show status in the list and add filter for status?
 * What do you think about allowing entering period as threshold? E.g. 1h, 1m, 30s, 1h 30m. 
 
+Comments to Agent recommendations:
+* Keep core StageStatus unchanged and classify pending instances in Cockpit as waiting for event, waiting for timer, or plain pending.
+> MG: how we find out what is pending for event without additional status?
+* Rename the UI text to Long Inactive, exclude waiting for event by default, and add an activity/status filter.
+Accept human-readable thresholds like 1h, 30s, and 1h 30m, while keeping current URLs backward-compatible.
+> MG: no need for backward-compatibility. I wonder if "Long Inactive" is not misleading for instances which are in RUNNING state for a long time without any state/stage change but maybe not. They are in runnings state but inactive (in the sens of no change from engine point of view). I agree with the rest.
+
 ## "Errors" tab changes
 Change and write/update tests for changes:
 * add "clear filters" button like in cockpit-ui/claude-prototype.jsx
@@ -64,6 +110,9 @@ Add/modify tests for that.
 ## cdn.tailwindcss.com should not be used in production
 I guess we should fix it?
 (index):64 cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+
+## Move mssql.sql and h2.sql
+... to source/schema
 
 ## [FOR HUMAN] Review changes git changes
 
@@ -190,21 +239,3 @@ Completed changes:
 
 Validation:
 - Design-only task; no runtime code changes were required.
-
-## [DONE 2026-03-07] Move tables definitions outside testApplication.kt
-Completed changes:
-- Moved test-app schema DDL out of `test/testApplication.kt` into dedicated resource scripts: `test/schema/h2.sql` and `test/schema/mssql.sql`.
-- Added `test/testDatabaseSchema.kt` with `TestDatabaseDialect` and `initializeTestSchema(...)` so the test app bootstrap only selects a dialect and applies the matching script.
-- Kept the current runtime on H2 while preparing a parallel MSSQL schema script for the next database-support task.
-
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-07] Showcase improvements
-Completed changes:
-- Added README showcase-mode documentation describing how `ShowcaseFlowSeeder` works, what gets seeded, and which properties control demo behavior.
-- Moved `ShowcaseActionBehavior` into `test/testApplication.kt` so showcase bootstrap and showcase-only action behavior live together.
-- Added explicit `isShowcaseInstance` state to `EmployeeOnboarding` and its schema, and updated the seeder to use it instead of overloading `isRemoteEmployee`.
-
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.

@@ -512,9 +512,12 @@ This keeps demo traffic visually interesting in Cockpit without changing normal 
 
 The public FlowLite test instance is already deployed on Render.
 
+Public URL:
+- https://flowlite-test-instance.onrender.com/index.html
+
 Operational notes:
 - The container image still uses the repo's packaged-app Docker build.
-- Uptime is now maintained externally by Better Stack and UptimeRobot.
+- Better Stack and UptimeRobot send external pings that keep the Render instance awake; otherwise Render spins it down after roughly 15 minutes without requests.
 - The repository no longer carries a GitHub Actions keepalive workflow or related `FLOWLITE_RENDER_URL` configuration.
 
 ### Coverage (Local + GitHub)

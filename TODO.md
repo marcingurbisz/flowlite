@@ -26,9 +26,13 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## README.md updates
-- Uptime is now maintained externally by Better Stack and UptimeRobot. - mention that pings done by these services keeps the instance up and running. Otherwise Render shuts its down after 15min of no requests.
-- Add url https://flowlite-test-instance.onrender.com/index.html
+## [DONE 2026-03-16] README.md updates
+Completed changes:
+- Added the public Render test-instance URL to both `README.md` and `AGENTS.md`.
+- Clarified that Better Stack and UptimeRobot keep the Render service awake by sending external pings and that Render would otherwise suspend it after about 15 minutes without traffic.
+
+Validation:
+- `git diff --check` → no issues.
 
 ## [DONE 2026-03-16] Render instance
 Completed changes:

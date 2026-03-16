@@ -1,0 +1,136 @@
+# Interaction Log
+
+Template:
+- Date – [Short description of item].
+  - Outcome: [What was done].
+  - Learning (optional): [What was discovered].
+
+## Entries
+
+- 2026-03-16 – Render keepalive repo cleanup.
+  - Outcome: Removed the GitHub Actions Render keepalive workflow and updated README/AGENTS so the public-instance section now reflects the current externally monitored Render setup instead of the original setup instructions.
+  - Learning: Once operational ownership moves outside the repo, deployment docs should shift from bootstrap instructions to concise operational facts to avoid stale automation/config guidance.
+
+- 2026-03-08 – Schema split and scoped nullability cleanup.
+  - Outcome: Split engine table DDL from test-domain table DDL, updated the schema loader to apply both resources, and narrowed the nullable-column change so only `stage` / `stage_status` lost `NOT NULL` while business fields stayed required.
+  - Learning: Mixing engine metadata and demo-domain fields in the same tables makes broad nullable refactors look larger than they really are; separating the schema files first makes the boundary much clearer.
+
+- 2026-03-08 – MIT license project metadata.
+  - Outcome: Added a root `LICENSE` file, documented the MIT license in README/AGENTS, and aligned Maven publishing metadata with the real GitHub repository coordinates.
+  - Learning: The standard open-source baseline is not just the license text itself but also consistent discovery points in docs and published artifact metadata.
+
+- 2026-03-08 – Auto-retry and user-retriable concept.
+  - Outcome: Added `memory/AutoRetryConcept.md` and recommended a hybrid design where FlowLite owns retry orchestration/scheduling while applications provide the failure-classification policy.
+  - Learning: Auto-retry becomes much easier to keep generic if retry metadata is engine-owned instead of being pushed into every domain schema.
+
+- 2026-03-08 – Cockpit modal/history usability and manual-action history cleanup.
+  - Outcome: Added bookmarkable/ESC-closable instance details, minute-based long-running thresholds, copy buttons, clearer event history rendering, fresh detail reloading after actions, and dedicated `Retried` / `ManualStageChanged` history entries with matching engine tests.
+  - Learning: Treating the selected instance as URL state plus a derived snapshot is simpler than storing a detached object in React state because modal details automatically refresh after list updates.
+
+- 2026-03-08 – Flows live-refresh planning.
+  - Outcome: Added `memory/FlowsLiveRefreshPlan.md` and chose a phased approach: live updates only for the `Flows` tab first, manual refresh buttons everywhere, and a flows-only `Live` toggle.
+  - Learning: The current Cockpit architecture is better served by transport-agnostic invalidation + refetch than by streaming deltas; for one-way dashboard updates SSE is a simpler fit than full WebSocket infrastructure.
+
+- 2026-03-08 – Render keepalive schedule update.
+  - Outcome: Changed the keepalive workflow to run every 10 minutes during the requested 06:00-24:00 Warsaw window and updated the matching docs.
+  - Learning: Because GitHub Actions cron uses UTC, the most robust way to express a local-time window across DST is to schedule the broader UTC range and gate the actual work using `TZ=Europe/Warsaw` inside the job.
+
+- 2026-03-07 – Render Docker build fix for packaged app.
+  - Outcome: Added a prebuilt-Cockpit Gradle switch, moved Cockpit UI compilation into a dedicated Node Docker stage, and kept the packaged app bundle build green without requiring `npm` in the JDK stage.
+  - Learning: Separating frontend compilation from JVM packaging keeps the Docker build reproducible and avoids assuming Node tooling exists in the Java base image.
+
+- 2026-03-07 – Single-dist cockpit static config.
+  - Outcome: Simplified `CockpitUiStaticConfig` to use one dist root plus a small resolver for `/assets/**`, then revalidated the Playwright cockpit suite, packaged app bundle, and packaged `index.html` serving.
+  - Learning: A single dist location works if `/assets/**` lookups are rewritten to `assets/...`; pointing Spring directly at the dist root without that rewrite still misses Vite asset files because the handler prefix is stripped.
+
+- 2026-03-07 – Packaged public test app runtime.
+  - Outcome: Copied Cockpit UI assets into the test-app classpath, added packaged app bundle tasks, updated Docker to run the app directly with `java` instead of Gradle, and smoke-tested the packaged app over HTTP.
+  - Learning: Packaging the app jar and runtime libs separately is more reliable than flattening Spring Boot dependencies into one homemade fat jar because Spring auto-configuration metadata stays intact.
+
+- 2026-03-07 – Cockpit Playwright coverage expansion.
+  - Outcome: Added bookmarkable/back-button cockpit URL state, broadened `data-testid` coverage, added missing long-running/clear-filter UI actions, and replaced the minimal Playwright suite with deterministic fixture-based scenarios for flows, errors, long-running instances, and instance filters.
+  - Learning: Deterministic end-to-end seeding is much easier if showcase/background data generation can be disabled for the web test app.
+
+- 2026-03-07 – Playwright artifact timestamp cleanup.
+  - Outcome: Replaced raw epoch-millis Playwright screenshot/video suffixes with readable UTC date-time stamps in `CockpitPlaywrightTest.kt`.
+  - Learning: Human-readable artifact names make E2E failure triage easier without changing the underlying capture flow.
+
+- 2026-03-07 – Procedural DSL refactor.
+  - Outcome: Replaced the old DSL surface with `waitFor`, `timer`, and `_if/_else`, rewrote the order/onboarding example flows and their tests, updated the showcase seeder/schema, and refreshed generated/manual docs.
+  - Learning: The existing `Flow`/`StageDefinition`/`ConditionHandler` graph model was reusable; the main change was compiling a structured procedural AST into that graph rather than changing engine execution semantics.
+
+- 2026-03-07 – MSSQL test strategy.
+  - Outcome: Added `memory/MssqlTestPlan.md` with a staged plan for MSSQL coverage: H2 stays the default, MSSQL gets a separate task/job, and CI service containers are the recommended first implementation step.
+  - Learning: For cross-database coverage, separating the fast default suite from the vendor-specific suite keeps feedback fast while still making SQL portability visible on PRs.
+
+- 2026-03-07 – Test schema extraction.
+  - Outcome: Moved inline test-app DDL out of `testApplication.kt` into dedicated `schema/h2.sql` and `schema/mssql.sql` resources, and added a small dialect-aware schema loader helper.
+  - Learning: Keeping dialect-specific DDL in resource scripts makes bootstrap code smaller now and removes a major blocker for future multi-database test coverage.
+
+- 2026-03-07 – Showcase mode cleanup.
+  - Outcome: Documented showcase seeding/config in the README, moved `ShowcaseActionBehavior` into `testApplication.kt`, and replaced the employee showcase marker with an explicit `isShowcaseInstance` field plus matching schema column.
+  - Learning: Demo metadata should stay explicit and local to bootstrap code rather than piggybacking on real business flags such as `isRemoteEmployee`.
+
+- 2026-03-06 – Showcase mode action simulation.
+  - Outcome: Added configurable showcase-only random action delays and occasional simulated failures, wired through seeder config and showcase instance markers.
+  - Learning: Tagging showcase instances in domain state keeps demo chaos behavior isolated from standard deterministic test flows.
+
+- 2026-03-06 – Public test instance part 3.
+  - Outcome: Added GitHub Actions keepalive workflow for Render (`FLOWLITE_RENDER_URL`-driven), simplified README deployment section to instruction-only steps, and removed legacy localhost.run exposure script.
+  - Learning: Keepalive must come from an external scheduler; an app cannot reliably self-wake after scale-to-zero.
+
+- 2026-03-06 – Playwright consolidation and selector hardening.
+  - Outcome: Consolidated E2E on Kotlin Playwright, added `data-testid` anchors in Cockpit UI, expanded Kotlin scenarios, and removed legacy TS Playwright config/tests/dependency.
+  - Learning: Purpose-built test IDs significantly reduce selector fragility compared with mixed role/text selectors in a dynamic dashboard UI.
+
+- 2026-03-06 – Cockpit static path investigation.
+  - Outcome: Verified that separate root (`dist`) and assets (`dist/assets`) resource locations are needed in `CockpitUiStaticConfig`.
+  - Learning: Mapping `/assets/**` directly to the dist root looked cleaner but broke UI rendering in Playwright; explicit assets location is safer with current handler patterns.
+
+- 2026-03-06 – CI Test + Coverage stabilization.
+  - Outcome: Fixed clean-checkout CI failures by adding Gradle-managed Cockpit UI build steps (`installCockpitUiDeps`, `buildCockpitUi`) and making `test` depend on the UI build.
+  - Learning: UI-backed integration/E2E tests must not rely on untracked local frontend artifacts (`cockpit-ui/dist`) because they pass locally but fail on fresh CI runners.
+
+- 2026-03-04 – Action context for stage actions.
+  - Outcome: Added `ActionContext` support in DSL/runtime, migrated onboarding actions, and validated with `./gradlew test`.
+  - Learning: Receiver-style action overloads (`ActionContext.(T) -> T?`) can conflict with existing receiver-lambda DSL APIs and create ambiguity for `::action` references.
+- 2026-03-04 – History model deduplication.
+  - Outcome: Removed `CockpitHistoryEntryDto` and returned `FlowLiteHistoryRow` directly from cockpit timeline APIs.
+- 2026-03-04 – Engine rename.
+  - Outcome: Renamed `FlowEngine` to `Engine`, moved source to `source/Engine.kt`, and updated source/tests/docs.
+- 2026-03-04 – Cockpit API declarations move.
+  - Outcome: Moved cockpit DTO/enum declarations from `source/cockpit/api.kt` into `source/cockpit/service.kt` and deleted `api.kt`.
+- 2026-03-04 – Showcase app seeding.
+  - Outcome: Added servlet-only demo seeding in `test/testApplication.kt` and verified cockpit activity/API checks.
+  - Learning: Demo/background generation should be feature-flagged so shared non-web test contexts are not polluted.
+- 2026-03-04 – History query review.
+  - Outcome: Replaced duplicated latest-row queries with parameterized `findLatestRows(flowId, types)` and shared type groups.
+- 2026-03-04 – Playwright tests in `cockpit-ui`.
+  - Outcome: Added Playwright setup/tests, fixed static asset serving, and kept both E2E + Gradle suites green.
+  - Learning: Asset routing must point to real Vite output subpaths (like `dist/assets`) to avoid JS/CSS 404 and blank UI.
+- 2026-03-04 – Public exposure script.
+  - Outcome: Added and validated `tools/exposeTestInstance.sh` for automated localhost.run tunnel bring-up and cleanup.
+- 2026-03-04 – Cockpit coverage expansion.
+  - Outcome: Added `CockpitServiceTest` coverage for instance aggregation, error grouping, counters/diagrams, and timeline projections.
+  - Learning: In Kotest `BehaviorSpec`, fixture setup inside `when` can be reset by cleanup hooks because each `then` is a separate test.
+- 2026-03-04 – Query consolidation.
+  - Outcome: Replaced three cockpit latest-row reads with single `findLatestRowsPerType` + in-memory projection.
+  - Learning: One query can still support latest stage/status/error derivation when SQL ranks by `(flow, instance, type)`.
+- 2026-03-04 – DSL infer-name deduplication.
+  - Outcome: Extracted shared `inferCallableName(...)` helper and reused it in action/condition description inference.
+  - Learning: Shared fallback-aware callable-name inference avoids drift in synthetic-lambda detection rules.
+- 2026-03-04 – `CockpitUiStaticConfig` move.
+  - Outcome: Moved static config from `test/` to reusable `source/cockpit` and wired it explicitly in test app beans.
+  - Learning: Reusable Spring MVC config should be explicitly registered instead of relying on incidental scan boundaries.
+- 2026-03-04 – Test naming cleanup.
+  - Outcome: Removed `Flow` prefixes from test files/classes (including `FlowReceiverDslTest` → `DslTest`) and revalidated full suite.
+  - Learning: Bulk test renames are usually low-risk but still require full-suite verification due to discovery/reporting behavior.
+- 2026-03-04 – ActionContext test placement decision.
+  - Outcome: Kept `ActionContextTest` as a dedicated contract test file.
+  - Learning: Narrow contract checks are easier to diagnose when isolated from broader scenario suites.
+- 2026-03-04 – Playwright rewrite to Kotlin.
+  - Outcome: Added `CockpitPlaywrightTest` with screenshot-on-failure and always-on video recording; targeted and full suites passed.
+  - Learning: Playwright host-library warnings in containers may be non-fatal for Chromium smoke tests, but should be tracked as environment debt.
+- 2026-03-04 – Public provider selection.
+  - Outcome: Evaluated GitHub/Render/Railway/Fly, selected Render free service, and added `render.yaml` + `Dockerfile` + `.dockerignore`.
+  - Learning: GitHub Pages is static-only and cannot host the JVM/Spring app; GitHub remains useful as repo/CI source for external deployment.

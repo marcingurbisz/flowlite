@@ -502,16 +502,12 @@ This keeps demo traffic visually interesting in Cockpit without changing normal 
 
 ### Public test instance deployment (free/cheap)
 
-Quick start:
-- Push this repo to GitHub.
-- In Render, create a **Blueprint** from the repo (it will pick up `render.yaml`).
-- The Docker image now builds Cockpit UI assets in a dedicated Node stage, then packages the test app jar and runtime libs in the JDK stage, so the deployed container does not need Gradle or npm at runtime.
-- Deploy the created `flowlite-test-instance` service.
-- Open `/cockpit` on the generated `onrender.com` URL.
+The public FlowLite test instance is already deployed on Render.
 
-Optional keepalive:
-- Set GitHub repository variable `FLOWLITE_RENDER_URL` to your deployed service URL (for example, `https://flowlite-test-instance.onrender.com`).
-- Keep `.github/workflows/keep-render-alive.yml` enabled to ping `/api/flows` every 10 minutes during 06:00-24:00 Warsaw time.
+Operational notes:
+- The container image still uses the repo's packaged-app Docker build.
+- Uptime is now maintained externally by Better Stack and UptimeRobot.
+- The repository no longer carries a GitHub Actions keepalive workflow or related `FLOWLITE_RENDER_URL` configuration.
 
 ### Coverage (Local + GitHub)
 

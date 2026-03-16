@@ -1,5 +1,11 @@
-## Render instance
-Remove keep-render-alive.yml - render instance is now kept alive by betterstack and uptimerobot.com. Update "Public test instance deployment" chapter with this info. Also remove info how to setup render as it is already done.
+## [DONE 2026-03-16] Render instance
+Completed changes:
+- Removed `.github/workflows/keep-render-alive.yml` because the Render test instance is now kept alive externally by Better Stack and UptimeRobot.
+- Updated the `Public test instance deployment` chapter in `README.md` and `AGENTS.md` to reflect the current operational state instead of repeating the original Render setup steps.
+- Removed the old GitHub keepalive variable/workflow instructions from the docs.
+
+Validation:
+- `git diff --check` → no issues.
 
 ## Support for large amount of instances
 * It looks that Flows tab is using data from /flows and /instances. For big amount of instances this is working slow. Should aggregation of all data for Flows tab be done on backend?

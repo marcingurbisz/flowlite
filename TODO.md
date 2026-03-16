@@ -125,9 +125,14 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## cdn.tailwindcss.com should not be used in production
-I guess we should fix it?
-(index):64 cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+## [DONE 2026-03-16] cdn.tailwindcss.com should not be used in production
+Completed changes:
+- Replaced the cockpit UI's production Tailwind CDN script with local Tailwind build dependencies wired into the existing Vite pipeline.
+- Added the Tailwind Vite plugin, imported Tailwind from the app stylesheet, and moved the Google Fonts load into `index.html` so the CSS build stays warning-free.
+- Kept the existing cockpit markup unchanged, so the Tailwind migration is purely a build/runtime packaging fix.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Move mssql.sql and h2.sql
 ... to source/schema

@@ -7,12 +7,20 @@ Completed changes:
 Validation:
 - `git diff --check` → no issues.
 
-## Support for large amount of instances
-* It looks that Flows tab is using data from /flows and /instances. For big amount of instances this is working slow. Should aggregation of all data for Flows tab be done on backend?
-Additional question: In our render flowlite instance in case of 10k instances FE is waiting for data around 8s. With 11k instances it takes around 40s so it seems to me that this time spent mainly in db? Maybe also some index is missing on db side?
-* Should "Errors" and "Long running" tabs depend on data from /instances?
-* Introduce virtual scrolling for "Instances" tab?
-* Worth to display "Apply filters to view instances" like in cockpit-ui/claude-prototype.jsx prototype for "Instances" tab?
+## [DONE 2026-03-16] Support for large amount of instances
+Completed changes:
+- Moved Flows-tab active-stage breakdown and per-flow long-running counts to the backend `/api/flows` response so the Flows view no longer has to derive them from the full instance list.
+- Changed Cockpit frontend refresh behavior so the Flows tab does not fetch `/api/instances` or `/api/errors`; those datasets are now loaded only on tabs that actually use them.
+- Refactored cockpit summary projection to reuse one history-summary projection per endpoint and added `idx_flowlite_history_summary` to the engine schema to support the latest-row query pattern.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
+
+## Further Cockpit scaling follow-ups
+* Measure the current Render behavior again at 10k-11k instances after the Flows-tab fetch fan-out reduction.
+* Decide whether `Errors` and `Long Running` should get dedicated backend endpoints instead of relying on `/api/instances`.
+* Consider virtual scrolling for the `Instances` tab.
+* Consider showing `Apply filters to view instances` guidance like in `cockpit-ui/claude-prototype.jsx`.
 
 ## Increase number of worker threads 
 ... in SpringDataJdbcTickScheduler to 20 by default

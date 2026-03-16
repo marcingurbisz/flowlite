@@ -8,8 +8,15 @@ import io.flowlite.MermaidGenerator
 import io.flowlite.StageStatus
 import io.flowlite.historyValueOf
 import io.flowlite.toHistoryEntry
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+
+data class CockpitFlowStageDto(
+    val stage: String,
+    val totalCount: Int,
+    val errorCount: Int,
+)
 
 data class CockpitFlowDto(
     val flowId: String,
@@ -19,6 +26,8 @@ data class CockpitFlowDto(
     val errorCount: Int,
     val activeCount: Int,
     val completedCount: Int,
+    val longRunningCount: Int,
+    val stageBreakdown: List<CockpitFlowStageDto>,
 )
 
 data class CockpitInstanceDto(
@@ -74,47 +83,51 @@ class CockpitService(
             .thenBy { it.id?.toString() ?: "" }
     }
 
-    fun listFlows(): List<CockpitFlowDto> {
+    fun listFlows(longRunningThresholdMinutes: Long = 60): List<CockpitFlowDto> {
         val registered = engine.registeredFlows()
-        val counts = countsByFlow(registered.keys)
+        val summariesByFlow = loadInstanceSummaries(flowId = null)
+            .filter { registered.containsKey(it.flowId) }
+            .groupBy { it.flowId }
+        val now = Instant.now()
+        val longRunningThreshold = Duration.ofMinutes(longRunningThresholdMinutes.coerceAtLeast(1))
 
         return registered.keys.sorted().mapNotNull { flowId ->
             val flow = registered[flowId] ?: return@mapNotNull null
-            val c = counts[flowId] ?: FlowCounts(0, 0, 0, 0)
+            val summaries = summariesByFlow[flowId].orEmpty()
+            val counts = summaries.toFlowCounts()
+            val incomplete = summaries.filter { it.status != StageStatus.Completed && it.status != StageStatus.Cancelled }
+            val stageBreakdown = incomplete
+                .asSequence()
+                .mapNotNull { summary -> summary.stage?.let { stage -> stage to summary.status } }
+                .groupBy(keySelector = { it.first }, valueTransform = { it.second })
+                .map { (stage, statuses) ->
+                    CockpitFlowStageDto(
+                        stage = stage,
+                        totalCount = statuses.size,
+                        errorCount = statuses.count { it == StageStatus.Error },
+                    )
+                }
+                .sortedBy { it.stage }
+            val longRunningCount = summaries.count {
+                it.status == StageStatus.Running && Duration.between(it.lastUpdatedAt, now) > longRunningThreshold
+            }
+
             CockpitFlowDto(
                 flowId = flowId,
                 diagram = mermaid.generateDiagram(flow),
                 stages = flow.stages.keys.map { historyValueOf(it) },
-                notCompletedCount = c.notCompleted,
-                errorCount = c.error,
-                activeCount = c.active,
-                completedCount = c.completed,
+                notCompletedCount = counts.notCompleted,
+                errorCount = counts.error,
+                activeCount = counts.active,
+                completedCount = counts.completed,
+                longRunningCount = longRunningCount,
+                stageBreakdown = stageBreakdown,
             )
         }
     }
 
     fun listInstances(flowId: String? = null, bucket: CockpitInstanceBucket? = null): List<CockpitInstanceDto> {
-        val rowsByKey = historyRepo.findLatestRowsPerType(flowId, INSTANCE_SUMMARY_ROW_TYPES)
-            .groupBy { it.asKey() }
-
-        val summaries = rowsByKey.mapNotNull { (key, rows) ->
-            val stage = rows.latestOfType(STAGE_ROW_TYPES)
-            val status = rows.latestOfType(STATUS_ROW_TYPES)
-            val error = rows.latestOfType(ERROR_ROW_TYPES)
-
-            val lastUpdated = listOfNotNull(stage?.occurredAt, status?.occurredAt, error?.occurredAt)
-                .maxOrNull()
-                ?: return@mapNotNull null
-
-            CockpitInstanceDto(
-                flowId = key.flowId,
-                flowInstanceId = key.flowInstanceId,
-                stage = stage?.stageValue(),
-                status = status?.statusValue(),
-                lastUpdatedAt = lastUpdated,
-                lastErrorMessage = error?.errorMessage,
-            )
-        }
+        val summaries = loadInstanceSummaries(flowId)
 
         val filtered = when (bucket) {
             null -> summaries
@@ -135,7 +148,8 @@ class CockpitService(
     }
 
     fun listErrorGroups(flowId: String? = null): List<CockpitErrorGroupDto> {
-        val errors = listInstances(flowId, CockpitInstanceBucket.Error)
+        val errors = loadInstanceSummaries(flowId)
+            .filter { it.status == StageStatus.Error }
         return errors.groupBy { it.flowId to it.stage }
             .map { (k, instances) ->
                 CockpitErrorGroupDto(
@@ -173,20 +187,36 @@ class CockpitService(
 
     private data class InstanceKey(val flowId: String, val flowInstanceId: UUID)
 
-    private fun countsByFlow(flowIds: Collection<String>): Map<String, FlowCounts> {
-        val summaries = listInstances(flowId = null, bucket = null)
-            .filter { flowIds.contains(it.flowId) }
+    private fun loadInstanceSummaries(flowId: String?): List<CockpitInstanceDto> {
+        val rowsByKey = historyRepo.findLatestRowsPerType(flowId, INSTANCE_SUMMARY_ROW_TYPES)
+            .groupBy { it.asKey() }
 
-        return flowIds.associateWith { fid ->
-            val rows = summaries.filter { it.flowId == fid }
-            val active = rows.count { it.status == StageStatus.Pending || it.status == StageStatus.Running }
-            val error = rows.count { it.status == StageStatus.Error }
-            val completed = rows.count {
-                it.status == StageStatus.Completed || it.status == StageStatus.Cancelled
-            }
-            val notCompleted = rows.size - completed
-            FlowCounts(active = active, error = error, completed = completed, notCompleted = notCompleted)
+        return rowsByKey.mapNotNull { (key, rows) ->
+            val stage = rows.latestStageRow()
+            val status = rows.latestOfType(STATUS_ROW_TYPES)
+            val error = rows.latestOfType(ERROR_ROW_TYPES)
+
+            val lastUpdated = listOfNotNull(stage?.occurredAt, status?.occurredAt, error?.occurredAt)
+                .maxOrNull()
+                ?: return@mapNotNull null
+
+            CockpitInstanceDto(
+                flowId = key.flowId,
+                flowInstanceId = key.flowInstanceId,
+                stage = stage?.stageValue(),
+                status = status?.statusValue(),
+                lastUpdatedAt = lastUpdated,
+                lastErrorMessage = error?.errorMessage,
+            )
         }
+    }
+
+    private fun List<CockpitInstanceDto>.toFlowCounts(): FlowCounts {
+        val active = count { it.status == StageStatus.Pending || it.status == StageStatus.Running }
+        val error = count { it.status == StageStatus.Error }
+        val completed = count { it.status == StageStatus.Completed || it.status == StageStatus.Cancelled }
+        val notCompleted = size - completed
+        return FlowCounts(active = active, error = error, completed = completed, notCompleted = notCompleted)
     }
 
     private fun FlowLiteHistoryRow.asKey() = InstanceKey(flowId = flowId, flowInstanceId = flowInstanceId)
@@ -196,6 +226,10 @@ class CockpitService(
     private fun List<FlowLiteHistoryRow>.latestOfType(types: Set<HistoryEntryType>) = asSequence()
         .filter { it.type in types }
         .maxWithOrNull(ROW_RECENCY)
+
+    private fun List<FlowLiteHistoryRow>.latestStageRow() =
+        latestOfType(STAGE_ROW_TYPES)
+            ?: asSequence().filter { it.stageValue() != null }.maxWithOrNull(ROW_RECENCY)
 
     private fun FlowLiteHistoryRow.statusValue(): StageStatus? {
         val entry = toHistoryEntry()

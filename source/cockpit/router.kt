@@ -7,8 +7,13 @@ import org.springframework.web.servlet.function.router
 
 fun cockpitRouter(service: CockpitService) =
     router {
-        GET("/api/flows") {
-            ServerResponse.ok().body(service.listFlows())
+        GET("/api/flows") { request ->
+            val longRunningThresholdMinutes = request.param("longRunningThresholdMinutes").orElse(null)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0 }
+                ?: 60L
+
+            ServerResponse.ok().body(service.listFlows(longRunningThresholdMinutes = longRunningThresholdMinutes))
         }
 
         GET("/api/instances") { request ->

@@ -7,6 +7,10 @@ Template:
 
 ## Entries
 
+- 2026-03-16 – Cockpit large-instance load reduction.
+  - Outcome: Moved Flows-tab stage breakdown and long-running counts to `/api/flows`, stopped the Flows view from eagerly fetching `/api/instances` and `/api/errors`, and added a history summary index to better support cockpit latest-row aggregation.
+  - Learning: The biggest immediate win was reducing cross-endpoint fan-out; frontend laziness plus backend aggregation helps more than micro-optimizing the existing client-side grouping alone.
+
 - 2026-03-16 – Render keepalive repo cleanup.
   - Outcome: Removed the GitHub Actions Render keepalive workflow and updated README/AGENTS so the public-instance section now reflects the current externally monitored Render setup instead of the original setup instructions.
   - Learning: Once operational ownership moves outside the repo, deployment docs should shift from bootstrap instructions to concise operational facts to avoid stale automation/config guidance.

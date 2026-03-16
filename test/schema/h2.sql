@@ -33,3 +33,5 @@ create table if not exists flowlite_history (
 );
 
 create index if not exists idx_flowlite_history_instance on flowlite_history(flow_id, flow_instance_id, occurred_at);
+
+create index if not exists idx_flowlite_history_summary on flowlite_history(flow_id, flow_instance_id, type, occurred_at);

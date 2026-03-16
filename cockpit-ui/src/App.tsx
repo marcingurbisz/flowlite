@@ -14,6 +14,12 @@ interface FlowDto {
   errorCount: number;
   activeCount: number;
   completedCount: number;
+  longRunningCount: number;
+  stageBreakdown: Array<{
+    stage: string;
+    totalCount: number;
+    errorCount: number;
+  }>;
 }
 
 interface InstanceDto {
@@ -295,28 +301,36 @@ const FlowLiteCockpit = () => {
     }
   }
 
-  const refreshData = async () => {
+  const refreshData = async (view: ActiveView = activeView) => {
+    const flowPath = `/api/flows?longRunningThresholdMinutes=${encodeURIComponent(longRunningThresholdMinutes.toString())}`;
+    const needsInstances = view !== 'flows' || (!!selectedInstanceFlowId && !!selectedInstanceId);
+    const needsErrors = view === 'errors';
+
     const [flowRows, allRows, errorRows] = await Promise.all([
-      apiGet<FlowDto[]>('/api/flows'),
-      apiGet<InstanceDto[]>('/api/instances'),
-      apiGet<ErrorGroupDto[]>('/api/errors'),
+      apiGet<FlowDto[]>(flowPath),
+      needsInstances ? apiGet<InstanceDto[]>('/api/instances') : Promise.resolve<InstanceDto[] | null>(null),
+      needsErrors ? apiGet<ErrorGroupDto[]>('/api/errors') : Promise.resolve<ErrorGroupDto[] | null>(null),
     ]);
 
     setFlows(flowRows);
-    setErrorsByGroup(errorRows);
-    setInstances(
-      allRows
-        .filter((it) => it.status !== null)
-        .map((it) => ({
-          id: it.flowInstanceId,
-          flowId: it.flowId,
-          stage: it.stage ?? '',
-          status: it.status as InstanceStatus,
-          updatedAt: new Date(it.lastUpdatedAt),
-          createdAt: new Date(it.lastUpdatedAt),
-          errorMessage: it.lastErrorMessage,
-        })),
-    );
+    if (errorRows !== null) {
+      setErrorsByGroup(errorRows);
+    }
+    if (allRows !== null) {
+      setInstances(
+        allRows
+          .filter((it) => it.status !== null)
+          .map((it) => ({
+            id: it.flowInstanceId,
+            flowId: it.flowId,
+            stage: it.stage ?? '',
+            status: it.status as InstanceStatus,
+            updatedAt: new Date(it.lastUpdatedAt),
+            createdAt: new Date(it.lastUpdatedAt),
+            errorMessage: it.lastErrorMessage,
+          })),
+      );
+    }
   };
 
   const openSelectedInstance = (instance: UiInstance) => {
@@ -382,9 +396,11 @@ const FlowLiteCockpit = () => {
     </button>
   );
 
+  const flowRefreshToken = activeView === 'flows' ? longRunningThresholdMinutes : null;
+
   useEffect(() => {
-    void refreshData();
-  }, []);
+    void refreshData(activeView);
+  }, [activeView, flowRefreshToken]);
 
   useEffect(() => {
     return () => {
@@ -799,24 +815,6 @@ const FlowLiteCockpit = () => {
           <div className="space-y-4">
             <h2 data-testid="flows-heading" className="text-xl font-bold text-zinc-50 mb-4">Flow Definitions</h2>
             {flows.map((flow) => {
-              const incompleteInstances = instances.filter(
-                (i) => i.flowId === flow.flowId && i.status !== 'Completed' && i.status !== 'Cancelled',
-              );
-
-              const thresholdMs = longRunningThresholdMinutes * 60 * 1000;
-              const now = Date.now();
-              const longRunningForFlow = instances.filter(
-                (i) => i.flowId === flow.flowId && i.status === 'Running' && now - i.updatedAt.getTime() > thresholdMs,
-              ).length;
-
-              const stageBreakdown: Record<string, { total: number; errors: number }> = {};
-              incompleteInstances.forEach((instance) => {
-                if (!instance.stage) return;
-                if (!stageBreakdown[instance.stage]) stageBreakdown[instance.stage] = { total: 0, errors: 0 };
-                stageBreakdown[instance.stage].total++;
-                if (instance.status === 'Error') stageBreakdown[instance.stage].errors++;
-              });
-
               return (
                 <div key={flow.flowId} data-testid={`flow-card-${flow.flowId}`} className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
                   <div className="flex items-start justify-between mb-4">
@@ -832,7 +830,7 @@ const FlowLiteCockpit = () => {
                       >
                         View Diagram
                       </button>
-                      {longRunningForFlow > 0 && (
+                      {flow.longRunningCount > 0 && (
                         <button
                           data-testid={`flow-long-running-${flow.flowId}`}
                           onClick={() => {
@@ -842,7 +840,7 @@ const FlowLiteCockpit = () => {
                           }}
                           className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded text-xs font-mono transition-colors"
                         >
-                          {longRunningForFlow} long running ⚠
+                          {flow.longRunningCount} long running ⚠
                         </button>
                       )}
                       <button
@@ -858,41 +856,41 @@ const FlowLiteCockpit = () => {
                         }}
                         className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded text-xs font-mono transition-colors"
                       >
-                        {incompleteInstances.length} incomplete →
+                        {flow.notCompletedCount} incomplete →
                       </button>
                     </div>
                   </div>
 
-                  {Object.keys(stageBreakdown).length > 0 && (
+                  {flow.stageBreakdown.length > 0 && (
                     <div className="mb-4">
                       <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wide mb-2">Active Stages</h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                        {Object.entries(stageBreakdown).map(([stage, data]) => (
+                        {flow.stageBreakdown.map((entry) => (
                           <button
-                            key={stage}
-                            data-testid={`flow-stage-${flow.flowId}-${toTestIdFragment(stage)}`}
+                            key={entry.stage}
+                            data-testid={`flow-stage-${flow.flowId}-${toTestIdFragment(entry.stage)}`}
                             onClick={() => {
                               openInstancesView({
                                 search: flow.flowId,
                                 status: 'all',
-                                stage,
+                                stage: entry.stage,
                               });
                             }}
                             className="bg-zinc-800/50 hover:bg-zinc-800 rounded p-3 text-left transition-colors group"
                           >
-                            <div className="text-xs text-zinc-400 mb-1 truncate group-hover:text-zinc-300">{stage}</div>
+                            <div className="text-xs text-zinc-400 mb-1 truncate group-hover:text-zinc-300">{entry.stage}</div>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-zinc-200">{data.total}</span>
-                              {data.errors > 0 && (
+                              <span className="text-sm font-bold text-zinc-200">{entry.totalCount}</span>
+                              {entry.errorCount > 0 && (
                                 <button
-                                  data-testid={`flow-stage-errors-${flow.flowId}-${toTestIdFragment(stage)}`}
+                                  data-testid={`flow-stage-errors-${flow.flowId}-${toTestIdFragment(entry.stage)}`}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openErrorsView({ flow: flow.flowId, stage });
+                                    openErrorsView({ flow: flow.flowId, stage: entry.stage });
                                   }}
                                   className="text-xs px-1.5 py-0.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded font-mono transition-colors"
                                 >
-                                  {data.errors} err
+                                  {entry.errorCount} err
                                 </button>
                               )}
                             </div>

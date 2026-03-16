@@ -58,3 +58,13 @@ IF NOT EXISTS (
 BEGIN
     CREATE INDEX idx_flowlite_history_instance ON dbo.flowlite_history(flow_id, flow_instance_id, occurred_at)
 END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'idx_flowlite_history_summary'
+      AND object_id = OBJECT_ID('dbo.flowlite_history')
+)
+BEGIN
+    CREATE INDEX idx_flowlite_history_summary ON dbo.flowlite_history(flow_id, flow_instance_id, type, occurred_at)
+END;

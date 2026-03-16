@@ -119,14 +119,29 @@ class CockpitServiceTest : BehaviorSpec({
                 onboarding.activeCount shouldBe 0
                 onboarding.errorCount shouldBe 0
                 onboarding.completedCount shouldBe 1
+                onboarding.longRunningCount shouldBe 0
                 onboarding.notCompletedCount shouldBe 0
+                onboarding.stageBreakdown shouldBe emptyList()
                 onboarding.diagram.contains("stateDiagram-v2") shouldBe true
 
                 val order = flows.first { it.flowId == ORDER_CONFIRMATION_FLOW_ID }
                 order.activeCount shouldBe 1
                 order.errorCount shouldBe 1
                 order.completedCount shouldBe 0
+                order.longRunningCount shouldBe 1
                 order.notCompletedCount shouldBe 2
+                order.stageBreakdown shouldContainExactly listOf(
+                    io.flowlite.cockpit.CockpitFlowStageDto(
+                        stage = "InformingCustomer",
+                        totalCount = 1,
+                        errorCount = 1,
+                    ),
+                    io.flowlite.cockpit.CockpitFlowStageDto(
+                        stage = "WaitingForConfirmation",
+                        totalCount = 1,
+                        errorCount = 0,
+                    ),
+                )
                 order.diagram.contains("stateDiagram-v2") shouldBe true
             }
         }

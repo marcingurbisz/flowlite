@@ -8,8 +8,8 @@ Add SQL Server coverage for the Spring Data JDBC / persistence path without maki
 
 - The default test app still boots against in-memory H2 in `test/testApplication.kt`.
 - Test schema DDL is now split by dialect:
-  - `test/schema/h2.sql`
-  - `test/schema/mssql.sql`
+   - `source/schema/h2.sql`
+   - `source/schema/mssql.sql`
 - The bootstrap already has a dialect hook via `TestDatabaseDialect` and `initializeTestSchema(...)` in `test/testDatabaseSchema.kt`.
 
 That means the remaining work is mostly about datasource selection and deciding where MSSQL should run.

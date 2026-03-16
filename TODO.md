@@ -134,8 +134,14 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Move mssql.sql and h2.sql
-... to source/schema
+## [DONE 2026-03-16] Move mssql.sql and h2.sql
+Completed changes:
+- Moved the engine-owned H2 and MSSQL DDL scripts from `test/schema` to `source/schema` so they ship with the main FlowLite resources instead of living under the test tree.
+- Kept the demo-domain tables in `test/schema/*-test-tables.sql`, preserving the split between engine schema and test-app-only tables.
+- Updated the MSSQL planning note to point at the new engine schema resource location.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## [FOR HUMAN] Review changes git changes
 

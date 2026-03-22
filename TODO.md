@@ -1,3 +1,13 @@
+## Coverage
+* fe coverage
+* be coverage
+
+## Introduce concept of periodic tasks
+
+## Periodic review for improvements
+
+## Exploratory tests (also periodic)
+
 ## [DONE 2026-03-16] Clarify TODO/LOG template in shared AGENTS
 Completed changes:
 - Updated the shared IEF guidance in `/workspaces/workplace/AGENTS.md` so `TODO.md` is the primary per-item execution log in `TODO.md` mode.

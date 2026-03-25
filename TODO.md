@@ -6,8 +6,17 @@ Completed changes:
 Validation:
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## Cockpit-only activity instances 
+## [DONE 2026-03-25] Cockpit-only activity instances
 What was rationale behind introducing cockpit-only activity instances instead introducing new statuses in StageStatus? Give me pros and cons and your current recommendation.
+
+> Agent:
+> - Response: The rationale for keeping `CockpitActivityStatus` separate was to avoid turning `StageStatus` into a mixed engine+UI enum. `StageStatus` currently expresses engine/runtime ownership states (`Pending`, `Running`, `Completed`, `Cancelled`, `Error`) that drive persistence transitions and engine behavior. `WaitingForTimer` and `WaitingForEvent` are more like Cockpit interpretations of why a `Pending` instance is inactive, based on stage-definition metadata.
+> - Response: Pros of keeping it Cockpit-only: preserves a smaller engine state model; avoids widening persistence/API semantics for every FlowLite consumer; keeps room for multiple future projections of `Pending` without committing them as durable engine contract; avoids migration churn in domain schemas/history/tests just for operator-facing categorization.
+> - Response: Cons of keeping it Cockpit-only: some duplication of interpretation logic outside the engine; the meaning is derived rather than persisted, so other clients would need the same projection if they want the same distinction; the nullability split (`status` vs `activityStatus`) is slightly less direct than a single richer enum.
+> - Response: Pros of extending `StageStatus`: one canonical status vocabulary; easier for external consumers to read without re-deriving; potentially simpler Cockpit code if the engine persisted those distinctions directly.
+> - Response: Cons of extending `StageStatus`: it would blur “engine control state” with “reason for pending”; `WaitingForTimer` / `WaitingForEvent` are not independent lifecycle states because both are still `Pending` from the engine’s claim/retry/cancel perspective; it would force broader persistence/history/API/test changes and make future engine evolution more rigid.
+> - Response: Current recommendation: keep `StageStatus` as-is and keep `CockpitActivityStatus` as a projection. If we later see multiple non-Cockpit consumers needing the same distinction, we should extract a shared engine-level read model / query DTO rather than widening the core runtime enum prematurely.
+> - Validation: Design-only item; validated against current engine state handling in `persistance.kt` and Cockpit projection logic in `cockpit/service.kt`.
 
 ## Worth to split App it separate files for tabs?
 ... or you suggest some different split. I do not what to create too much files but >1k lines is probably to much. Or it its ok for you as it is now?

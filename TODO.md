@@ -30,18 +30,34 @@ What was rationale behind introducing cockpit-only activity instances instead in
 > - Response: Current recommendation: yes, split it, but do it as a medium refactor rather than a “one file per component” cleanup. I would target roughly 6-8 files total for the cockpit UI, not dozens.
 > - Validation: Design-only item; validated against the current `App.tsx` structure and size.
 
-## Further Cockpit scaling follow-ups
+## [DONE 2026-03-25] Further Cockpit scaling follow-ups
 * I think `Apply filters to view instances` should be displayed (and no request to for instances) till user select some filter. Also "Clear filters" should cause showing this message.
+  > Agent:
+  > - Changes: Implemented the gated `Instances` tab flow so it does not request `/api/instances` until a search/filter is applied, and `Clear Filters` now returns the tab to the guidance state.
+  > - Validation: Covered by updated Playwright instances-tab assertions and `./gradlew test`.
 * Errors and Long Inactive tabs probably should call /api/instances (or dedicated endpoint) with filtering. It takes 1s to get 1k instances and we may have more then 10k on production. I do not think we can make it fast for 10k instances without applying filter to backend request (+ virtual scrolling) or you have other opinion? 
+  > Agent:
+  > - Changes: Extended `/api/instances` and `/api/errors` with server-side filters and switched the `Errors` and `Long Inactive` tabs to fetch only the rows/groups required by the active filters instead of pulling the whole instance dataset.
+  > - Response: I agree with the backend-filtering direction. For 10k+ instances, loading everything client-side first is the wrong shape even before virtual scrolling enters the picture.
+  > - Validation: Added backend filter coverage in `CockpitServiceTest` and revalidated the cockpit Playwright suite via `./gradlew test`.
 * Consider virtual scrolling for the `Instances` tab. 
+  > Agent:
+  > - Response: Considered but intentionally not implemented in this batch. After the gated `Instances` tab and backend-filtered heavy views, virtual scrolling is no longer the first bottleneck. I still recommend it as a later follow-up if filtered result sets themselves become large in production.
 
-## 
+> Whole item agent notes:
+> - Changes: Added a single-instance cockpit endpoint so the details modal can refresh independently of the current tab dataset, which avoids detail-modal regressions after filtered refreshes.
+> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
+
+## [DONE 2026-03-25] Flows tab header counts
 * When you go to "Flows" tab you get on the screen:
 ```
 Workflow Engine Monitoring & Management
 flows: 2 • instances: 0 • errors: 0
 ```
 I guess we need a separate query for that and not base it on response from /instances
+  > Agent:
+  > - Response: Fixed without adding another endpoint. The header now derives `instances` and `errors` from `/api/flows`, which already carries per-flow active/error/completed totals.
+  > - Validation: Included in the same cockpit refresh-path validation via `./gradlew test`.
 
 ## GWT style
 Review all tests and rewrite them to GWT/Setup-Action-Verification style. Now I see cases where setup is done in "then". Best if setup and action is done directly in given and when blocks respectively in straightforward way. In case of problems with how the code from given/when tests are invoked consider InstancePerRoot instead default SingleInstance isolation. As a last resort you may consider moving setup and action to hooks (https://kotest.io/docs/framework/lifecycle-hooks.html) but would really prefer to not use them.
@@ -62,6 +78,9 @@ What about spawning a Thread (virtual) that sleeps for random number fo ms? I th
   * can we gather coverage for frontend code executed by Playwright tests? Try to implement it.
 * BE coverage
   * are we gathering coverage from all tests including Playwright?
+
+## [FOR HUMAN REVIEW] Optimize cockpit single-instance summary lookup if needed
+The new `GET /api/instances/{flowId}/{flowInstanceId}` detail endpoint currently uses `CockpitService.instance(...)`, which reuses `loadInstanceSummaries(flowId)` and therefore rebuilds summaries for the whole flow to serve one details-modal request. That is acceptable for now, but if detail-modal traffic becomes hot we should replace it with a direct repository projection keyed by `(flowId, flowInstanceId)`.
 
 ## Exploratory tests
 I'd like you to do exploratory tests using our test Flowlite instance on Render. Search for bugs and performance issues. Please document what you have tested and do the screenshots documenting the bugs. Are you able to do it right away or you need some additional tooling e.g. playwright installed in container or playwright MCP? Let me know do you need and I will give it to you :).

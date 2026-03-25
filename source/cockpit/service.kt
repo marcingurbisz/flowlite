@@ -138,8 +138,27 @@ class CockpitService(
         }
     }
 
-    fun listInstances(flowId: String? = null, bucket: CockpitInstanceBucket? = null): List<CockpitInstanceDto> {
+    fun listInstances(
+        flowId: String? = null,
+        bucket: CockpitInstanceBucket? = null,
+        status: StageStatus? = null,
+        searchTerm: String? = null,
+        stage: String? = null,
+        errorMessage: String? = null,
+        showIncompleteOnly: Boolean = false,
+        activityFilter: String? = null,
+        longInactiveThresholdSeconds: Long? = null,
+    ): List<CockpitInstanceDto> {
         val summaries = loadInstanceSummaries(flowId)
+
+        val now = Instant.now()
+        val longInactiveThreshold = longInactiveThresholdSeconds
+            ?.coerceAtLeast(1)
+            ?.let(Duration::ofSeconds)
+        val normalizedSearchTerm = searchTerm?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
+        val normalizedStage = stage?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedErrorMessage = errorMessage?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
+        val normalizedActivityFilter = activityFilter?.trim()?.takeIf { it.isNotEmpty() && it != "all" }
 
         val filtered = when (bucket) {
             null -> summaries
@@ -151,6 +170,22 @@ class CockpitService(
                 it.status == StageStatus.Completed || it.status == StageStatus.Cancelled
             }
         }
+            .filter { status == null || it.status == status }
+            .filter { summary ->
+                normalizedSearchTerm == null ||
+                    summary.flowId.lowercase().contains(normalizedSearchTerm) ||
+                    summary.flowInstanceId.toString().lowercase().contains(normalizedSearchTerm)
+            }
+            .filter { summary -> normalizedStage == null || summary.stage == normalizedStage }
+            .filter { summary ->
+                normalizedErrorMessage == null ||
+                    summary.lastErrorMessage?.lowercase()?.contains(normalizedErrorMessage) == true
+            }
+            .filter { summary -> !showIncompleteOnly || (summary.status != StageStatus.Completed && summary.status != StageStatus.Cancelled) }
+            .filter { summary -> matchesActivityFilter(summary.activityStatus, normalizedActivityFilter) }
+            .filter { summary ->
+                longInactiveThreshold == null || Duration.between(summary.lastUpdatedAt, now) > longInactiveThreshold
+            }
 
         return filtered.sortedWith(
             compareBy<CockpitInstanceDto> { it.flowId }
@@ -159,9 +194,22 @@ class CockpitService(
         )
     }
 
-    fun listErrorGroups(flowId: String? = null): List<CockpitErrorGroupDto> {
+    fun listErrorGroups(
+        flowId: String? = null,
+        stageContains: String? = null,
+        errorMessage: String? = null,
+    ): List<CockpitErrorGroupDto> {
+        val normalizedStage = stageContains?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
+        val normalizedErrorMessage = errorMessage?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
         val errors = loadInstanceSummaries(flowId)
             .filter { it.status == StageStatus.Error }
+            .filter { summary ->
+                normalizedStage == null || summary.stage?.lowercase()?.contains(normalizedStage) == true
+            }
+            .filter { summary ->
+                normalizedErrorMessage == null ||
+                    summary.lastErrorMessage?.lowercase()?.contains(normalizedErrorMessage) == true
+            }
         return errors.groupBy { it.flowId to it.stage }
             .map { (k, instances) ->
                 CockpitErrorGroupDto(
@@ -172,6 +220,11 @@ class CockpitService(
                 )
             }
             .sortedWith(compareBy<CockpitErrorGroupDto> { it.flowId }.thenBy { it.stage ?: "" })
+    }
+
+    fun instance(flowId: String, flowInstanceId: UUID): CockpitInstanceDto? {
+        return loadInstanceSummaries(flowId)
+            .firstOrNull { it.flowInstanceId == flowInstanceId }
     }
 
     fun timeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow> {
@@ -260,6 +313,12 @@ class CockpitService(
             }
             else -> null
         }
+    }
+
+    private fun matchesActivityFilter(activityStatus: CockpitActivityStatus?, activityFilter: String?): Boolean {
+        if (activityFilter == null) return true
+        if (activityFilter == "default") return activityStatus.isCountedAsLongInactiveByDefault()
+        return activityStatus?.name == activityFilter
     }
 
     private fun CockpitActivityStatus?.isCountedAsLongInactiveByDefault(): Boolean {

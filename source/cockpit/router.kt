@@ -1,5 +1,6 @@
 package io.flowlite.cockpit
 
+import io.flowlite.StageStatus
 import java.util.UUID
 import org.springframework.http.HttpStatus
 import org.springframework.web.servlet.function.ServerResponse
@@ -24,13 +25,70 @@ fun cockpitRouter(service: CockpitService) =
                 .map { it.replaceFirstChar { ch -> ch.uppercaseChar() } }
                 .map { CockpitInstanceBucket.valueOf(it) }
                 .orElse(null)
+            val status = request.param("status")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .map { it.replaceFirstChar { ch -> ch.uppercaseChar() } }
+                .map { StageStatus.valueOf(it) }
+                .orElse(null)
+            val searchTerm = request.param("q").orElse(null)
+            val stage = request.param("stage")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it != "all" }
+                .orElse(null)
+            val errorMessage = request.param("errorMessage")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .orElse(null)
+            val showIncompleteOnly = request.param("incompleteOnly")
+                .map { it.trim().lowercase() }
+                .map { it == "1" || it == "true" || it == "yes" }
+                .orElse(false)
+            val activityFilter = request.param("activityStatus")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .orElse(null)
+            val longInactiveThresholdSeconds = request.param("longInactiveThresholdSeconds")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .map { it.toLongOrNull() }
+                .orElse(null)
 
-            ServerResponse.ok().body(service.listInstances(flowId = flowId, bucket = bucket))
+            ServerResponse.ok().body(
+                service.listInstances(
+                    flowId = flowId,
+                    bucket = bucket,
+                    status = status,
+                    searchTerm = searchTerm,
+                    stage = stage,
+                    errorMessage = errorMessage,
+                    showIncompleteOnly = showIncompleteOnly,
+                    activityFilter = activityFilter,
+                    longInactiveThresholdSeconds = longInactiveThresholdSeconds,
+                ),
+            )
         }
 
         GET("/api/errors") { request ->
             val flowId = request.param("flowId").orElse(null)
-            ServerResponse.ok().body(service.listErrorGroups(flowId))
+            val stage = request.param("stage")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it != "all" }
+                .orElse(null)
+            val errorMessage = request.param("errorMessage")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .orElse(null)
+            ServerResponse.ok().body(service.listErrorGroups(flowId, stageContains = stage, errorMessage = errorMessage))
+        }
+
+        GET("/api/instances/{flowId}/{flowInstanceId}") { request ->
+            val flowId = request.pathVariable("flowId")
+            val flowInstanceId = UUID.fromString(request.pathVariable("flowInstanceId"))
+            val instance = service.instance(flowId, flowInstanceId)
+                ?: return@GET ServerResponse.notFound().build()
+
+            ServerResponse.ok().body(instance)
         }
 
         GET("/api/instances/{flowId}/{flowInstanceId}/timeline") { request ->

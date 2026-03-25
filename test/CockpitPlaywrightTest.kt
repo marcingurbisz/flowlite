@@ -496,6 +496,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
                     page.getByTestId("tab-instances").click()
                     assertThat(page.getByTestId("instances-search")).isVisible()
+                    assertThat(page.getByTestId("instances-apply-filters")).isVisible()
+                    page.getByTestId("instances-search").fill(fixture.orderPendingId.toString())
 
                     val pendingRow = instanceRow(page, fixture.orderPendingId)
                     assertThat(pendingRow).isVisible()
@@ -514,6 +516,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 withRecordedContext("it-bookmarks-and-dismisses-modals-with-escape") { page ->
                     navigateToCockpit(page, "tab=instances")
 
+                    assertThat(page.getByTestId("instances-apply-filters")).isVisible()
+                    page.getByTestId("instances-search").fill(fixture.orderPendingId.toString())
                     page.getByTestId("copy-instance-list-id-${fixture.orderPendingId}").click()
                     assertThat(page.getByTestId("copy-instance-list-id-${fixture.orderPendingId}")).containsText("Copied")
 
@@ -815,6 +819,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 withRecordedContext("it-filters-instances-and-clears-filters") { page ->
                     navigateToCockpit(page, "tab=instances")
 
+                    assertThat(page.getByTestId("instances-apply-filters")).isVisible()
+
                     page.getByTestId("instances-search").fill(EMPLOYEE_ONBOARDING_FLOW_ID)
                     assertThat(instanceRow(page, fixture.employeePendingId)).isVisible()
                     assertThat(instanceRow(page, fixture.orderPendingId)).hasCount(0)
@@ -846,8 +852,9 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     assertThat(page.getByTestId("instances-stage-filter")).hasValue("")
                     assertThat(page.getByTestId("instances-error-filter")).hasValue("")
                     page.url().shouldContain("tab=instances")
-                    assertThat(instanceRow(page, fixture.orderPendingId)).isVisible()
-                    assertThat(instanceRow(page, fixture.employeeCompletedId)).isVisible()
+                    assertThat(page.getByTestId("instances-apply-filters")).isVisible()
+                    assertThat(instanceRow(page, fixture.orderPendingId)).hasCount(0)
+                    assertThat(instanceRow(page, fixture.employeeCompletedId)).hasCount(0)
 
                     page.getByTestId("instances-search").fill(fixture.employeeCompletedId.toString())
                     instanceRow(page, fixture.employeeCompletedId).click()

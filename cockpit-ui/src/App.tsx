@@ -73,6 +73,17 @@ interface UiInstance {
   errorMessage: string | null;
 }
 
+const toUiInstance = (instance: InstanceDto): UiInstance => ({
+  id: instance.flowInstanceId,
+  flowId: instance.flowId,
+  stage: instance.stage ?? '',
+  status: instance.status as InstanceStatus,
+  activityStatus: instance.activityStatus,
+  updatedAt: new Date(instance.lastUpdatedAt),
+  createdAt: new Date(instance.lastUpdatedAt),
+  errorMessage: instance.lastErrorMessage,
+});
+
 interface MermaidWindow extends Window {
   mermaid?: {
     initialize: (config: Record<string, unknown>) => void;
@@ -337,6 +348,7 @@ const FlowLiteCockpit = () => {
   const [instances, setInstances] = useState<UiInstance[]>([]);
   const [errorsByGroup, setErrorsByGroup] = useState<ErrorGroupDto[]>([]);
   const [selectedFlowForDiagram, setSelectedFlowForDiagram] = useState<FlowDto | null>(null);
+  const [selectedInstance, setSelectedInstance] = useState<UiInstance | null>(null);
   const [instanceHistory, setInstanceHistory] = useState<HistoryEntryDto[]>([]);
 
   const [searchTerm, setSearchTerm] = useState(initialLocationState.searchTerm);
@@ -366,10 +378,6 @@ const FlowLiteCockpit = () => {
   const initializedHistoryRef = useRef(false);
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
 
-  const selectedInstance = useMemo(
-    () => instances.find((instance) => instance.flowId === selectedInstanceFlowId && instance.id === selectedInstanceId) ?? null,
-    [instances, selectedInstanceFlowId, selectedInstanceId],
-  );
   const longRunningThresholdSeconds = useMemo(
     () => parseDurationToSeconds(longRunningThreshold, defaultLongRunningThresholdSeconds),
     [longRunningThreshold],
@@ -392,47 +400,78 @@ const FlowLiteCockpit = () => {
     }
   }
 
+  const hasInstanceFiltersApplied =
+    searchTerm.trim() !== '' ||
+    statusFilter !== 'all' ||
+    stageFilter !== 'all' ||
+    errorMessageFilter.trim() !== '' ||
+    showIncompleteOnly;
+
   const refreshData = async (view: ActiveView = activeView) => {
     const flowPath = `/api/flows?longRunningThresholdSeconds=${encodeURIComponent(longRunningThresholdSeconds.toString())}`;
-    const needsInstances = view !== 'flows' || (!!selectedInstanceFlowId && !!selectedInstanceId);
-    const needsErrors = view === 'errors';
+    const instancesParams = new URLSearchParams();
+    const errorsParams = new URLSearchParams();
+    let instancesPath: string | null = null;
+    let errorsPath: string | null = null;
+
+    if (view === 'errors') {
+      if (errorFlowFilter !== 'all') {
+        instancesParams.set('flowId', errorFlowFilter);
+        errorsParams.set('flowId', errorFlowFilter);
+      }
+      if (errorStageFilter !== 'all' && errorStageFilter.trim() !== '') {
+        instancesParams.set('stage', errorStageFilter.trim());
+        errorsParams.set('stage', errorStageFilter.trim());
+      }
+      if (errorMessageFilterErrors.trim() !== '') {
+        instancesParams.set('errorMessage', errorMessageFilterErrors.trim());
+        errorsParams.set('errorMessage', errorMessageFilterErrors.trim());
+      }
+      instancesParams.set('bucket', 'error');
+      errorsPath = `/api/errors?${errorsParams.toString()}`;
+      instancesPath = `/api/instances?${instancesParams.toString()}`;
+    }
+
+    if (view === 'long-running') {
+      if (longRunningFlowFilter !== 'all') {
+        instancesParams.set('flowId', longRunningFlowFilter);
+      }
+      instancesParams.set('bucket', 'active');
+      instancesParams.set('activityStatus', longRunningActivityFilter);
+      instancesParams.set('longInactiveThresholdSeconds', longRunningThresholdSeconds.toString());
+      instancesPath = `/api/instances?${instancesParams.toString()}`;
+    }
+
+    if (view === 'instances' && hasInstanceFiltersApplied) {
+      if (searchTerm.trim() !== '') instancesParams.set('q', searchTerm.trim());
+      if (statusFilter !== 'all') instancesParams.set('status', statusFilter);
+      if (stageFilter !== 'all' && stageFilter.trim() !== '') instancesParams.set('stage', stageFilter.trim());
+      if (errorMessageFilter.trim() !== '') instancesParams.set('errorMessage', errorMessageFilter.trim());
+      if (showIncompleteOnly) instancesParams.set('incompleteOnly', 'true');
+      instancesPath = `/api/instances?${instancesParams.toString()}`;
+    }
 
     const [flowRows, allRows, errorRows] = await Promise.all([
       apiGet<FlowDto[]>(flowPath),
-      needsInstances ? apiGet<InstanceDto[]>('/api/instances') : Promise.resolve<InstanceDto[] | null>(null),
-      needsErrors ? apiGet<ErrorGroupDto[]>('/api/errors') : Promise.resolve<ErrorGroupDto[] | null>(null),
+      instancesPath ? apiGet<InstanceDto[]>(instancesPath) : Promise.resolve<InstanceDto[] | null>(null),
+      errorsPath ? apiGet<ErrorGroupDto[]>(errorsPath) : Promise.resolve<ErrorGroupDto[] | null>(null),
     ]);
 
     setFlows(flowRows);
-    if (errorRows !== null) {
-      setErrorsByGroup(errorRows);
-    }
-    if (allRows !== null) {
-      setInstances(
-        allRows
-          .filter((it) => it.status !== null)
-          .map((it) => ({
-            id: it.flowInstanceId,
-            flowId: it.flowId,
-            stage: it.stage ?? '',
-            status: it.status as InstanceStatus,
-            activityStatus: it.activityStatus,
-            updatedAt: new Date(it.lastUpdatedAt),
-            createdAt: new Date(it.lastUpdatedAt),
-            errorMessage: it.lastErrorMessage,
-          })),
-      );
-    }
+    setErrorsByGroup(errorRows ?? []);
+    setInstances((allRows ?? []).filter((it) => it.status !== null).map(toUiInstance));
   };
 
   const openSelectedInstance = (instance: UiInstance) => {
     setSelectedInstanceFlowId(instance.flowId);
     setSelectedInstanceId(instance.id);
+    setSelectedInstance(instance);
   };
 
   const closeSelectedInstance = () => {
     setSelectedInstanceFlowId(null);
     setSelectedInstanceId(null);
+    setSelectedInstance(null);
   };
 
   const closeChangeStageModal = () => {
@@ -493,10 +532,19 @@ const FlowLiteCockpit = () => {
   );
 
   const flowRefreshToken = activeView === 'flows' ? longRunningThresholdSeconds : null;
+  const errorsRefreshToken = activeView === 'errors'
+    ? `${errorFlowFilter}|${errorStageFilter}|${errorMessageFilterErrors}`
+    : null;
+  const longRunningRefreshToken = activeView === 'long-running'
+    ? `${longRunningFlowFilter}|${longRunningActivityFilter}|${longRunningThresholdSeconds}`
+    : null;
+  const instancesRefreshToken = activeView === 'instances'
+    ? `${searchTerm}|${statusFilter}|${stageFilter}|${errorMessageFilter}|${showIncompleteOnly}`
+    : null;
 
   useEffect(() => {
     void refreshData(activeView);
-  }, [activeView, flowRefreshToken]);
+  }, [activeView, errorsRefreshToken, flowRefreshToken, instancesRefreshToken, longRunningRefreshToken]);
 
   useEffect(() => {
     return () => {
@@ -592,17 +640,25 @@ const FlowLiteCockpit = () => {
 
   useEffect(() => {
     if (!selectedInstanceFlowId || !selectedInstanceId) {
+      setSelectedInstance(null);
       setInstanceHistory([]);
       return;
     }
 
-    void apiGet<HistoryEntryDto[]>(`/api/instances/${encodeURIComponent(selectedInstanceFlowId)}/${encodeURIComponent(selectedInstanceId)}/timeline`)
-      .then(setInstanceHistory)
+    void Promise.all([
+      apiGet<InstanceDto>(`/api/instances/${encodeURIComponent(selectedInstanceFlowId)}/${encodeURIComponent(selectedInstanceId)}`),
+      apiGet<HistoryEntryDto[]>(`/api/instances/${encodeURIComponent(selectedInstanceFlowId)}/${encodeURIComponent(selectedInstanceId)}/timeline`),
+    ])
+      .then(([instance, history]) => {
+        setSelectedInstance(toUiInstance(instance));
+        setInstanceHistory(history);
+      })
       .catch((e) => {
         console.error(e);
+        setSelectedInstance(null);
         setInstanceHistory([]);
       });
-  }, [selectedInstanceFlowId, selectedInstanceId, selectedInstance]);
+  }, [instances, selectedInstanceFlowId, selectedInstanceId]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -714,63 +770,25 @@ const FlowLiteCockpit = () => {
   const stats = useMemo(
     () => ({
       totalFlows: flows.length,
-      totalInstances: instances.length,
-      errorInstances: instances.filter((i) => i.status === 'Error').length,
+      totalInstances: flows.reduce((total, flow) => total + flow.activeCount + flow.errorCount + flow.completedCount, 0),
+      errorInstances: flows.reduce((total, flow) => total + flow.errorCount, 0),
     }),
-    [flows, instances],
+    [flows],
   );
 
-  const filteredInstances = useMemo(
-    () =>
-      instances.filter((instance) => {
-        const matchesSearch =
-          instance.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          instance.flowId.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesStatus = statusFilter === 'all' || instance.status === statusFilter;
-        const matchesStage = stageFilter === 'all' || instance.stage === stageFilter;
-        const matchesErrorMessage =
-          !errorMessageFilter ||
-          (instance.errorMessage && instance.errorMessage.toLowerCase().includes(errorMessageFilter.toLowerCase()));
-        const matchesIncomplete =
-          !showIncompleteOnly || (instance.status !== 'Completed' && instance.status !== 'Cancelled');
-        return matchesSearch && matchesStatus && matchesStage && matchesErrorMessage && matchesIncomplete;
-      }),
-    [instances, searchTerm, statusFilter, stageFilter, errorMessageFilter, showIncompleteOnly],
-  );
-
-  const filteredErrorGroups = useMemo(
-    () =>
-      errorsByGroup.filter((group) => {
-        const matchesFlow = errorFlowFilter === 'all' || group.flowId === errorFlowFilter;
-        const matchesStage = errorStageFilter === 'all' || (group.stage ?? '').toLowerCase().includes(errorStageFilter.toLowerCase());
-        const matchesErrorText =
-          !errorMessageFilterErrors ||
-          instances.some(
-            (i) =>
-              i.flowId === group.flowId &&
-              i.stage === (group.stage ?? '') &&
-              i.errorMessage?.toLowerCase().includes(errorMessageFilterErrors.toLowerCase()),
-          );
-
-        return matchesFlow && matchesStage && matchesErrorText;
-      }),
-    [errorsByGroup, errorFlowFilter, errorStageFilter, errorMessageFilterErrors, instances],
-  );
+  const filteredInstances = instances;
+  const filteredErrorGroups = errorsByGroup;
 
   const longRunningInstances = useMemo(() => {
-    const thresholdMs = longRunningThresholdSeconds * 1000;
     const now = Date.now();
 
     return instances
-      .filter((i) => matchesLongRunningActivityFilter(i.activityStatus, longRunningActivityFilter))
-      .filter((i) => longRunningFlowFilter === 'all' || i.flowId === longRunningFlowFilter)
       .map((instance) => ({
         ...instance,
         inactiveDuration: now - instance.updatedAt.getTime(),
       }))
-      .filter((instance) => instance.inactiveDuration > thresholdMs)
       .sort((a, b) => b.inactiveDuration - a.inactiveDuration);
-  }, [instances, longRunningActivityFilter, longRunningFlowFilter, longRunningThresholdSeconds]);
+  }, [instances]);
 
   const toggleSelectInstance = (instanceId: string) => {
     const next = new Set(selectedInstances);
@@ -1418,53 +1436,61 @@ const FlowLiteCockpit = () => {
               </div>
             )}
 
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-zinc-800/50">
-                  <tr className="text-left text-zinc-400">
-                    <th className="px-4 py-3 font-medium w-12"></th>
-                    <th className="px-4 py-3 font-medium">Instance ID</th>
-                    <th className="px-4 py-3 font-medium">Flow</th>
-                    <th className="px-4 py-3 font-medium">Stage</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Updated</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800">
-                  {filteredInstances.map((instance) => (
-                    <tr
-                      key={instance.id}
-                      data-testid="instances-row"
-                      data-instance-id={instance.id}
-                      className="hover:bg-zinc-800/30 transition-colors cursor-pointer"
-                      onClick={() => openSelectedInstance(instance)}
-                    >
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        {(instance.status === 'Pending' || instance.status === 'Error') && (
-                          <input
-                            data-testid={`instances-checkbox-${instance.id}`}
-                            type="checkbox"
-                            checked={selectedInstances.has(instance.id)}
-                            onChange={() => toggleSelectInstance(instance.id)}
-                            className="w-4 h-4 rounded border-zinc-600 bg-zinc-700"
-                          />
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-zinc-300">
-                        <div className="flex items-center gap-2">
-                          <span>{instance.id}</span>
-                          {renderCopyButton(instance.id, `instances-${instance.id}`, `copy-instance-list-id-${instance.id}`)}
-                        </div>
-                      </td>
-                      <td data-testid="instance-flow-id" className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
-                      <td data-testid={`instance-stage-${instance.id}`} className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage || '—'}</td>
-                      <td data-testid={`instance-status-${instance.id}`} className="px-4 py-3"><StatusBadge status={instance.status} /></td>
-                      <td className="px-4 py-3 text-xs text-zinc-500">{formatDateTime(instance.updatedAt)}</td>
+            {!hasInstanceFiltersApplied ? (
+              <div data-testid="instances-apply-filters" className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+                <Database size={48} className="mx-auto mb-4 text-zinc-600" />
+                <p className="text-lg font-medium text-zinc-300 mb-2">Apply filters to view instances</p>
+                <p className="text-sm text-zinc-500">The Instances tab now waits for a search or filter before requesting rows.</p>
+              </div>
+            ) : (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-zinc-800/50">
+                    <tr className="text-left text-zinc-400">
+                      <th className="px-4 py-3 font-medium w-12"></th>
+                      <th className="px-4 py-3 font-medium">Instance ID</th>
+                      <th className="px-4 py-3 font-medium">Flow</th>
+                      <th className="px-4 py-3 font-medium">Stage</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Updated</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {filteredInstances.map((instance) => (
+                      <tr
+                        key={instance.id}
+                        data-testid="instances-row"
+                        data-instance-id={instance.id}
+                        className="hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                        onClick={() => openSelectedInstance(instance)}
+                      >
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          {(instance.status === 'Pending' || instance.status === 'Error') && (
+                            <input
+                              data-testid={`instances-checkbox-${instance.id}`}
+                              type="checkbox"
+                              checked={selectedInstances.has(instance.id)}
+                              onChange={() => toggleSelectInstance(instance.id)}
+                              className="w-4 h-4 rounded border-zinc-600 bg-zinc-700"
+                            />
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-zinc-300">
+                          <div className="flex items-center gap-2">
+                            <span>{instance.id}</span>
+                            {renderCopyButton(instance.id, `instances-${instance.id}`, `copy-instance-list-id-${instance.id}`)}
+                          </div>
+                        </td>
+                        <td data-testid="instance-flow-id" className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
+                        <td data-testid={`instance-stage-${instance.id}`} className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage || '—'}</td>
+                        <td data-testid={`instance-status-${instance.id}`} className="px-4 py-3"><StatusBadge status={instance.status} /></td>
+                        <td className="px-4 py-3 text-xs text-zinc-500">{formatDateTime(instance.updatedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

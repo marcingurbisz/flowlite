@@ -11,6 +11,7 @@ import io.flowlite.cockpit.CockpitService
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import org.springframework.beans.factory.getBean
@@ -95,6 +96,31 @@ class CockpitServiceTest : BehaviorSpec({
                     ),
                 )
             }
+
+            then("listInstances and listErrorGroups apply backend filters") {
+                seedRows()
+
+                service.listInstances(
+                    flowId = flowA,
+                    status = StageStatus.Error,
+                    stage = "Review",
+                    errorMessage = "boom-2",
+                    showIncompleteOnly = true,
+                ).map { it.flowInstanceId } shouldContainExactly listOf(aError2)
+
+                service.listErrorGroups(
+                    flowId = flowA,
+                    stageContains = "rev",
+                    errorMessage = "boom-1",
+                ) shouldContainExactly listOf(
+                    CockpitErrorGroupDto(
+                        flowId = flowA,
+                        stage = "Review",
+                        count = 1,
+                        instanceIds = listOf(aError1),
+                    ),
+                )
+            }
         }
     }
 
@@ -167,6 +193,27 @@ class CockpitServiceTest : BehaviorSpec({
                 instances[orderActive]?.activityStatus shouldBe CockpitActivityStatus.Running
                 instances[orderWaitingForEvent]?.activityStatus shouldBe CockpitActivityStatus.WaitingForEvent
                 instances[onboardingWaitingForTimer]?.activityStatus shouldBe CockpitActivityStatus.WaitingForTimer
+            }
+
+            then("it applies backend long inactive activity filters") {
+                val now = Instant.now()
+
+                historyRepo.deleteAll()
+                historyRepo.save(historyRow(now.minus(Duration.ofMinutes(30)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
+                historyRepo.save(historyRow(now.minus(Duration.ofHours(2)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending))
+                historyRepo.save(historyRow(now.minus(Duration.ofMinutes(90)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending))
+
+                service.listInstances(
+                    bucket = CockpitInstanceBucket.Active,
+                    activityFilter = "default",
+                    longInactiveThresholdSeconds = 3600,
+                ).map { it.flowInstanceId } shouldContainExactly listOf(onboardingWaitingForTimer)
+
+                service.listInstances(
+                    bucket = CockpitInstanceBucket.Active,
+                    activityFilter = CockpitActivityStatus.WaitingForEvent.name,
+                    longInactiveThresholdSeconds = 1800,
+                ).map { it.flowInstanceId } shouldContainExactly listOf(orderWaitingForEvent)
             }
         }
     }

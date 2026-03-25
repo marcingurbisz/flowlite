@@ -51,9 +51,9 @@ class CockpitServiceTest : BehaviorSpec({
                 historyRepo.save(historyRow("2026-03-04T08:07:00Z", flowB, bError, HistoryEntryType.Error, stage = "Investigate", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-3"))
             }
 
-            then("listInstances returns expected sorting and bucket projections") {
-                seedRows()
+            seedRows()
 
+            then("listInstances returns expected sorting and bucket projections") {
                 service.listInstances().map { it.flowInstanceId } shouldContainExactly listOf(
                     aError2,
                     aError1,
@@ -70,8 +70,6 @@ class CockpitServiceTest : BehaviorSpec({
             }
 
             then("listErrorGroups groups by flow and stage") {
-                seedRows()
-
                 service.listErrorGroups() shouldContainExactly listOf(
                     CockpitErrorGroupDto(
                         flowId = flowA,
@@ -98,8 +96,6 @@ class CockpitServiceTest : BehaviorSpec({
             }
 
             then("listInstances and listErrorGroups apply backend filters") {
-                seedRows()
-
                 service.listInstances(
                     flowId = flowA,
                     status = StageStatus.Error,

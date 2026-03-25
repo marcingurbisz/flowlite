@@ -78,18 +78,21 @@ class OrderConfirmationTest : BehaviorSpec({
                 )
             }
 
-            then("it completes after digital confirmation event") {
+            `when`("the confirmation event arrives") {
                 engine.sendEvent(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId, Confirmed)
-                awaitStatus(
-                    fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
-                    expected = InformingCustomer to StageStatus.Completed,
-                )
 
-                val timeline = historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
-                require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
-                require(timeline.any { it.type == HistoryEntryType.Started })
-                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == Confirmed.name })
-                require(timeline.any { it.type == HistoryEntryType.StageChanged && it.toStage == InformingCustomer.name })
+                then("it completes") {
+                    awaitStatus(
+                        fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
+                        expected = InformingCustomer to StageStatus.Completed,
+                    )
+
+                    val timeline = historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
+                    require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
+                    require(timeline.any { it.type == HistoryEntryType.Started })
+                    require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == Confirmed.name })
+                    require(timeline.any { it.type == HistoryEntryType.StageChanged && it.toStage == InformingCustomer.name })
+                }
             }
         }
 

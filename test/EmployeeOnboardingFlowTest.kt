@@ -64,25 +64,29 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId, OnboardingAgreementSigned)
             engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId, ManualApproval)
 
-            then("it finishes onboarding") {
+            then("it reaches the timer stage") {
                 awaitStatus(
                     timeout = Duration.ofSeconds(5),
                     fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
                     expected = Delay5Min to StageStatus.Pending,
                 )
+            }
 
+            `when`("the timer elapses") {
                 clock.advanceBy(Duration.ofMinutes(5))
 
-                awaitStatus(
-                    timeout = Duration.ofSeconds(5),
-                    fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
-                    expected = CompleteOnboarding to StageStatus.Completed,
-                )
+                then("it finishes onboarding") {
+                    awaitStatus(
+                        timeout = Duration.ofSeconds(5),
+                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
+                        expected = CompleteOnboarding to StageStatus.Completed,
+                    )
 
-                val timeline = historyRepo.findTimeline(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId)
-                require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
-                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == OnboardingAgreementSigned.name })
-                require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ManualApproval.name })
+                    val timeline = historyRepo.findTimeline(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId)
+                    require(timeline.isNotEmpty()) { "Expected non-empty history timeline" }
+                    require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == OnboardingAgreementSigned.name })
+                    require(timeline.any { it.type == HistoryEntryType.EventAppended && it.event == ManualApproval.name })
+                }
             }
         }
     }
@@ -128,7 +132,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, OnboardingAgreementSigned)
             engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, id)
 
-            then("persister merges engine progress with external business updates") {
+            `when`("the action save is released after the external update") {
                 try {
                     awaitLatch(entered, "entered")
 
@@ -138,31 +142,36 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                     allowProceedToSave.countDown()
                     awaitLatch(saved, "saved")
 
-                    awaitStatus(
-                        timeout = Duration.ofSeconds(5),
-                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = Delay5Min to StageStatus.Pending,
-                    )
+                    then("it reaches the first timer without losing the external business update") {
+                        awaitStatus(
+                            timeout = Duration.ofSeconds(5),
+                            fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                            expected = Delay5Min to StageStatus.Pending,
+                        )
+                    }
 
-                    clock.advanceBy(Duration.ofMinutes(5))
+                    `when`("both timers elapse") {
+                        clock.advanceBy(Duration.ofMinutes(5))
+                        awaitStatus(
+                            timeout = Duration.ofSeconds(5),
+                            fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                            expected = DelayAfterHRUpdate to StageStatus.Pending,
+                        )
 
-                    awaitStatus(
-                        timeout = Duration.ofSeconds(5),
-                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = DelayAfterHRUpdate to StageStatus.Pending,
-                    )
+                        clock.advanceBy(Duration.ofMinutes(5))
 
-                    clock.advanceBy(Duration.ofMinutes(5))
+                        then("it completes and keeps the external update") {
+                            awaitStatus(
+                                timeout = Duration.ofSeconds(5),
+                                fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                                expected = CompleteOnboarding to StageStatus.Completed,
+                            )
 
-                    awaitStatus(
-                        timeout = Duration.ofSeconds(5),
-                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = CompleteOnboarding to StageStatus.Completed,
-                    )
-
-                    val final = repo.findById(id).orElseThrow()
-                    require(final.employeeProfileCreated)
-                    require(final.isRemoteEmployee)
+                            val final = repo.findById(id).orElseThrow()
+                            require(final.employeeProfileCreated)
+                            require(final.isRemoteEmployee)
+                        }
+                    }
                 } finally {
                     EmployeeOnboardingTestHooks.clear(id)
                 }
@@ -205,7 +214,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             engine.sendEvent(EMPLOYEE_ONBOARDING_FLOW_ID, id, OnboardingAgreementSigned)
             engine.startInstance(EMPLOYEE_ONBOARDING_FLOW_ID, id)
 
-            then("persister merges without losing the external update") {
+            `when`("the action returns after the external update") {
                 try {
                     awaitLatch(entered, "entered")
                     awaitLatch(saved, "saved")
@@ -215,31 +224,36 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
 
                     allowReturnAfterSave.countDown()
 
-                    awaitStatus(
-                        timeout = Duration.ofSeconds(5),
-                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = Delay5Min to StageStatus.Pending,
-                    )
+                    then("it reaches the first timer without losing the external update") {
+                        awaitStatus(
+                            timeout = Duration.ofSeconds(5),
+                            fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                            expected = Delay5Min to StageStatus.Pending,
+                        )
+                    }
 
-                    clock.advanceBy(Duration.ofMinutes(5))
+                    `when`("both timers elapse") {
+                        clock.advanceBy(Duration.ofMinutes(5))
+                        awaitStatus(
+                            timeout = Duration.ofSeconds(5),
+                            fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                            expected = DelayAfterHRUpdate to StageStatus.Pending,
+                        )
 
-                    awaitStatus(
-                        timeout = Duration.ofSeconds(5),
-                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = DelayAfterHRUpdate to StageStatus.Pending,
-                    )
+                        clock.advanceBy(Duration.ofMinutes(5))
 
-                    clock.advanceBy(Duration.ofMinutes(5))
+                        then("it completes and preserves the post-save update") {
+                            awaitStatus(
+                                timeout = Duration.ofSeconds(5),
+                                fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
+                                expected = CompleteOnboarding to StageStatus.Completed,
+                            )
 
-                    awaitStatus(
-                        timeout = Duration.ofSeconds(5),
-                        fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                        expected = CompleteOnboarding to StageStatus.Completed,
-                    )
-
-                    val final = repo.findById(id).orElseThrow()
-                    require(final.employeeProfileCreated)
-                    require(final.isManagerOrDirectorRole)
+                            val final = repo.findById(id).orElseThrow()
+                            require(final.employeeProfileCreated)
+                            require(final.isManagerOrDirectorRole)
+                        }
+                    }
                 } finally {
                     EmployeeOnboardingTestHooks.clear(id)
                 }

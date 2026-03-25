@@ -59,8 +59,17 @@ I guess we need a separate query for that and not base it on response from /inst
   > - Response: Fixed without adding another endpoint. The header now derives `instances` and `errors` from `/api/flows`, which already carries per-flow active/error/completed totals.
   > - Validation: Included in the same cockpit refresh-path validation via `./gradlew test`.
 
-## GWT style
+## [DONE 2026-03-25] GWT style
 Review all tests and rewrite them to GWT/Setup-Action-Verification style. Now I see cases where setup is done in "then". Best if setup and action is done directly in given and when blocks respectively in straightforward way. In case of problems with how the code from given/when tests are invoked consider InstancePerRoot instead default SingleInstance isolation. As a last resort you may consider moving setup and action to hooks (https://kotest.io/docs/framework/lifecycle-hooks.html) but would really prefer to not use them.
+
+Completed changes:
+- Reworked the main remaining GWT offenders so setup and action moved out of `then` blocks in `DslValidationTest`, `EngineErrorHandlingTest`, `ShowcaseFlowSeederTest`, `OrderConfirmationTest`, `CockpitServiceTest`, and `EmployeeOnboardingFlowTest`.
+- Refactored `CockpitPlaywrightTest` as well, introducing an explicit recorded-page session helper so Playwright setup/actions can stay in `when` blocks while `then` stays assertion-focused without losing screenshot/video artifacts on failures.
+- Kept the existing spec style and avoided switching the suite to hooks or broader isolation changes because the targeted refactors were sufficient.
+
+Validation:
+- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## ShowcaseFlowSeeder.processPendingEvents is quite complex
 What about spawning a Thread (virtual) that sleeps for random number fo ms? I think this would remove a lot of code.
@@ -81,6 +90,9 @@ What about spawning a Thread (virtual) that sleeps for random number fo ms? I th
 
 ## [FOR HUMAN REVIEW] Optimize cockpit single-instance summary lookup if needed
 The new `GET /api/instances/{flowId}/{flowInstanceId}` detail endpoint currently uses `CockpitService.instance(...)`, which reuses `loadInstanceSummaries(flowId)` and therefore rebuilds summaries for the whole flow to serve one details-modal request. That is acceptable for now, but if detail-modal traffic becomes hot we should replace it with a direct repository projection keyed by `(flowId, flowInstanceId)`.
+
+## [FOR HUMAN REVIEW] Consider a tiny Playwright scenario DSL for Cockpit tests
+The GWT cleanup showed that the Cockpit Playwright spec now needs a small `RecordedPageSession` helper to keep browser setup/actions in `when` blocks while preserving failure screenshots/videos. If we add more browser scenarios, it may be worth introducing a tiny test DSL/helper layer for `open page -> act -> assert -> close` flows so future specs do not repeat the same session lifecycle/synchronization plumbing.
 
 ## Exploratory tests
 I'd like you to do exploratory tests using our test Flowlite instance on Render. Search for bugs and performance issues. Please document what you have tested and do the screenshots documenting the bugs. Are you able to do it right away or you need some additional tooling e.g. playwright installed in container or playwright MCP? Let me know do you need and I will give it to you :).

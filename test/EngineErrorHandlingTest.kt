@@ -42,19 +42,29 @@ class EngineErrorHandlingTest : BehaviorSpec({
             it.registerFlow(flowId, flow, persister)
         }
 
-        `when`("processing the first tick") {
+        fun createErroredInstance(): UUID {
+            attempts.set(0)
             val flowInstanceId = engine.startInstance(flowId, ErrorFlowState(stage = ErrorFlowStage.Failing))
             shouldThrow<IllegalStateException> {
                 tickScheduler.drain()
             }
+            return flowInstanceId
+        }
+
+        `when`("processing the first tick") {
+            val flowInstanceId = createErroredInstance()
 
             then("it moves the stage to ERROR") {
                 engine.getStatus(flowId, flowInstanceId) shouldBe (ErrorFlowStage.Failing to StageStatus.Error)
             }
+        }
 
-            then("retry enqueues and eventually completes when the action succeeds") {
-                engine.retry(flowId, flowInstanceId)
-                tickScheduler.drain()
+        `when`("retrying the errored instance") {
+            val flowInstanceId = createErroredInstance()
+            engine.retry(flowId, flowInstanceId)
+            tickScheduler.drain()
+
+            then("it eventually completes when the action succeeds") {
                 engine.getStatus(flowId, flowInstanceId) shouldBe (ErrorFlowStage.Done to StageStatus.Completed)
             }
         }

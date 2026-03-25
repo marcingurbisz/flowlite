@@ -58,7 +58,7 @@ interface FlowLiteTickRepository : CrudRepository<FlowLiteTick, UUID> {
 class SpringDataJdbcTickScheduler(
     private val tickRepo: FlowLiteTickRepository,
     private val idleDelay: Duration = Duration.ofMillis(1000),
-    workerThreads: Int = 20,
+    workerThreads: Int = 40,
     private val clock: Clock = Clock.systemUTC(),
 ) : TickScheduler, SmartLifecycle {
 

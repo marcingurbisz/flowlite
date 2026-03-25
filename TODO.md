@@ -1,4 +1,10 @@
-## Increase number of worker threads to 40
+## [DONE 2026-03-25] Increase number of worker threads to 40
+Completed changes:
+- Raised the default `SpringDataJdbcTickScheduler` worker-thread limit from `20` to `40`.
+- Kept the existing constructor override so callers can still tune the scheduler explicitly when needed.
+
+Validation:
+- `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Cockpit-only activity instances 
 What was rationale behind introducing cockpit-only activity instances instead introducing new statuses in StageStatus? Give me pros and cons and your current recommendation.

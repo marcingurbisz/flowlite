@@ -30,6 +30,7 @@ import org.springframework.context.ApplicationContextInitializer
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.Environment
+import org.springframework.core.env.getProperty
 import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories
 import org.springframework.data.relational.core.mapping.NamingStrategy
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty
@@ -121,10 +122,10 @@ object Beans {
             val environment = bean<Environment>()
             ShowcaseFlowSeeder(
                 engine = bean<Engine>(),
-                enabled = environment.getProperty("flowlite.showcase.enabled", Boolean::class.java, false),
-                maxActionDelayMs = environment.getProperty("flowlite.showcase.max-action-delay-ms", Long::class.java, 60_000L),
-                actionFailureRate = environment.getProperty("flowlite.showcase.action-failure-rate", Double::class.java, 0.1),
-                maxEventDelayMs = environment.getProperty("flowlite.showcase.max-event-delay-ms", Long::class.java, 60_000L),
+                enabled = environment.getProperty<Boolean>("flowlite.showcase.enabled", false),
+                maxActionDelayMs = environment.getProperty<Long>("flowlite.showcase.max-action-delay-ms", 60_000L),
+                actionFailureRate = environment.getProperty<Double>("flowlite.showcase.action-failure-rate", 0.1),
+                maxEventDelayMs = environment.getProperty<Long>("flowlite.showcase.max-event-delay-ms", 60_000L),
             )
         }
 

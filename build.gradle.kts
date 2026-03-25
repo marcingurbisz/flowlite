@@ -19,6 +19,8 @@ val cockpitUiDir = layout.projectDirectory.dir("cockpit-ui")
 val generatedTestAppResourcesDir = layout.buildDirectory.dir("generated/test-app-resources")
 val generatedCockpitUiDistDir = generatedTestAppResourcesDir.map { it.dir("cockpit-ui/dist") }
 val testAppRuntimeLibsDir = layout.buildDirectory.dir("test-app-libs")
+val frontendCoverageReportDir = layout.buildDirectory.dir("reports/playwright/frontend-coverage")
+val frontendCoverageRawDir = frontendCoverageReportDir.map { it.dir("raw") }
 val usePrebuiltCockpitUi = providers.gradleProperty("usePrebuiltCockpitUi")
     .map { it.equals("true", ignoreCase = true) }
     .orElse(false)
@@ -93,6 +95,7 @@ val buildCockpitUi by tasks.registering(Exec::class) {
     dependsOn(installCockpitUiDeps)
     workingDir = cockpitUiDir.asFile
     commandLine(npmCommand, "run", "build")
+    environment("VITE_COVERAGE", "true")
     onlyIf { !usePrebuiltCockpitUi.get() }
 
     inputs.files(
@@ -103,6 +106,21 @@ val buildCockpitUi by tasks.registering(Exec::class) {
         fileTree(cockpitUiDir.dir("src")) { include("**/*") },
     )
     outputs.dir(cockpitUiDir.dir("dist"))
+}
+
+val generateCockpitFrontendCoverage by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Merge raw cockpit frontend coverage snapshots into HTML and LCOV reports."
+    workingDir = cockpitUiDir.asFile
+    commandLine(
+        "node",
+        "tools/generateFrontendCoverageReport.mjs",
+        frontendCoverageRawDir.get().asFile.absolutePath,
+        frontendCoverageReportDir.get().asFile.absolutePath,
+    )
+    onlyIf { frontendCoverageRawDir.get().asFile.exists() }
+
+    outputs.dir(frontendCoverageReportDir)
 }
 
 val syncCockpitUiDist by tasks.registering(Copy::class) {
@@ -130,6 +148,10 @@ tasks.named("processTestResources") {
 tasks.test {
     dependsOn(syncCockpitUiDist)
     useJUnitPlatform()
+
+    doFirst {
+        delete(frontendCoverageReportDir)
+    }
     
     testLogging {
         events("failed")
@@ -137,6 +159,7 @@ tasks.test {
     }
 
     finalizedBy(tasks.jacocoTestReport)
+    finalizedBy(generateCockpitFrontendCoverage)
 }
 
 jacoco {

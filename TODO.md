@@ -100,11 +100,21 @@ What about spawning a Thread (virtual) that sleeps for random number fo ms? I th
 > Whole item agent notes:
 > - Validation: Documentation/design-only item after the previously green `./gradlew test` run; no runtime code changed in this batch.
 
-## Coverage topic
+## [DONE 2026-03-25] Coverage topic
 * FE coverage
   * can we gather coverage for frontend code executed by Playwright tests? Try to implement it.
+  > Agent:
+  > - Response: Yes. The Cockpit UI test build is now Istanbul-instrumented when Gradle runs Playwright-backed tests, and `CockpitPlaywrightTest` persists `globalThis.__coverage__` snapshots from browser sessions into raw JSON artifacts that are merged into HTML, LCOV, and JSON reports after the test task.
+  > - Changes: Added Vite Istanbul instrumentation, a frontend coverage merge/report script, Gradle wiring to enable instrumentation and publish the merged report, and Playwright-side snapshot export from recorded browser sessions.
+  > - Validation: `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest --rerun-tasks` → BUILD SUCCESSFUL, frontend coverage merged from 13 snapshot files.
 * BE coverage
   * are we gathering coverage from all tests including Playwright?
+  > Agent:
+  > - Response: Yes for backend/JVM code. JaCoCo is attached to the Gradle `test` task, and the Playwright scenarios run as ordinary JVM tests in that same task while driving the in-process Spring test application, so backend code executed through those scenarios is included in the JaCoCo report. The only missing part before this batch was separate frontend/browser JavaScript coverage.
+
+> Whole item agent notes:
+> - Changes: Added frontend Playwright coverage output under `build/reports/playwright/frontend-coverage/` while keeping the existing JaCoCo backend report unchanged.
+> - Validation: `./gradlew test --rerun-tasks` → BUILD SUCCESSFUL.
 
 ## [FOR HUMAN REVIEW] Optimize cockpit single-instance summary lookup if needed
 The new `GET /api/instances/{flowId}/{flowInstanceId}` detail endpoint currently uses `CockpitService.instance(...)`, which reuses `loadInstanceSummaries(flowId)` and therefore rebuilds summaries for the whole flow to serve one details-modal request. That is acceptable for now, but if detail-modal traffic becomes hot we should replace it with a direct repository projection keyed by `(flowId, flowInstanceId)`.

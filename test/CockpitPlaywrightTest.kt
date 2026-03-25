@@ -28,10 +28,13 @@ import org.springframework.context.ConfigurableApplicationContext
 
 class CockpitPlaywrightTest : BehaviorSpec({
     val artifactsRoot = Path.of("build", "reports", "playwright")
+    val frontendCoverageDir = artifactsRoot.resolve("frontend-coverage")
+    val frontendCoverageRawDir = frontendCoverageDir.resolve("raw")
     val screenshotDir = artifactsRoot.resolve("screenshots")
     val videoDir = artifactsRoot.resolve("videos")
     val artifactTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
     val cockpitBaseUrl = "http://127.0.0.1:8080/index.html"
+    val frontendCoverageStorageKey = "__flowlite_frontend_coverage_snapshots__"
 
     fun testUuid(number: Int): UUID =
         UUID.fromString("00000000-0000-0000-0000-${number.toString().padStart(12, '0')}")
@@ -70,6 +73,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
     lateinit var employeeRepo: EmployeeOnboardingRepository
 
     beforeSpec {
+        Files.createDirectories(frontendCoverageRawDir)
         Files.createDirectories(screenshotDir)
         Files.createDirectories(videoDir)
 
@@ -111,6 +115,27 @@ class CockpitPlaywrightTest : BehaviorSpec({
         val page = browserContext.newPage()
         val pageVideo = page.video()
 
+                page.addInitScript(
+                        """
+                        (() => {
+                            const storageKey = '$frontendCoverageStorageKey';
+                            const persistCoverageSnapshot = () => {
+                                try {
+                                    const coverage = globalThis.__coverage__;
+                                    if (!coverage) return;
+                                    const snapshots = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
+                                    snapshots.push(JSON.stringify(coverage));
+                                    sessionStorage.setItem(storageKey, JSON.stringify(snapshots));
+                                } catch {
+                                    // Best-effort test-only coverage capture.
+                                }
+                            };
+
+                            addEventListener('beforeunload', persistCoverageSnapshot);
+                        })();
+                        """.trimIndent(),
+                )
+
         return RecordedPageSession(page) { failure ->
             try {
                 if (failure != null) {
@@ -122,6 +147,28 @@ class CockpitPlaywrightTest : BehaviorSpec({
                                 .setFullPage(true),
                         )
                     }
+                }
+
+                val frontendCoverageSnapshots = runCatching {
+                    @Suppress("UNCHECKED_CAST")
+                    page.evaluate(
+                        """
+                        storageKey => {
+                          const snapshots = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
+                          const currentCoverage = globalThis.__coverage__ ? JSON.stringify(globalThis.__coverage__) : null;
+                          return currentCoverage ? [...snapshots, currentCoverage] : snapshots;
+                        }
+                        """.trimIndent(),
+                        frontendCoverageStorageKey,
+                    ) as? List<String>
+                }.getOrNull().orEmpty()
+
+                frontendCoverageSnapshots.forEachIndexed { index, snapshot ->
+                    if (snapshot.isBlank() || snapshot == "null") return@forEachIndexed
+                    Files.writeString(
+                        frontendCoverageRawDir.resolve("$artifactPrefix-${index + 1}.json"),
+                        snapshot,
+                    )
                 }
             } finally {
                 browserContext.close()
@@ -760,6 +807,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("action-confirmation-confirm").click()
             page.getByTestId("instance-details-close").click()
 
+            assertThat(page.getByTestId("error-instance-${fixture.employeeErrorCancelId}")).isVisible()
             page.getByTestId("error-instance-${fixture.employeeErrorCancelId}").click()
             page.getByTestId("instance-cancel").click()
             page.getByTestId("action-confirmation-confirm").click()

@@ -18,8 +18,17 @@ What was rationale behind introducing cockpit-only activity instances instead in
 > - Response: Current recommendation: keep `StageStatus` as-is and keep `CockpitActivityStatus` as a projection. If we later see multiple non-Cockpit consumers needing the same distinction, we should extract a shared engine-level read model / query DTO rather than widening the core runtime enum prematurely.
 > - Validation: Design-only item; validated against current engine state handling in `persistance.kt` and Cockpit projection logic in `cockpit/service.kt`.
 
-## Worth to split App it separate files for tabs?
+## [DONE 2026-03-25] Worth to split App it separate files for tabs?
 ... or you suggest some different split. I do not what to create too much files but >1k lines is probably to much. Or it its ok for you as it is now?
+
+> Agent:
+> - Response: At the current size (`cockpit-ui/src/App.tsx` is ~1679 lines) I do think a split is worth it. The main issue is not only line count, but that one file currently mixes DTO/types, URL/query-string state handling, fetch/update actions, selection/filter logic, modal flows, Mermaid rendering, and all four tab render trees.
+> - Response: I would not split aggressively into dozens of tiny files. My recommendation is a small structural split around real responsibilities.
+> - Response: Recommended minimum split: keep one top-level container component that owns shared state and routing, then extract one file per major tab (`FlowsTab`, `ErrorsTab`, `LongInactiveTab`, `InstancesTab`), plus one shared file for reusable UI pieces such as badges/modals/formatters, and one file for cockpit DTO/types + URL-state helpers.
+> - Response: Pros of that split: each tab becomes much easier to read/test/change in isolation; tab-specific regressions are less likely to create merge conflicts across the whole file; the current repeated table/filter/action patterns become easier to see and simplify.
+> - Response: Cons: some props plumbing will increase unless we also extract a small state/actions hook; if done carelessly, it can create too many near-empty wrapper files and make navigation worse instead of better.
+> - Response: Current recommendation: yes, split it, but do it as a medium refactor rather than a “one file per component” cleanup. I would target roughly 6-8 files total for the cockpit UI, not dozens.
+> - Validation: Design-only item; validated against the current `App.tsx` structure and size.
 
 ## Further Cockpit scaling follow-ups
 * I think `Apply filters to view instances` should be displayed (and no request to for instances) till user select some filter. Also "Clear filters" should cause showing this message.

@@ -1,7 +1,3 @@
-## [FOR HUMAN]
-* missing FE perf improvements
-* freetests on render instance 
-
 ## Increase number of worker threads to 40
 
 ## Cockpit-only activity instances 

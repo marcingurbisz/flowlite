@@ -122,12 +122,25 @@ The new `GET /api/instances/{flowId}/{flowInstanceId}` detail endpoint currently
 ## [FOR HUMAN REVIEW] Consider a tiny Playwright scenario DSL for Cockpit tests
 The GWT cleanup showed that the Cockpit Playwright spec now needs a small `RecordedPageSession` helper to keep browser setup/actions in `when` blocks while preserving failure screenshots/videos. If we add more browser scenarios, it may be worth introducing a tiny test DSL/helper layer for `open page -> act -> assert -> close` flows so future specs do not repeat the same session lifecycle/synchronization plumbing.
 
-## Exploratory tests
+## [DONE 2026-03-25] Exploratory tests
 I'd like you to do exploratory tests using our test Flowlite instance on Render. Search for bugs and performance issues. Please document what you have tested and do the screenshots documenting the bugs. Are you able to do it right away or you need some additional tooling e.g. playwright installed in container or playwright MCP? Let me know do you need and I will give it to you :).
 Note: the version currently deployed on Render is the one before this loop.
 
+> Agent:
+> - Response: I was able to do it right away with the tooling already present in the container. The integrated browser tool was not enough for DOM inspection, but the repo's existing Playwright Java stack worked for remote browser automation and screenshot capture.
+> - Changes: Added the exploratory note `memory/RenderExploratory-2026-03-25.md` and stored screenshots under `memory/render-exploratory-2026-03-25/`.
+> - Findings: Confirmed two visible regressions on the deployed pre-loop version: the landing header shows `flows: 0 • instances: 0 • errors: 0` on first load, and the `Instances` tab still skips the later filter-gate UX and renders the table shell immediately.
+> - Findings: Collected endpoint timing samples as a performance baseline: `/api/instances` `1.296125s` for `630331` bytes, `/api/errors` `3.933635s` for `18582` bytes, `/api/flows` `1.427504s` for `7933` bytes.
+> - Validation: Reached the deployed Render instance, captured screenshots and page text via a temporary Playwright probe, then removed the probe from the repo after collecting the artifacts.
+
 ## [EVERY LOOP] Review your own changes
 Please review your own changes from this loop, looking of potential improvements/simplifications both in the code and sounding concepts. Report any finding as a new todo item with [FOR HUMAN REVIEW] marker.
+
+> Agent:
+> - Response: Reviewed the recent cockpit/coverage changes. I did not find a correctness issue that needs immediate code rollback, but I did find one worthwhile follow-up and recorded it below.
+
+## [FOR HUMAN REVIEW] Consider gating frontend coverage instrumentation behind a dedicated Gradle property or task
+The current frontend coverage implementation enables `VITE_COVERAGE=true` in `buildCockpitUi`, so every `./gradlew test` rebuilds an instrumented Cockpit bundle even when the run is focused on backend-only tests. That keeps the setup simple and correct, but it is broader and slower than necessary. A likely next refinement is to enable instrumentation only for Playwright-oriented runs or a dedicated coverage task, while leaving the default backend test loop on the normal production-like frontend bundle.
 
 ## [FOR HUMAN] Introduce concept of periodic tasks
 Executed every loop or every x number of loops?

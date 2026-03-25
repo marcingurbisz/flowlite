@@ -15,7 +15,9 @@ import io.flowlite.cockpit.cockpitRouter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -219,17 +221,27 @@ internal class ShowcaseFlowSeeder(
         val flowInstanceId: UUID,
         val waitingStage: String,
         val event: Event,
-        var sendAfterMillis: Long? = null,
-        var matchedWaitingStage: Boolean = false,
     )
 
+    private val stagePollIntervalMs = 250L
+
     private val sequence = AtomicLong(0)
-    private val pendingEvents = ConcurrentHashMap<String, PendingShowcaseEvent>()
-    private val executor =
+    private val pendingEventTasks = ConcurrentHashMap<String, Future<*>>()
+    private val seedExecutor =
         if (enabled) {
             Executors.newSingleThreadScheduledExecutor { runnable ->
                 Thread(runnable, "flowlite-showcase-seeder").apply { isDaemon = true }
             }
+        } else {
+            null
+        }
+    private val eventExecutor: ExecutorService? =
+        if (enabled) {
+            Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual()
+                    .name("flowlite-showcase-event-", 0)
+                    .factory(),
+            )
         } else {
             null
         }
@@ -243,18 +255,12 @@ internal class ShowcaseFlowSeeder(
 
         if (enabled) {
             seedOnce()
-            executor?.scheduleAtFixedRate(::seedOnceSafely, 5, 5, TimeUnit.SECONDS)
-            executor?.scheduleWithFixedDelay(::processPendingEventsSafely, 0, 1, TimeUnit.SECONDS)
+            seedExecutor?.scheduleAtFixedRate(::seedOnceSafely, 5, 5, TimeUnit.SECONDS)
         }
     }
 
     private fun seedOnceSafely() {
         runCatching { seedOnce() }
-    }
-
-    private fun processPendingEventsSafely() {
-        runCatching { processPendingEvents() }
-            .onFailure { error -> showcaseLog.error(error) { "Showcase pending-event sweep failed" } }
     }
 
     private fun seedOnce() {
@@ -325,70 +331,82 @@ internal class ShowcaseFlowSeeder(
         waitingStage: String,
         event: Event,
     ) {
-        pendingEvents[pendingEventKey(flowId, flowInstanceId, waitingStage, event)] = PendingShowcaseEvent(
+        val key = pendingEventKey(flowId, flowInstanceId, waitingStage, event)
+        val pending = PendingShowcaseEvent(
             flowId = flowId,
             flowInstanceId = flowInstanceId,
             waitingStage = waitingStage,
             event = event,
         )
-    }
-
-    private fun processPendingEvents() {
-        val nowMillis = System.currentTimeMillis()
-        pendingEvents.entries.toList().forEach { (key, pending) ->
-            val status = runCatching { engine.getStatus(pending.flowId, pending.flowInstanceId) }
-                .getOrElse {
-                    pendingEvents.remove(key)
-                    return@forEach
-                }
-            val currentStage = stageKey(status.first)
-            val currentStatus = status.second
-
-            if (currentStatus == StageStatus.Completed || currentStatus == StageStatus.Cancelled) {
-                pendingEvents.remove(key)
-                return@forEach
-            }
-
-            if (currentStage != pending.waitingStage || currentStatus != StageStatus.Pending) {
-                if (pending.matchedWaitingStage && currentStage != pending.waitingStage) {
-                    pendingEvents.remove(key)
-                    return@forEach
-                }
-                pending.sendAfterMillis = null
-                return@forEach
-            }
-
-            pending.matchedWaitingStage = true
-            val sendAfterMillis = pending.sendAfterMillis
-            if (sendAfterMillis == null) {
-                val delayMs = nextEventDelayMs()
-                if (delayMs == 0L) {
-                    engine.sendEvent(pending.flowId, pending.flowInstanceId, pending.event)
-                    pendingEvents.remove(key)
-                    return@forEach
-                }
-                pending.sendAfterMillis = nowMillis + delayMs
-                showcaseLog.info {
-                    "Showcase event ${pending.event} for ${pending.flowId}/${pending.flowInstanceId} will be sent in ${delayMs}ms while waiting on ${pending.waitingStage}"
-                }
-                return@forEach
-            }
-
-            if (sendAfterMillis > nowMillis) {
-                return@forEach
-            }
-
-            runCatching {
-                engine.sendEvent(pending.flowId, pending.flowInstanceId, pending.event)
-            }.onSuccess {
-                pendingEvents.remove(key)
-            }.onFailure { error ->
-                showcaseLog.error(error) {
-                    "Failed to send showcase event ${pending.event} for ${pending.flowId}/${pending.flowInstanceId}"
+        val executor = eventExecutor ?: return
+        pendingEventTasks.computeIfAbsent(key) {
+            executor.submit {
+                try {
+                    awaitWaitingStageAndSend(pending)
+                } finally {
+                    pendingEventTasks.remove(key)
                 }
             }
         }
     }
+
+    private fun awaitWaitingStageAndSend(pending: PendingShowcaseEvent) {
+        var matchedWaitingStage = false
+
+        while (!Thread.currentThread().isInterrupted) {
+            val status = runCatching { engine.getStatus(pending.flowId, pending.flowInstanceId) }
+                .getOrElse { return }
+            val currentStage = stageKey(status.first)
+            val currentStatus = status.second
+
+            if (currentStatus == StageStatus.Completed || currentStatus == StageStatus.Cancelled) {
+                return
+            }
+
+            if (currentStage == pending.waitingStage && currentStatus == StageStatus.Pending) {
+                matchedWaitingStage = true
+                val delayMs = nextEventDelayMs()
+                if (delayMs > 0L) {
+                    showcaseLog.info {
+                        "Showcase event ${pending.event} for ${pending.flowId}/${pending.flowInstanceId} will be sent in ${delayMs}ms while waiting on ${pending.waitingStage}"
+                    }
+                    if (!sleepSafely(delayMs)) return
+                }
+
+                val refreshedStatus = runCatching { engine.getStatus(pending.flowId, pending.flowInstanceId) }
+                    .getOrElse { return }
+                val refreshedStage = stageKey(refreshedStatus.first)
+                val refreshedStageStatus = refreshedStatus.second
+                if (refreshedStage != pending.waitingStage || refreshedStageStatus != StageStatus.Pending) {
+                    return
+                }
+
+                runCatching {
+                    engine.sendEvent(pending.flowId, pending.flowInstanceId, pending.event)
+                }.onFailure { error ->
+                    showcaseLog.error(error) {
+                        "Failed to send showcase event ${pending.event} for ${pending.flowId}/${pending.flowInstanceId}"
+                    }
+                }
+                return
+            }
+
+            if (matchedWaitingStage && currentStage != pending.waitingStage) {
+                return
+            }
+
+            if (!sleepSafely(stagePollIntervalMs)) return
+        }
+    }
+
+    private fun sleepSafely(delayMs: Long): Boolean =
+        try {
+            Thread.sleep(delayMs)
+            true
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
 
     private fun nextEventDelayMs(): Long {
         if (maxEventDelayMs <= 0L) return 0L
@@ -406,13 +424,15 @@ internal class ShowcaseFlowSeeder(
     ): String = "$flowId/$flowInstanceId/$waitingStage/${event::class.java.name}:${event}"
 
     override fun close() {
-        pendingEvents.clear()
+        pendingEventTasks.values.forEach { it.cancel(true) }
+        pendingEventTasks.clear()
         ShowcaseActionBehavior.configure(
             enabled = false,
             maxDelayMs = 0L,
             failureRate = 0.0,
         )
-        executor?.shutdownNow()
+        seedExecutor?.shutdownNow()
+        eventExecutor?.shutdownNow()
     }
 }
 

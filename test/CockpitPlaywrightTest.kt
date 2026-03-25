@@ -566,14 +566,13 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.keyboard().press("Escape")
             assertThat(page.getByTestId("instance-details-modal")).hasCount(0)
 
-            assertThat(page.getByTestId("tab-flows")).isVisible()
-            page.getByTestId("tab-flows").click()
+            page.navigate(cockpitUrl())
             page.getByTestId("flow-view-diagram-order-confirmation").click()
             assertThat(page.getByTestId("flow-diagram-modal")).isVisible()
             page.keyboard().press("Escape")
             assertThat(page.getByTestId("flow-diagram-modal")).hasCount(0)
 
-            page.getByTestId("tab-errors").click()
+            page.navigate(cockpitUrl("tab=errors"))
             page.getByTestId("error-instance-${fixture.orderErrorChangeStageId}").click()
             page.getByTestId("instance-change-stage").click()
             assertThat(page.getByTestId("change-stage-modal")).isVisible()

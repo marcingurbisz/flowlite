@@ -71,8 +71,14 @@ Validation:
 - `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
 - `./gradlew test` → BUILD SUCCESSFUL.
 
-## ShowcaseFlowSeeder.processPendingEvents is quite complex
+## [DONE 2026-03-25] ShowcaseFlowSeeder.processPendingEvents is quite complex
 What about spawning a Thread (virtual) that sleeps for random number fo ms? I think this would remove a lot of code.
+
+> Agent:
+> - Response: Yes, for showcase-only code that is a better trade-off than the shared pending-event sweep. I still kept a small polling loop per queued event, because we cannot sleep the random delay until the instance has actually reached the matching wait stage, but each queued showcase event now owns that logic directly instead of being revisited by a global map sweep.
+> - Changes: Replaced the global `pendingEvents` sweep in `ShowcaseFlowSeeder` with one virtual-thread task per queued showcase event. Each task waits until the instance reaches the configured pending wait stage, sleeps for the randomized showcase delay, re-checks the stage, sends the event if still valid, and exits. Shutdown now cancels the active tasks directly.
+> - Validation: `./gradlew test --tests io.flowlite.test.ShowcaseFlowSeederTest` → BUILD SUCCESSFUL.
+> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Minor questions and remarks
 * CockpitInstanceDto has:

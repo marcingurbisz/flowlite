@@ -6,6 +6,17 @@ It’s designed for workflows owned by a single component/microservice/modulith 
 
 Note: FlowLite is actively evolving. Breaking changes may be introduced and backwards compatibility is not considered for now.
 
+## Table of Contents
+
+- [Why FlowLite?](#why-flowlite)
+- [Example flow](#example-flow)
+- [Key concepts and assumptions](#key-concepts-and-assumptions)
+- [More examples](#more-examples)
+- [Architecture](#architecture)
+- [Development Guide](#development-guide)
+- [License](#license)
+- [Special notes for agent](#special-notes-for-agent)
+
 ## Why FlowLite?
 
 FlowLite at a glance:
@@ -368,6 +379,8 @@ See [Contracts](#contracts) for the persistence/scheduler interfaces.
     - If status `Running` → another worker currently owns the instance; stop (tick delivered while the instance is already being processed).
     - If status `Pending`: atomically claim the instance by transitioning `Pending -> Running` (optimistic CAS in persistence).
     - While `Running`, the engine will keep advancing through automatic transitions and actions.
+        - If the current stage is a timer stage and the wake-up is still in the future: schedule a delayed Tick for that stage, release the claim by setting status back to `Pending`, and stop.
+        - If the current stage is a timer stage and the wake-up is due: continue from that stage immediately and advance to the next stage (or mark `Completed` if the timer stage is terminal).
         - If the current stage waits for events and no matching event exists: release the claim by setting status back to `Pending`, enqueue a Tick, and stop.
             - Why enqueue: an event may arrive while the instance is `Running` and its Tick can be delivered and ignored; enqueueing after releasing to `Pending` ensures the event store is re-checked.
         - If the current stage consumes an event: advance to the next stage and continue (staying `Running`).
@@ -562,5 +575,5 @@ FlowLite is available under the MIT License.
 
 See `LICENSE` for the full license text.
 
-### Special notes for agent
+## Special notes for agent
 - After changing the source code, always run `./gradlew test` before returning to user.

@@ -80,13 +80,25 @@ What about spawning a Thread (virtual) that sleeps for random number fo ms? I th
 > - Validation: `./gradlew test --tests io.flowlite.test.ShowcaseFlowSeederTest` → BUILD SUCCESSFUL.
 > - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
-## Minor questions and remarks
+## [DONE 2026-03-25] Minor questions and remarks
 * CockpitInstanceDto has:
  val status: StageStatus?,
  val activityStatus: CockpitActivityStatus?,
  In what case they are null?
+  > Agent:
+  > - Response: In the current Cockpit projection, `status` and `stage` are reconstructed from the latest history rows per instance, not read from the domain tables directly. They are nullable mainly as defensive tolerance for sparse or irregular history, not because healthy current runtime instances are expected to omit them.
+  > - Response: `status` is `null` when the latest summary rows for an instance contain no status-bearing history row (`Started`, `StatusChanged`, `Retried`, `ManualStageChanged`, `Cancelled`, `Error`). That would typically mean partial/legacy/manual history data rather than a normal engine-produced active instance.
+  > - Response: `activityStatus` is `null` whenever `status` is `null`, and also for non-active lifecycle states (`Completed`, `Cancelled`, `Error`). It is only populated for active states: `Running`, `Pending`, `WaitingForTimer`, and `WaitingForEvent`.
+  > - Response: So for normal current Cockpit usage, `activityStatus == null` mainly means “this row is not currently active”, while `status == null` means “history did not provide enough information to classify the lifecycle state reliably”.
 * Update "Tick processing loop" in README.md with handling timer
+  > Agent:
+  > - Changes: Updated the README runtime model section so the tick-processing loop now explains how timer stages schedule delayed wake-up ticks, release back to `Pending`, and continue once the timer becomes due.
 * Add TOC to README.md, check if all header levels are correct 
+  > Agent:
+  > - Changes: Added a top-level README table of contents and fixed the obvious header-level mismatch by promoting `Special notes for agent` to a top-level section instead of nesting it under `License`.
+
+> Whole item agent notes:
+> - Validation: Documentation/design-only item after the previously green `./gradlew test` run; no runtime code changed in this batch.
 
 ## Coverage topic
 * FE coverage

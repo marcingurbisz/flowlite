@@ -125,6 +125,8 @@ object Beans {
             ShowcaseFlowSeeder(
                 engine = bean<Engine>(),
                 enabled = environment.getProperty<Boolean>("flowlite.showcase.enabled", false),
+                initialSeedCount = environment.getProperty<Int>("flowlite.showcase.initial-seed-count", 1),
+                repeatSeedingEnabled = environment.getProperty<Boolean>("flowlite.showcase.repeat-seeding-enabled", true),
                 maxActionDelayMs = environment.getProperty<Long>("flowlite.showcase.max-action-delay-ms", 60_000L),
                 actionFailureRate = environment.getProperty<Double>("flowlite.showcase.action-failure-rate", 0.1),
                 maxEventDelayMs = environment.getProperty<Long>("flowlite.showcase.max-event-delay-ms", 60_000L),
@@ -152,9 +154,13 @@ object Beans {
 private fun startApplication(
     webType: String,
     showcaseEnabled: Boolean = webType == "servlet",
+    extraArgs: Array<out String> = emptyArray(),
 ) = runApplication<TestApplication>(
-    "--spring.main.web-application-type=$webType",
-    "--flowlite.showcase.enabled=$showcaseEnabled",
+    *listOf(
+        "--spring.main.web-application-type=$webType",
+        "--flowlite.showcase.enabled=$showcaseEnabled",
+        *extraArgs,
+    ).toTypedArray(),
 ) {
     addInitializers(
         ApplicationContextInitializer<GenericApplicationContext> { gac ->
@@ -209,6 +215,8 @@ private val showcaseLog = KotlinLogging.logger {}
 internal class ShowcaseFlowSeeder(
     private val engine: Engine,
     enabled: Boolean,
+    initialSeedCount: Int = 1,
+    repeatSeedingEnabled: Boolean = true,
     maxActionDelayMs: Long,
     actionFailureRate: Double,
     private val maxEventDelayMs: Long,
@@ -228,7 +236,7 @@ internal class ShowcaseFlowSeeder(
     private val sequence = AtomicLong(0)
     private val pendingEventTasks = ConcurrentHashMap<String, Future<*>>()
     private val seedExecutor =
-        if (enabled) {
+        if (enabled && repeatSeedingEnabled) {
             Executors.newSingleThreadScheduledExecutor { runnable ->
                 Thread(runnable, "flowlite-showcase-seeder").apply { isDaemon = true }
             }
@@ -254,8 +262,14 @@ internal class ShowcaseFlowSeeder(
         )
 
         if (enabled) {
-            seedOnce()
+            seedBatch(initialSeedCount.coerceAtLeast(0))
             seedExecutor?.scheduleAtFixedRate(::seedOnceSafely, 5, 5, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun seedBatch(batchSize: Int) {
+        repeat(batchSize) {
+            seedOnce()
         }
     }
 
@@ -438,7 +452,10 @@ internal class ShowcaseFlowSeeder(
 
 fun startTestApplication() = startApplication("none")
 
-fun startTestWebApplication(showcaseEnabled: Boolean = true) = startApplication("servlet", showcaseEnabled = showcaseEnabled)
+fun startTestWebApplication(
+    showcaseEnabled: Boolean = true,
+    extraArgs: Array<out String> = emptyArray(),
+) = startApplication("servlet", showcaseEnabled = showcaseEnabled, extraArgs = extraArgs)
 
 class SnakeCaseNamingStrategy : NamingStrategy {
     override fun getColumnName(property: RelationalPersistentProperty): String = property.name.toSnakeCase()

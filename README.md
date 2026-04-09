@@ -498,6 +498,7 @@ External updates exist (GUI / notifications / other services):
 - `./gradlew test` - Run all tests
 - `./gradlew test jacocoTestReport` - Run tests and generate backend JaCoCo coverage report (HTML + XML)
 - `./gradlew runTestApp` - Run the test Spring Boot app with Cockpit UI served by Tomcat (http://localhost:8080)
+- `./gradlew runPerfTestApp` - Run the test app with an immediate large showcase dataset for local cockpit/performance testing
 - `./gradlew testAppBundle` - Build the public test app jar plus runtime libs for container deployment (`build/libs/*-test-app.jar` + `build/test-app-libs/`)
 - `cd cockpit-ui && npm install && npm run dev` - Run the full React+TypeScript Cockpit prototype UI (from `flowlite-cockpit.jsx`)
 - `./gradlew clean` - Clean build artifacts
@@ -517,11 +518,15 @@ Showcase-only behavior is intentionally explicit:
 
 Relevant properties:
 - `flowlite.showcase.enabled` - turns showcase seeding and showcase action behavior on/off.
+- `flowlite.showcase.initial-seed-count` - number of showcase seed cycles created immediately on startup; each cycle creates one order confirmation and one employee onboarding instance.
+- `flowlite.showcase.repeat-seeding-enabled` - continues the background 5-second showcase trickle after startup when `true` (default `true`).
 - `flowlite.showcase.max-action-delay-ms` - maximum random delay applied to a showcase action (default `60000`).
 - `flowlite.showcase.action-failure-rate` - probability of a simulated showcase action failure from `0.0` to `1.0` (default `0.1`).
 - `flowlite.showcase.max-event-delay-ms` - maximum random delay applied after a showcase instance reaches an event-waiting stage before the matching event is sent (default `60000`).
 
 This keeps demo traffic visually interesting in Cockpit without changing normal deterministic test flows.
+
+For local perf investigations, `./gradlew runPerfTestApp` starts the servlet app with `600` startup seed cycles, which produces `1200` showcase instances immediately and disables the random delays/failures plus the 5-second repeat seeding loop.
 
 ### Public test instance deployment (free/cheap)
 

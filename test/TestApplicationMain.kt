@@ -1,5 +1,5 @@
 package io.flowlite.test
 
-fun main() {
-    startTestWebApplication()
+fun main(args: Array<String>) {
+    startTestWebApplication(extraArgs = args)
 }

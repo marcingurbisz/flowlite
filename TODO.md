@@ -6,8 +6,15 @@ In the last loop you had many todos (some bigger) and at the end of the loop you
 > - Response: I implemented this in AGENTS rather than trying to rely on ad-hoc prompting. The base IEF now says the active TODO file is the authoritative loop ledger and that the final summary must come from a fresh TODO rescan. The repo-level FlowLite extension now adds a preferred loop-label format `YYYY-MM-DD.N` for future loops.
 > - Response: I intentionally did not retroactively rename old TODO items in this batch. The value is in the rule going forward, not in churn across history.
 
-## [IN PROGRESS 2026-04-09] Perf tests app
+## [DONE 2026-04-09] Perf tests app
 Worth to add a flag that instead of seeding it will create a >1k instances so we can test perf issues immediately without the need to wait for instance number to accumulate since start? The benefits of this would be that you could do exploratory tests on local instance with big number of data without waiting on deployment and accumulation of instances on Render instance.
+
+> Agent:
+> - Response: Yes, this is worth having. The lowest-friction shape is to keep the existing showcase app but make its startup batch configurable, then expose a dedicated `runPerfTestApp` task with sensible perf-oriented defaults.
+> - Changes: Added two showcase properties: `flowlite.showcase.initial-seed-count` for the immediate startup batch and `flowlite.showcase.repeat-seeding-enabled` to turn the 5-second trickle on/off. Added `./gradlew runPerfTestApp`, which starts the servlet app with `600` startup seed cycles, producing `1200` showcase instances immediately while disabling random delays, failures, and repeat seeding.
+> - Changes: Updated `TestApplicationMain` so Spring args can be passed through directly, documented the new task/properties in `README.md`, and added test coverage for the larger startup batch in `ShowcaseFlowSeederTest`.
+> - Validation: `./gradlew test --tests io.flowlite.test.ShowcaseFlowSeederTest` → BUILD SUCCESSFUL.
+> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
 ## [DONE 2026-04-09] Extension point in IFE/AGENTS.md
 I'd like to add something that I call now "extension point" (not sure if this is the best name) to workspace/AGENTS.md (IFE).

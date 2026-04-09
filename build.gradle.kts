@@ -229,6 +229,21 @@ tasks.register<JavaExec>("runTestApp") {
     mainClass.set("io.flowlite.test.TestApplicationMainKt")
 }
 
+tasks.register<JavaExec>("runPerfTestApp") {
+    group = "application"
+    description = "Run the FlowLite test application with a large pre-seeded showcase dataset for local performance testing."
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.flowlite.test.TestApplicationMainKt")
+    args(
+        "--flowlite.showcase.initial-seed-count=600",
+        "--flowlite.showcase.repeat-seeding-enabled=false",
+        "--flowlite.showcase.max-action-delay-ms=0",
+        "--flowlite.showcase.action-failure-rate=0",
+        "--flowlite.showcase.max-event-delay-ms=0",
+    )
+}
+
 tasks.register<Jar>("testAppJar") {
     group = "application"
     description = "Build the application jar for the FlowLite test app."

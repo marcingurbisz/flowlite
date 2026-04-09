@@ -28,7 +28,7 @@ In flowlite I'd like to add following extensions:
 > - Changes: The base IEF now explicitly allows repo-level loop extensions. FlowLite now declares three concrete extensions: TODO-based final summary, recurring self-review, and recurring exploratory testing unless that item is explicitly marked `[ON HOLD]` in `TODO.md`.
 > - Response: I kept the current `Exploratory tests` entry on hold because the TODO still says `[ON HOLD]`; the new extension tells the agent to honor that hold until you reopen it.
 
-## Worth to split App it separate files for tabs?
+## [DONE 2026-04-09] Worth to split App it separate files for tabs?
 ... or you suggest some different split. I do not what to create too much files but >1k lines is probably to much. Or it its ok for you as it is now?
 
 > Agent:
@@ -41,6 +41,13 @@ In flowlite I'd like to add following extensions:
 > - Validation: Design-only item; validated against the current `App.tsx` structure and size.
 
 >> MG: Go for it
+
+> Agent:
+> - Changes: Split the Cockpit UI into a medium-granularity structure instead of many tiny files. `App.tsx` now owns state, effects, fetches, and modals, while tab render trees and shared UI/helpers moved into dedicated modules under `cockpit-ui/src/cockpit/`.
+> - Changes: Added extracted files for cockpit types, URL/location state handling, generic formatting/history helpers, shared badges, Mermaid rendering, and one file per major tab view (`FlowsView`, `ErrorsView`, `LongRunningView`, `InstancesView`).
+> - Response: This keeps the main container readable without over-fragmenting the UI. The split ended up close to the previously recommended 6-8 file range, with shared responsibilities grouped by concern instead of one-file-per-small-component.
+> - Validation: `cd cockpit-ui && npm run build` → success.
+> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Further Cockpit scaling follow-ups
 * All FE calls end up with calling findLatestRowsPerType which I guess takes most of the processing time (few sec) when we have 1k or more instances. Can we do some optimizations of this query or add some indexes? Is this a right approach?

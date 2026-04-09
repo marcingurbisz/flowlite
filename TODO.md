@@ -98,7 +98,7 @@ see produced image maybe this be enough for visual inspection and comparing will
 * Websocket for live refresh
 * New/duplicate copkpit but in Kotlin
 
-## [REOPEN] Coverage topic
+## [DONE 2026-04-09] Coverage topic
 * FE coverage
   * can we gather coverage for frontend code executed by Playwright tests? Try to implement it.
   > Agent:
@@ -107,6 +107,14 @@ see produced image maybe this be enough for visual inspection and comparing will
   > - Validation: `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest --rerun-tasks` → BUILD SUCCESSFUL, frontend coverage merged from 13 snapshot files.
 
 >> MG: I do not see anything under build/reports/playwright/frontend-coverage/. Also github build did not publish the results for FE code to Sonar.
+
+> Agent:
+> - Response: The local report path is correct in the FlowLite repo: `flowlite/build/reports/playwright/frontend-coverage/`. I verified that the merged HTML, `coverage-final.json`, `coverage-summary.json`, and `lcov.info` are present there after the Playwright-backed test run.
+> - Response: The CI/Sonar gap was real. GitHub Actions was only uploading JaCoCo artifacts, and the Sonar configuration only pointed at backend sources plus JaCoCo XML. That meant frontend coverage could be generated locally but still never show up in uploaded CI artifacts or in SonarCloud.
+> - Response: Sonar analysis in this workflow still runs only on pushes to `main`, not on every PR build. This patch fixes missing frontend wiring for those Sonar runs; it does not change that existing main-only trigger policy.
+> - Changes: Updated Gradle Sonar properties to include `cockpit-ui/src`, `cockpit-ui/tests`, and `build/reports/playwright/frontend-coverage/lcov.info`. Updated `.github/workflows/ci.yml` to upload the merged frontend HTML report directory and the LCOV file as workflow artifacts.
+> - Validation: `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest --rerun-tasks` → BUILD SUCCESSFUL, merged 13 frontend coverage snapshots into `build/reports/playwright/frontend-coverage`.
+> - Validation: Verified `build/reports/playwright/frontend-coverage/lcov.info` now contains relative source paths such as `SF:src/App.tsx`, which Sonar can map under `cockpit-ui/src`.
 
 ## [ON HOLD / MOVED TO AGENTS 2026-04-09] Exploratory tests
 I'd like you to do exploratory tests using our test Flowlite instance on Render. Search for bugs and performance issues. Please document what you have tested and do the screenshots documenting the bugs. Are you able to do it right away or you need some additional tooling e.g. playwright installed in container or playwright MCP? Let me know do you need and I will give it to you :).

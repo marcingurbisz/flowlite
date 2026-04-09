@@ -55,6 +55,18 @@ jobs:
           name: jacoco-xml
           path: build/reports/jacoco/test/jacocoTestReport.xml
 
+      - name: Upload frontend coverage HTML (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage-html
+          path: build/reports/playwright/frontend-coverage
+
+      - name: Upload frontend coverage LCOV (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage-lcov
+          path: build/reports/playwright/frontend-coverage/lcov.info
+
       - name: Upload Pages artifact (JaCoCo HTML)
         if: ${{ github.ref == 'refs/heads/main' }}
         uses: actions/upload-pages-artifact@v3

@@ -180,11 +180,12 @@ sonar {
         property("sonar.projectKey", "marcingurbisz_flowlite")
         property("sonar.organization", "marcingurbisz")
         property("sonar.host.url", "https://sonarcloud.io")
-        property("sonar.sources", "source")
-        property("sonar.tests", "test")
+        property("sonar.sources", "source,cockpit-ui/src")
+        property("sonar.tests", "test,cockpit-ui/tests")
         property("sonar.java.binaries", "build/classes/kotlin/main")
         property("sonar.junit.reportPaths", "build/test-results/test")
         property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacocoTestReport.xml")
+        property("sonar.javascript.lcov.reportPaths", "build/reports/playwright/frontend-coverage/lcov.info")
     }
 }
 

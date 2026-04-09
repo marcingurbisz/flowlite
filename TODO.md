@@ -49,12 +49,24 @@ In flowlite I'd like to add following extensions:
 > - Validation: `cd cockpit-ui && npm run build` → success.
 > - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
-## Further Cockpit scaling follow-ups
+## [DONE 2026-04-09] Further Cockpit scaling follow-ups
 * All FE calls end up with calling findLatestRowsPerType which I guess takes most of the processing time (few sec) when we have 1k or more instances. Can we do some optimizations of this query or add some indexes? Is this a right approach?
 What about creating a dedicated table that would keep latest state as regards the stage, status, timestamp for given instance and thanks to that have very fast queries. What do you think?
 Also in this table we could have status for cockpit (CockpitStatus) which will include "Pending event", "Pending timer" and "Pending scheduler" (is pending scheduler a good name?)
+  > Agent:
+  > - Response: The current `findLatestRowsPerType(...)` path is a real bottleneck shape, because all three summary endpoints rebuild instance state from `flowlite_history` and then still do more grouping/filtering in JVM code. The existing history indexes help, but they do not remove the expensive part.
+  > - Response: I do not think this is the right long-term approach for Cockpit-heavy usage. A dedicated summary/read-model table is the cleaner direction: keep `flow_id`, `flow_instance_id`, latest `stage`, latest `status`, latest `last_error_message`, and `updated_at`, and query that for `/flows`, `/instances`, and `/errors`.
+  > - Response: I would keep `activityStatus` as a derived read-time projection, not a persisted engine status. `WaitingForTimer` and `WaitingForEvent` make sense; `Pending scheduler` does not fit well. Plain `Pending` today means actionable/runnable, not scheduler-waiting. If you want a more explicit label later, something closer to `Pending engine` or `Runnable` would be more accurate.
+  > - Changes: Added the design note `docs/cockpit-scaling-notes.md` with the current bottleneck, recommendation, and terminology guidance.
 * In what cases instances are in "Pending scheduler"/Pending (Pending)?
+  > Agent:
+  > - Response: In the current code, plain `Pending` happens when stage status is `Pending` and the stage definition has neither a timer nor event wait handler. In practice that means the instance is actionable and should be picked up by engine processing, not that it is waiting on a scheduler-specific condition.
 * Only timeline should query history table and should filter rows in db and not as we have it now read everything to memory and filter there.
+  > Agent:
+  > - Response: I agree. Timeline is the right place to keep direct history access. Summary endpoints should move to a dedicated summary projection so they can filter in SQL instead of rebuilding summaries from history on every request.
+
+> Whole item agent notes:
+> - Validation: Design/code-reading item; no runtime behavior changed in this batch.
 
 ## Frontend improvements
 * When I select stage on instance list and want to copy it instance details open. Can we prevent it and open only when click without selecting text for copy? Or there some other UX pattern for that?

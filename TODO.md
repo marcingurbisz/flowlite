@@ -68,9 +68,19 @@ Also in this table we could have status for cockpit (CockpitStatus) which will i
 > Whole item agent notes:
 > - Validation: Design/code-reading item; no runtime behavior changed in this batch.
 
-## Frontend improvements
+## [DONE 2026-04-09] Frontend improvements
 * When I select stage on instance list and want to copy it instance details open. Can we prevent it and open only when click without selecting text for copy? Or there some other UX pattern for that?
+  > Agent:
+  > - Changes: Added a text-selection guard before opening instance details. If the user currently has non-empty selected text in the window, row clicks no longer open the modal.
+  > - Response: This keeps the current row-click interaction, but removes the most annoying accidental-open path while copying text.
 * When I switch between tabs old list (from other tab) is presented first and then it is replaced by new data from backend and there is no loading indicator and queries can run for few seconds now.
+  > Agent:
+  > - Changes: Added per-view loading state in the cockpit container and loading placeholders in all four tab views. When a tab refresh starts, the tab now shows an explicit loading card instead of briefly rendering stale rows from the previous dataset.
+  > - Response: I intentionally kept the loading treatment simple and explicit instead of adding skeleton noise. The important part here is to stop showing misleading stale data while the backend query is still running.
+
+> Whole item agent notes:
+> - Validation: `cd cockpit-ui && npm run build` → success.
+> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
 ## [ON HOLD] Topics on hold for now
 * Concept for "Auto-retry" and "User retriable"

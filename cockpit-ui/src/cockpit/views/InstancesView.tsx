@@ -5,6 +5,7 @@ import type { StatusFilter, UiInstance } from '../types';
 import { formatDateTime } from '../utils';
 
 export const InstancesView = ({
+  isLoading,
   searchTerm,
   statusFilter,
   stageFilter,
@@ -28,6 +29,7 @@ export const InstancesView = ({
   openSelectedInstance,
   renderCopyButton,
 }: {
+  isLoading: boolean;
   searchTerm: string;
   statusFilter: StatusFilter;
   stageFilter: string;
@@ -111,6 +113,13 @@ export const InstancesView = ({
       <button data-testid="instances-clear-filters" onClick={clearInstanceFilters} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Clear Filters</button>
     </div>
 
+    {isLoading ? (
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+        <p className="text-lg font-medium text-zinc-300 mb-2">Loading instances…</p>
+        <p className="text-sm text-zinc-500">Waiting for the filtered instance dataset from the backend.</p>
+      </div>
+    ) : (
+      <>
     {selectedInstances.size > 0 && (
       <div data-testid="instances-selection-bar" className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
         <span className="text-sm text-emerald-400">{selectedInstances.size} instance(s) selected</span>
@@ -176,6 +185,8 @@ export const InstancesView = ({
           </tbody>
         </table>
       </div>
+    )}
+      </>
     )}
   </div>
 );

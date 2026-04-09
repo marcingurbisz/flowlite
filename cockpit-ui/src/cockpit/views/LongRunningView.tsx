@@ -8,6 +8,7 @@ type LongRunningInstance = UiInstance & { inactiveDuration: number };
 
 export const LongRunningView = ({
   flows,
+  isLoading,
   longRunningFlowFilter,
   longRunningActivityFilter,
   longRunningThreshold,
@@ -24,6 +25,7 @@ export const LongRunningView = ({
   renderCopyButton,
 }: {
   flows: FlowDto[];
+  isLoading: boolean;
   longRunningFlowFilter: string;
   longRunningActivityFilter: LongRunningActivityFilter;
   longRunningThreshold: string;
@@ -82,6 +84,13 @@ export const LongRunningView = ({
       </div>
     </div>
 
+    {isLoading ? (
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+        <p className="text-lg font-medium text-zinc-300 mb-2">Loading long inactive instances…</p>
+        <p className="text-sm text-zinc-500">Waiting for the filtered inactive-instance dataset from the backend.</p>
+      </div>
+    ) : (
+      <>
     {selectedLongRunningIds.length > 0 && (
       <div data-testid="long-running-selection-bar" className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
         <span className="text-sm text-emerald-400">{selectedLongRunningIds.length} long inactive instance(s) selected</span>
@@ -162,6 +171,8 @@ export const LongRunningView = ({
           </tbody>
         </table>
       </div>
+    )}
+      </>
     )}
   </div>
 );

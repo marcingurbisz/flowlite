@@ -5,6 +5,7 @@ import { toTestIdFragment } from '../utils';
 
 export const ErrorsView = ({
   flows,
+  isLoading,
   filteredErrorGroups,
   instances,
   selectedInstances,
@@ -26,6 +27,7 @@ export const ErrorsView = ({
   renderCopyButton,
 }: {
   flows: FlowDto[];
+  isLoading: boolean;
   filteredErrorGroups: ErrorGroupDto[];
   instances: UiInstance[];
   selectedInstances: Set<string>;
@@ -84,6 +86,13 @@ export const ErrorsView = ({
       </button>
     </div>
 
+    {isLoading ? (
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+        <p className="text-lg font-medium text-zinc-300 mb-2">Loading errors…</p>
+        <p className="text-sm text-zinc-500">Waiting for the filtered error dataset from the backend.</p>
+      </div>
+    ) : (
+      <>
     {selectedInstances.size > 0 && (
       <div data-testid="errors-selection-bar" className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg mb-4">
         <span className="text-sm text-emerald-400">{selectedInstances.size} error(s) selected</span>
@@ -189,6 +198,8 @@ export const ErrorsView = ({
           </div>
         );
       })
+    )}
+      </>
     )}
   </div>
 );

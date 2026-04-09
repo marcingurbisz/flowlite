@@ -55,6 +55,7 @@ const FlowLiteCockpit = () => {
   const [expandedHistoryErrors, setExpandedHistoryErrors] = useState<Set<number>>(new Set());
   const [mermaidLoaded, setMermaidLoaded] = useState(false);
   const [longRunningThreshold, setLongRunningThreshold] = useState(initialLocationState.longRunningThreshold);
+  const [loadingView, setLoadingView] = useState<ActiveView | null>(null);
   const [showChangeStageModal, setShowChangeStageModal] = useState(false);
   const [changeStageTargetInstances, setChangeStageTargetInstances] = useState<string[]>([]);
   const [newStage, setNewStage] = useState('');
@@ -96,6 +97,15 @@ const FlowLiteCockpit = () => {
     showIncompleteOnly;
 
   const refreshData = async (view: ActiveView = activeView) => {
+    setLoadingView(view);
+
+    if (view === 'errors') {
+      setErrorsByGroup([]);
+      setInstances([]);
+    } else if (view === 'long-running' || view === 'instances') {
+      setInstances([]);
+    }
+
     const flowPath = `/api/flows?longRunningThresholdSeconds=${encodeURIComponent(longRunningThresholdSeconds.toString())}`;
     const instancesParams = new URLSearchParams();
     const errorsParams = new URLSearchParams();
@@ -139,18 +149,24 @@ const FlowLiteCockpit = () => {
       instancesPath = `/api/instances?${instancesParams.toString()}`;
     }
 
-    const [flowRows, allRows, errorRows] = await Promise.all([
-      apiGet<FlowDto[]>(flowPath),
-      instancesPath ? apiGet<InstanceDto[]>(instancesPath) : Promise.resolve<InstanceDto[] | null>(null),
-      errorsPath ? apiGet<ErrorGroupDto[]>(errorsPath) : Promise.resolve<ErrorGroupDto[] | null>(null),
-    ]);
+    try {
+      const [flowRows, allRows, errorRows] = await Promise.all([
+        apiGet<FlowDto[]>(flowPath),
+        instancesPath ? apiGet<InstanceDto[]>(instancesPath) : Promise.resolve<InstanceDto[] | null>(null),
+        errorsPath ? apiGet<ErrorGroupDto[]>(errorsPath) : Promise.resolve<ErrorGroupDto[] | null>(null),
+      ]);
 
-    setFlows(flowRows);
-    setErrorsByGroup(errorRows ?? []);
-    setInstances((allRows ?? []).filter((item) => item.status !== null).map(toUiInstance));
+      setFlows(flowRows);
+      setErrorsByGroup(errorRows ?? []);
+      setInstances((allRows ?? []).filter((item) => item.status !== null).map(toUiInstance));
+    } finally {
+      setLoadingView((current) => (current === view ? null : current));
+    }
   };
 
   const openSelectedInstance = (instance: UiInstance) => {
+    const selection = window.getSelection()?.toString().trim();
+    if (selection) return;
     setSelectedInstanceFlowId(instance.flowId);
     setSelectedInstanceId(instance.id);
     setSelectedInstance(instance);
@@ -639,6 +655,7 @@ const FlowLiteCockpit = () => {
         {activeView === 'flows' && (
           <FlowsView
             flows={flows}
+            isLoading={loadingView === 'flows'}
             onViewDiagram={setSelectedFlowForDiagram}
             onOpenLongRunning={(flowId) => {
               setActiveView('long-running');
@@ -653,6 +670,7 @@ const FlowLiteCockpit = () => {
         {activeView === 'errors' && (
           <ErrorsView
             flows={flows}
+            isLoading={loadingView === 'errors'}
             filteredErrorGroups={filteredErrorGroups}
             instances={instances}
             selectedInstances={selectedInstances}
@@ -678,6 +696,7 @@ const FlowLiteCockpit = () => {
         {activeView === 'long-running' && (
           <LongRunningView
             flows={flows}
+            isLoading={loadingView === 'long-running'}
             longRunningFlowFilter={longRunningFlowFilter}
             longRunningActivityFilter={longRunningActivityFilter}
             longRunningThreshold={longRunningThreshold}
@@ -697,6 +716,7 @@ const FlowLiteCockpit = () => {
 
         {activeView === 'instances' && (
           <InstancesView
+            isLoading={loadingView === 'instances'}
             searchTerm={searchTerm}
             statusFilter={statusFilter}
             stageFilter={stageFilter}

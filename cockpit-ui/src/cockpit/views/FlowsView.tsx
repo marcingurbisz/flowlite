@@ -3,12 +3,14 @@ import { toTestIdFragment } from '../utils';
 
 export const FlowsView = ({
   flows,
+  isLoading,
   onViewDiagram,
   onOpenLongRunning,
   onOpenInstances,
   onOpenErrors,
 }: {
   flows: FlowDto[];
+  isLoading: boolean;
   onViewDiagram: (flow: FlowDto) => void;
   onOpenLongRunning: (flowId: string) => void;
   onOpenInstances: (args: { search?: string; status?: StatusFilter; stage?: string; errorMessage?: string; incompleteOnly?: boolean }) => void;
@@ -16,6 +18,13 @@ export const FlowsView = ({
 }) => (
   <div className="space-y-4">
     <h2 data-testid="flows-heading" className="text-xl font-bold text-zinc-50 mb-4">Flow Definitions</h2>
+    {isLoading ? (
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+        <p className="text-lg font-medium text-zinc-300 mb-2">Loading flows…</p>
+        <p className="text-sm text-zinc-500">Refreshing cockpit summary data from the backend.</p>
+      </div>
+    ) : (
+      <>
     {flows.map((flow) => (
       <div key={flow.flowId} data-testid={`flow-card-${flow.flowId}`} className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
         <div className="flex items-start justify-between mb-4">
@@ -84,5 +93,7 @@ export const FlowsView = ({
         )}
       </div>
     ))}
+      </>
+    )}
   </div>
 );

@@ -1,24 +1,27 @@
-## [DONE 2026-03-25] Increase number of worker threads to 40
-Completed changes:
-- Raised the default `SpringDataJdbcTickScheduler` worker-thread limit from `20` to `40`.
-- Kept the existing constructor override so callers can still tune the scheduler explicitly when needed.
-
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-25] Cockpit-only activity instances
-What was rationale behind introducing cockpit-only activity instances instead introducing new statuses in StageStatus? Give me pros and cons and your current recommendation.
+## [DONE 2026-04-09] Problem with forgetting items from the beginning at the end of the loop
+In the last loop you had many todos (some bigger) and at the end of the loop you haven't remember the one from begging - you have reported only last ones in the chat (probably because of compaction/summarization of your context). This is not a big deal now but if at the end of the loop I would like you to do some task for all done items then it could be a problem. I wonder how we can improve that? Maybe some additional instruction for you in workspace/AGENTS.md for you to look at the TODO file and report all the things done in this loop based on this file? Maybe introduce IFE loop number next to done e.g. [Done 2026-03-25.1] so if there are more then one loop during the day you will not mix todo items? Any other ideas?
 
 > Agent:
-> - Response: The rationale for keeping `CockpitActivityStatus` separate was to avoid turning `StageStatus` into a mixed engine+UI enum. `StageStatus` currently expresses engine/runtime ownership states (`Pending`, `Running`, `Completed`, `Cancelled`, `Error`) that drive persistence transitions and engine behavior. `WaitingForTimer` and `WaitingForEvent` are more like Cockpit interpretations of why a `Pending` instance is inactive, based on stage-definition metadata.
-> - Response: Pros of keeping it Cockpit-only: preserves a smaller engine state model; avoids widening persistence/API semantics for every FlowLite consumer; keeps room for multiple future projections of `Pending` without committing them as durable engine contract; avoids migration churn in domain schemas/history/tests just for operator-facing categorization.
-> - Response: Cons of keeping it Cockpit-only: some duplication of interpretation logic outside the engine; the meaning is derived rather than persisted, so other clients would need the same projection if they want the same distinction; the nullability split (`status` vs `activityStatus`) is slightly less direct than a single richer enum.
-> - Response: Pros of extending `StageStatus`: one canonical status vocabulary; easier for external consumers to read without re-deriving; potentially simpler Cockpit code if the engine persisted those distinctions directly.
-> - Response: Cons of extending `StageStatus`: it would blur “engine control state” with “reason for pending”; `WaitingForTimer` / `WaitingForEvent` are not independent lifecycle states because both are still `Pending` from the engine’s claim/retry/cancel perspective; it would force broader persistence/history/API/test changes and make future engine evolution more rigid.
-> - Response: Current recommendation: keep `StageStatus` as-is and keep `CockpitActivityStatus` as a projection. If we later see multiple non-Cockpit consumers needing the same distinction, we should extract a shared engine-level read model / query DTO rather than widening the core runtime enum prematurely.
-> - Validation: Design-only item; validated against current engine state handling in `persistance.kt` and Cockpit projection logic in `cockpit/service.kt`.
+> - Response: Yes, the right fix is to make the final loop summary come from `TODO.md` rather than from chat memory. I also agree with introducing a per-loop label when multiple loops can happen on the same day.
+> - Response: I implemented this in AGENTS rather than trying to rely on ad-hoc prompting. The base IEF now says the active TODO file is the authoritative loop ledger and that the final summary must come from a fresh TODO rescan. The repo-level FlowLite extension now adds a preferred loop-label format `YYYY-MM-DD.N` for future loops.
+> - Response: I intentionally did not retroactively rename old TODO items in this batch. The value is in the rule going forward, not in churn across history.
 
-## [DONE 2026-03-25] Worth to split App it separate files for tabs?
+## [IN PROGRESS 2026-04-09] Perf tests app
+Worth to add a flag that instead of seeding it will create a >1k instances so we can test perf issues immediately without the need to wait for instance number to accumulate since start? The benefits of this would be that you could do exploratory tests on local instance with big number of data without waiting on deployment and accumulation of instances on Render instance.
+
+## [DONE 2026-04-09] Extension point in IFE/AGENTS.md
+I'd like to add something that I call now "extension point" (not sure if this is the best name) to workspace/AGENTS.md (IFE).
+This extension point should instruct Agent that given repo may have it's own extension to IFE loop.
+In flowlite I'd like to add following extensions:
+* Move "[EVERY LOOP] Review your own changes" todo item from this list to the extension
+* "Exploratory tests" item from this list to be done for each loop.
+
+> Agent:
+> - Response: `Repo loop extensions` is a good enough name here. I added it to the workspace-level `AGENTS.md` and then defined the FlowLite-specific extension in `flowlite/AGENTS.md`.
+> - Changes: The base IEF now explicitly allows repo-level loop extensions. FlowLite now declares three concrete extensions: TODO-based final summary, recurring self-review, and recurring exploratory testing unless that item is explicitly marked `[ON HOLD]` in `TODO.md`.
+> - Response: I kept the current `Exploratory tests` entry on hold because the TODO still says `[ON HOLD]`; the new extension tells the agent to honor that hold until you reopen it.
+
+## Worth to split App it separate files for tabs?
 ... or you suggest some different split. I do not what to create too much files but >1k lines is probably to much. Or it its ok for you as it is now?
 
 > Agent:
@@ -30,99 +33,46 @@ What was rationale behind introducing cockpit-only activity instances instead in
 > - Response: Current recommendation: yes, split it, but do it as a medium refactor rather than a “one file per component” cleanup. I would target roughly 6-8 files total for the cockpit UI, not dozens.
 > - Validation: Design-only item; validated against the current `App.tsx` structure and size.
 
-## [DONE 2026-03-25] Further Cockpit scaling follow-ups
-* I think `Apply filters to view instances` should be displayed (and no request to for instances) till user select some filter. Also "Clear filters" should cause showing this message.
-  > Agent:
-  > - Changes: Implemented the gated `Instances` tab flow so it does not request `/api/instances` until a search/filter is applied, and `Clear Filters` now returns the tab to the guidance state.
-  > - Validation: Covered by updated Playwright instances-tab assertions and `./gradlew test`.
-* Errors and Long Inactive tabs probably should call /api/instances (or dedicated endpoint) with filtering. It takes 1s to get 1k instances and we may have more then 10k on production. I do not think we can make it fast for 10k instances without applying filter to backend request (+ virtual scrolling) or you have other opinion? 
-  > Agent:
-  > - Changes: Extended `/api/instances` and `/api/errors` with server-side filters and switched the `Errors` and `Long Inactive` tabs to fetch only the rows/groups required by the active filters instead of pulling the whole instance dataset.
-  > - Response: I agree with the backend-filtering direction. For 10k+ instances, loading everything client-side first is the wrong shape even before virtual scrolling enters the picture.
-  > - Validation: Added backend filter coverage in `CockpitServiceTest` and revalidated the cockpit Playwright suite via `./gradlew test`.
-* Consider virtual scrolling for the `Instances` tab. 
+>> MG: Go for it
+
+## Further Cockpit scaling follow-ups
+* All FE calls end up with calling findLatestRowsPerType which I guess takes most of the processing time (few sec) when we have 1k or more instances. Can we do some optimizations of this query or add some indexes? Is this a right approach?
+What about creating a dedicated table that would keep latest state as regards the stage, status, timestamp for given instance and thanks to that have very fast queries. What do you think?
+Also in this table we could have status for cockpit (CockpitStatus) which will include "Pending event", "Pending timer" and "Pending scheduler" (is pending scheduler a good name?)
+* In what cases instances are in "Pending scheduler"/Pending (Pending)?
+* Only timeline should query history table and should filter rows in db and not as we have it now read everything to memory and filter there.
+
+## Frontend improvements
+* When I select stage on instance list and want to copy it instance details open. Can we prevent it and open only when click without selecting text for copy? Or there some other UX pattern for that?
+* When I switch between tabs old list (from other tab) is presented first and then it is replaced by new data from backend and there is no loading indicator and queries can run for few seconds now.
+
+## [ON HOLD] Topics on hold for now
+* Concept for "Auto-retry" and "User retriable"
+* Long Inactive tab
+  * Default filter should be "Running and Pending scheduler"
+* Think about making CockpitStatus and engine Status the same
+* Consider virtual scrolling for the `Instances` tab.
   > Agent:
   > - Response: Considered but intentionally not implemented in this batch. After the gated `Instances` tab and backend-filtered heavy views, virtual scrolling is no longer the first bottleneck. I still recommend it as a later follow-up if filtered result sets themselves become large in production.
+* Visual testing - comparing screenshots before and after changes? Not sure about it because when agent can
+see produced image maybe this be enough for visual inspection and comparing will not be needed?
+* Check coverage and suggest modifications/new tests to cover it
+* There are no logs that show how the /flows /instances processing goes. Now I cannot find out whether the query takes so long or it is processing in JVM code.
+* The GWT cleanup showed that the Cockpit Playwright spec now needs a small `RecordedPageSession` helper to keep browser setup/actions in `when` blocks while preserving failure screenshots/videos. If we add more browser scenarios, it may be worth introducing a tiny test DSL/helper layer for `open page -> act -> assert -> close` flows so future specs do not repeat the same session lifecycle/synchronization plumbing.
+* Websocket for live refresh
+* New/duplicate copkpit but in Kotlin
 
-> Whole item agent notes:
-> - Changes: Added a single-instance cockpit endpoint so the details modal can refresh independently of the current tab dataset, which avoids detail-modal regressions after filtered refreshes.
-> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-25] Flows tab header counts
-* When you go to "Flows" tab you get on the screen:
-```
-Workflow Engine Monitoring & Management
-flows: 2 • instances: 0 • errors: 0
-```
-I guess we need a separate query for that and not base it on response from /instances
-  > Agent:
-  > - Response: Fixed without adding another endpoint. The header now derives `instances` and `errors` from `/api/flows`, which already carries per-flow active/error/completed totals.
-  > - Validation: Included in the same cockpit refresh-path validation via `./gradlew test`.
-
-## [DONE 2026-03-25] GWT style
-Review all tests and rewrite them to GWT/Setup-Action-Verification style. Now I see cases where setup is done in "then". Best if setup and action is done directly in given and when blocks respectively in straightforward way. In case of problems with how the code from given/when tests are invoked consider InstancePerRoot instead default SingleInstance isolation. As a last resort you may consider moving setup and action to hooks (https://kotest.io/docs/framework/lifecycle-hooks.html) but would really prefer to not use them.
-
-Completed changes:
-- Reworked the main remaining GWT offenders so setup and action moved out of `then` blocks in `DslValidationTest`, `EngineErrorHandlingTest`, `ShowcaseFlowSeederTest`, `OrderConfirmationTest`, `CockpitServiceTest`, and `EmployeeOnboardingFlowTest`.
-- Refactored `CockpitPlaywrightTest` as well, introducing an explicit recorded-page session helper so Playwright setup/actions can stay in `when` blocks while `then` stays assertion-focused without losing screenshot/video artifacts on failures.
-- Kept the existing spec style and avoided switching the suite to hooks or broader isolation changes because the targeted refactors were sufficient.
-
-Validation:
-- `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
-- `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-25] ShowcaseFlowSeeder.processPendingEvents is quite complex
-What about spawning a Thread (virtual) that sleeps for random number fo ms? I think this would remove a lot of code.
-
-> Agent:
-> - Response: Yes, for showcase-only code that is a better trade-off than the shared pending-event sweep. I still kept a small polling loop per queued event, because we cannot sleep the random delay until the instance has actually reached the matching wait stage, but each queued showcase event now owns that logic directly instead of being revisited by a global map sweep.
-> - Changes: Replaced the global `pendingEvents` sweep in `ShowcaseFlowSeeder` with one virtual-thread task per queued showcase event. Each task waits until the instance reaches the configured pending wait stage, sleeps for the randomized showcase delay, re-checks the stage, sends the event if still valid, and exits. Shutdown now cancels the active tasks directly.
-> - Validation: `./gradlew test --tests io.flowlite.test.ShowcaseFlowSeederTest` → BUILD SUCCESSFUL.
-> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-25] Minor questions and remarks
-* CockpitInstanceDto has:
- val status: StageStatus?,
- val activityStatus: CockpitActivityStatus?,
- In what case they are null?
-  > Agent:
-  > - Response: In the current Cockpit projection, `status` and `stage` are reconstructed from the latest history rows per instance, not read from the domain tables directly. They are nullable mainly as defensive tolerance for sparse or irregular history, not because healthy current runtime instances are expected to omit them.
-  > - Response: `status` is `null` when the latest summary rows for an instance contain no status-bearing history row (`Started`, `StatusChanged`, `Retried`, `ManualStageChanged`, `Cancelled`, `Error`). That would typically mean partial/legacy/manual history data rather than a normal engine-produced active instance.
-  > - Response: `activityStatus` is `null` whenever `status` is `null`, and also for non-active lifecycle states (`Completed`, `Cancelled`, `Error`). It is only populated for active states: `Running`, `Pending`, `WaitingForTimer`, and `WaitingForEvent`.
-  > - Response: So for normal current Cockpit usage, `activityStatus == null` mainly means “this row is not currently active”, while `status == null` means “history did not provide enough information to classify the lifecycle state reliably”.
-* Update "Tick processing loop" in README.md with handling timer
-  > Agent:
-  > - Changes: Updated the README runtime model section so the tick-processing loop now explains how timer stages schedule delayed wake-up ticks, release back to `Pending`, and continue once the timer becomes due.
-* Add TOC to README.md, check if all header levels are correct 
-  > Agent:
-  > - Changes: Added a top-level README table of contents and fixed the obvious header-level mismatch by promoting `Special notes for agent` to a top-level section instead of nesting it under `License`.
-
-> Whole item agent notes:
-> - Validation: Documentation/design-only item after the previously green `./gradlew test` run; no runtime code changed in this batch.
-
-## [DONE 2026-03-25] Coverage topic
+## [REOPEN] Coverage topic
 * FE coverage
   * can we gather coverage for frontend code executed by Playwright tests? Try to implement it.
   > Agent:
   > - Response: Yes. The Cockpit UI test build is now Istanbul-instrumented when Gradle runs Playwright-backed tests, and `CockpitPlaywrightTest` persists `globalThis.__coverage__` snapshots from browser sessions into raw JSON artifacts that are merged into HTML, LCOV, and JSON reports after the test task.
   > - Changes: Added Vite Istanbul instrumentation, a frontend coverage merge/report script, Gradle wiring to enable instrumentation and publish the merged report, and Playwright-side snapshot export from recorded browser sessions.
   > - Validation: `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest --rerun-tasks` → BUILD SUCCESSFUL, frontend coverage merged from 13 snapshot files.
-* BE coverage
-  * are we gathering coverage from all tests including Playwright?
-  > Agent:
-  > - Response: Yes for backend/JVM code. JaCoCo is attached to the Gradle `test` task, and the Playwright scenarios run as ordinary JVM tests in that same task while driving the in-process Spring test application, so backend code executed through those scenarios is included in the JaCoCo report. The only missing part before this batch was separate frontend/browser JavaScript coverage.
 
-> Whole item agent notes:
-> - Changes: Added frontend Playwright coverage output under `build/reports/playwright/frontend-coverage/` while keeping the existing JaCoCo backend report unchanged.
-> - Validation: `./gradlew test --rerun-tasks` → BUILD SUCCESSFUL.
+>> MG: I do not see anything under build/reports/playwright/frontend-coverage/. Also github build did not publish the results for FE code to Sonar.
 
-## [FOR HUMAN REVIEW] Optimize cockpit single-instance summary lookup if needed
-The new `GET /api/instances/{flowId}/{flowInstanceId}` detail endpoint currently uses `CockpitService.instance(...)`, which reuses `loadInstanceSummaries(flowId)` and therefore rebuilds summaries for the whole flow to serve one details-modal request. That is acceptable for now, but if detail-modal traffic becomes hot we should replace it with a direct repository projection keyed by `(flowId, flowInstanceId)`.
-
-## [FOR HUMAN REVIEW] Consider a tiny Playwright scenario DSL for Cockpit tests
-The GWT cleanup showed that the Cockpit Playwright spec now needs a small `RecordedPageSession` helper to keep browser setup/actions in `when` blocks while preserving failure screenshots/videos. If we add more browser scenarios, it may be worth introducing a tiny test DSL/helper layer for `open page -> act -> assert -> close` flows so future specs do not repeat the same session lifecycle/synchronization plumbing.
-
-## [DONE 2026-03-25] Exploratory tests
+## [ON HOLD / MOVED TO AGENTS 2026-04-09] Exploratory tests
 I'd like you to do exploratory tests using our test Flowlite instance on Render. Search for bugs and performance issues. Please document what you have tested and do the screenshots documenting the bugs. Are you able to do it right away or you need some additional tooling e.g. playwright installed in container or playwright MCP? Let me know do you need and I will give it to you :).
 Note: the version currently deployed on Render is the one before this loop.
 
@@ -133,62 +83,30 @@ Note: the version currently deployed on Render is the one before this loop.
 > - Findings: Collected endpoint timing samples as a performance baseline: `/api/instances` `1.296125s` for `630331` bytes, `/api/errors` `3.933635s` for `18582` bytes, `/api/flows` `1.427504s` for `7933` bytes.
 > - Validation: Reached the deployed Render instance, captured screenshots and page text via a temporary Playwright probe, then removed the probe from the repo after collecting the artifacts.
 
-## [EVERY LOOP] Review your own changes
+>> MG: What was this Playwright probe? I will ask you to do Exploratory tests quite often so probably worth to keep the code that helps you do that in repo.
+>>> Agent:
+>>> Response: The probe was a temporary one-off Playwright test used only to drive the deployed Render UI and dump screenshots/text artifacts. I agree it should become durable repo tooling instead of staying disposable. The FlowLite repo extension now treats exploratory testing as recurring loop work, so the next time this item is reopened I should add reusable exploratory helper code rather than another throwaway probe.
+
+## [MOVED TO AGENTS 2026-04-09] Review your own changes
 Please review your own changes from this loop, looking of potential improvements/simplifications both in the code and sounding concepts. Report any finding as a new todo item with [FOR HUMAN REVIEW] marker.
 
 > Agent:
 > - Response: Reviewed the recent cockpit/coverage changes. I did not find a correctness issue that needs immediate code rollback, but I did find one worthwhile follow-up and recorded it below.
 
-## [FOR HUMAN REVIEW] Consider gating frontend coverage instrumentation behind a dedicated Gradle property or task
+> Agent:
+> - Response: This recurring step is now defined in `flowlite/AGENTS.md` as a repo loop extension, so it no longer needs to stay in the main actionable queue.
+
+## Consider gating frontend coverage instrumentation behind a dedicated Gradle property or task
 The current frontend coverage implementation enables `VITE_COVERAGE=true` in `buildCockpitUi`, so every `./gradlew test` rebuilds an instrumented Cockpit bundle even when the run is focused on backend-only tests. That keeps the setup simple and correct, but it is broader and slower than necessary. A likely next refinement is to enable instrumentation only for Playwright-oriented runs or a dedicated coverage task, while leaving the default backend test loop on the normal production-like frontend bundle.
 
-## [FOR HUMAN] Introduce concept of periodic tasks
-Executed every loop or every x number of loops?
+> MG: What is the difference in between the run with coverage and run without? If it is not much I would not bother adding gradle prop/task for that.
 
 ## [FOR HUMAN] review for improvements
 * Research: How Peter and Simon are handling that (prompts, workflows)
 
-## [FOR HUMAN] Review changes git changes
-
-## [DONE 2026-03-08] Concept for "Auto-retry" and "User retriable"
-Completed changes:
-- Added planning note `memory/AutoRetryConcept.md` describing the current gap, the recommended hybrid design, retry directives, delayed tick scheduling, cockpit implications, and rollout phases.
-- Chose the main architectural split: retry mechanics and bookkeeping should live in core FlowLite, while retry/failure classification should stay application-provided.
-- Recommended separate engine-owned retry metadata rather than forcing every domain table to grow retry columns.
-
-Validation:
-- Design-only task; no runtime code changes were required.
-
-## [DONE 2026-03-08] Plan for implementing refreshing "Flows" tab using websockets
-Completed changes:
-- Added planning note `memory/FlowsLiveRefreshPlan.md` covering scope, transport choice, backend/frontend design, rollout, and test strategy.
-- Recommended phase-1 live refresh only for the `Flows` tab, with manual refresh buttons on every tab and a `Live` toggle only on `Flows`.
-- Recommended invalidation + refetch as the data strategy, with SSE as the preferred phase-1 transport and WebSocket kept as a future transport swap if broader bidirectional live features are later needed.
-
-Validation:
-- Design-only task; no runtime code changes were required.
-
-## [WAITING FOR BETTER SPEC] Duplicate copkpit but in Kotlin 
-Create a duplicate of cockpit-ui but written in Kotlin (cockpit-ui-kotlin)
-
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-07] Refactor DSL to procedural style
-Completed changes:
-- Replaced the old `onEvent` / `condition` / `goTo` builder surface with a procedural compiler in `source/dsl.kt` that supports `stage(..., waitFor = ...)`, `timer(...)`, and `_if { ... } _else { ... }` while reusing the existing runtime graph model.
-- Migrated order confirmation and employee onboarding to the new DSL, including the new order event model and the new employee stage/event/action vocabulary.
-- Updated the affected DSL/runtime tests, cockpit fixtures, showcase seeding, schema scripts, and generated/manual README docs to match the new builder shape.
-
-Validation:
-- `./gradlew test` → BUILD SUCCESSFUL.
-- `./gradlew updateReadme` → BUILD SUCCESSFUL.
-
-## [DONE 2026-03-07] Prepare idea for runnig test on mssql too
-Completed changes:
-- Added the planning note `memory/MssqlTestPlan.md`.
-- Chose a staged approach: keep default H2 tests fast, add a separate MSSQL task/job, and use CI service containers first.
-- Captured the concrete follow-up changes needed in datasource selection, Gradle tasking, CI wiring, and test-suite scope.
-
-Validation:
-- Design-only task; no runtime code changes were required.
+## [FOR HUMAN] Review git changes
+* loop starting from 75abfec728b2184501ae4ebae0c83c07f1e0ba23
+* loops starting from
+  * docs: TODO update marcingurbisz 3/8/26, 9:12 AM
+  * docs: update TODO marcingurbisz 3/7/26, 3:57 PM
+  * docs: update TODO marcingurbisz 3/6/26, 7:13 AM

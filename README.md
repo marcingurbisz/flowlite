@@ -583,3 +583,10 @@ See `LICENSE` for the full license text.
 
 ## Special notes for agent
 - After changing the source code, always run `./gradlew test` before returning to user.
+
+### Repo IEF loop extensions
+- FlowLite loop summaries must be based on a fresh rescan of `TODO.md`, not on chat memory. Before the final response, enumerate the items completed in the current loop from `TODO.md` itself.
+- Use a per-loop label when multiple loops may happen on the same day. Preferred format: `YYYY-MM-DD.N`, where `N` is the next ordinal for that day in `TODO.md`. Reuse the same label across all items completed in the same loop.
+- Treat exploratory testing as a repo-level recurring loop activity when it is not explicitly suspended in `TODO.md`. If the `Exploratory tests` item is marked `[ON HOLD]`, respect that hold and note the suspension in the loop summary.
+- Treat self-review as a repo-level recurring loop activity. Record meaningful findings as new `[FOR HUMAN REVIEW]` items in `TODO.md`.
+- If exploratory tooling proves reusable, keep it in the repo as durable helper code or docs instead of deleting it as a one-off probe.

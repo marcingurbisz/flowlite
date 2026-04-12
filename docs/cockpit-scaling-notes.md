@@ -32,6 +32,8 @@ Suggested columns:
 
 `activityStatus` should stay computed at read time from stage definitions, because it is a projection rather than durable engine state.
 
+>> MG: But without activityStatus (maybe better cockpitStatus?) in db we will need to do filtering on FE side for long-running instances tab. Maybe also use cockpit status on other tabs too?
+
 With that shape:
 
 - `/api/flows`, `/api/instances`, and `/api/errors` query the summary table
@@ -49,6 +51,8 @@ Today:
 - plain `Pending` means the instance is actionable/runnable, not specifically scheduler-waiting
 
 If a future projection needs a more explicit label than `Pending`, a name closer to `Pending engine` or `Runnable` would fit better than `Pending scheduler`.
+
+>> MG: "Pending engine" is ok. I agree it is better than "Pending scheduler"
 
 ## Practical conclusion
 

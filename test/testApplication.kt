@@ -3,6 +3,7 @@ package io.flowlite.test
 import io.flowlite.Engine
 import io.flowlite.Event
 import io.flowlite.FlowLiteHistoryRepository
+import io.flowlite.FlowLiteInstanceSummaryRepository
 import io.flowlite.FlowLiteTickRepository
 import io.flowlite.PendingEventRepository
 import io.flowlite.StageStatus
@@ -80,7 +81,7 @@ object Beans {
         }
 
         registerBean {
-            SpringDataJdbcHistoryStore(bean<FlowLiteHistoryRepository>())
+            SpringDataJdbcHistoryStore(bean<FlowLiteHistoryRepository>(), bean<FlowLiteInstanceSummaryRepository>())
         }
 
         registerBean {
@@ -138,6 +139,7 @@ object Beans {
                 engine = bean<Engine>(),
                 mermaid = bean<io.flowlite.MermaidGenerator>(),
                 historyRepo = bean<FlowLiteHistoryRepository>(),
+                summaryRepo = bean<FlowLiteInstanceSummaryRepository>(),
             )
         }
 

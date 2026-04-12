@@ -267,6 +267,17 @@ data class FlowLiteHistoryRow(
     val errorStackTrace: String? = null,
 )
 
+@Table("FLOWLITE_INSTANCE_SUMMARY")
+data class FlowLiteInstanceSummaryRow(
+    @Id val id: UUID? = null,
+    val flowId: String,
+    val flowInstanceId: UUID,
+    val stage: String? = null,
+    val status: String? = null,
+    val lastErrorMessage: String? = null,
+    val updatedAt: Instant,
+)
+
 interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
     @Query(
         """
@@ -294,8 +305,31 @@ interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
     fun findLatestRowsPerType(flowId: String?, types: Collection<String>): List<FlowLiteHistoryRow>
 }
 
+interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSummaryRow, UUID> {
+    @Query(
+        """
+        select *
+        from flowlite_instance_summary
+        where (:flowId is null or flow_id = :flowId)
+        order by flow_id asc, updated_at desc, flow_instance_id asc
+        """,
+    )
+    fun findAllSummaries(flowId: String?): List<FlowLiteInstanceSummaryRow>
+
+    @Query(
+        """
+        select *
+        from flowlite_instance_summary
+        where flow_id = :flowId and flow_instance_id = :flowInstanceId
+        limit 1
+        """,
+    )
+    fun findSummary(flowId: String, flowInstanceId: UUID): FlowLiteInstanceSummaryRow?
+}
+
 class SpringDataJdbcHistoryStore(
     private val repo: FlowLiteHistoryRepository,
+    private val summaryRepo: FlowLiteInstanceSummaryRepository,
 ) : HistoryStore {
     override fun append(entry: HistoryEntry) {
         repo.save(
@@ -316,7 +350,61 @@ class SpringDataJdbcHistoryStore(
                 errorStackTrace = entry.errorStackTrace,
             ),
         )
+
+        if (!entry.affectsSummary()) return
+
+        val existing = summaryRepo.findSummary(entry.flowId, entry.flowInstanceId)
+        val next = (existing ?: FlowLiteInstanceSummaryRow(
+            id = null,
+            flowId = entry.flowId,
+            flowInstanceId = entry.flowInstanceId,
+            updatedAt = entry.occurredAt,
+        )).apply(entry)
+        summaryRepo.save(next)
     }
+}
+
+private fun HistoryEntry.affectsSummary(): Boolean = type != HistoryEntryType.EventAppended
+
+private fun FlowLiteInstanceSummaryRow.apply(entry: HistoryEntry): FlowLiteInstanceSummaryRow {
+    val nextStage = when (entry.type) {
+        HistoryEntryType.Started,
+        HistoryEntryType.StatusChanged,
+        HistoryEntryType.Retried,
+        HistoryEntryType.Cancelled,
+        HistoryEntryType.Error,
+        -> entry.stage ?: stage
+        HistoryEntryType.StageChanged,
+        HistoryEntryType.ManualStageChanged,
+        -> entry.toStage ?: stage
+        HistoryEntryType.EventAppended -> stage
+    }
+
+    val nextStatus = when (entry.type) {
+        HistoryEntryType.Started,
+        HistoryEntryType.StatusChanged,
+        HistoryEntryType.Retried,
+        HistoryEntryType.Cancelled,
+        HistoryEntryType.Error,
+        HistoryEntryType.ManualStageChanged,
+        -> entry.toStatus?.name ?: status
+        HistoryEntryType.StageChanged,
+        HistoryEntryType.EventAppended,
+        -> status
+    }
+
+    val nextErrorMessage = when {
+        entry.type == HistoryEntryType.Error -> entry.errorMessage
+        nextStatus == StageStatus.Error.name -> lastErrorMessage
+        else -> null
+    }
+
+    return copy(
+        stage = nextStage,
+        status = nextStatus,
+        lastErrorMessage = nextErrorMessage,
+        updatedAt = entry.occurredAt,
+    )
 }
 
 fun FlowLiteHistoryRow.toHistoryEntry() =

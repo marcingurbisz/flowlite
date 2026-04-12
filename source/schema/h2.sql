@@ -38,3 +38,16 @@ create table if not exists flowlite_history (
 create index if not exists idx_flowlite_history_instance on flowlite_history(flow_id, flow_instance_id, occurred_at);
 
 create index if not exists idx_flowlite_history_summary on flowlite_history(flow_id, flow_instance_id, type, occurred_at);
+
+create table if not exists flowlite_instance_summary (
+    id uuid default random_uuid() primary key,
+    flow_id varchar(128) not null,
+    flow_instance_id uuid not null,
+    stage varchar(128),
+    status varchar(32),
+    last_error_message varchar(4000),
+    updated_at timestamp not null
+);
+
+create unique index if not exists idx_flowlite_instance_summary_key on flowlite_instance_summary(flow_id, flow_instance_id);
+create index if not exists idx_flowlite_instance_summary_updated on flowlite_instance_summary(flow_id, updated_at, flow_instance_id);

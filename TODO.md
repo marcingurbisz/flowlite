@@ -37,8 +37,17 @@ Maybe move also details modal to separate file?
 > - Validation: `cd cockpit-ui && npm run build` → success.
 > - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
-## Implement recommendations from cockpit-scaling-notes.md
+## [DONE 2026-04-12.1] Implement recommendations from cockpit-scaling-notes.md
 ... see also my comment in cockpit-scaling-notes.md
+
+> Agent:
+> - Response: Implemented the main recommendation: Cockpit summary endpoints no longer rebuild instance state from `flowlite_history` on every request.
+> - Changes: Added a new `flowlite_instance_summary` projection table and repository, updated `SpringDataJdbcHistoryStore` to keep that projection in sync on history writes, and switched `CockpitService` to read `/api/flows`, `/api/instances`, and `/api/errors` from the summary projection.
+> - Changes: Kept `/timeline` on the history table and added a lazy backfill path so existing deployments with already-populated history can repopulate the new summary table on first Cockpit read.
+> - Response: I did not persist `activityStatus`/`cockpitStatus` in this batch. The projection now removes the expensive history window query, but `activityStatus` is still derived in service code from stage definitions. That keeps the first step smaller and lower-risk while still addressing the main bottleneck shape.
+> - Validation: `./gradlew test --tests io.flowlite.test.CockpitServiceTest` → BUILD SUCCESSFUL.
+> - Validation: `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
+> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Exploratory tests questions
 Are you able to find following during exploratory tests?

@@ -2,8 +2,11 @@ package io.flowlite.test
 
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
+import io.flowlite.FlowLiteInstanceSummaryRepository
 import io.flowlite.HistoryEntryType
+import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
+import io.flowlite.toHistoryEntry
 import io.flowlite.cockpit.CockpitActivityStatus
 import io.flowlite.cockpit.CockpitErrorGroupDto
 import io.flowlite.cockpit.CockpitInstanceBucket
@@ -20,6 +23,8 @@ class CockpitServiceTest : BehaviorSpec({
     val context = startTestApplication()
     val service = context.getBean<CockpitService>()
     val historyRepo = context.getBean<FlowLiteHistoryRepository>()
+    val summaryRepo = context.getBean<FlowLiteInstanceSummaryRepository>()
+    val historyStore = context.getBean<SpringDataJdbcHistoryStore>()
 
     afterSpec {
         context.close()
@@ -38,17 +43,18 @@ class CockpitServiceTest : BehaviorSpec({
             val bError = UUID.fromString("00000000-0000-0000-0000-000000000006")
 
             fun seedRows() {
+                summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                historyRepo.save(historyRow("2026-03-04T08:00:00Z", flowA, aRunning, HistoryEntryType.Started, stage = "Init", toStatus = StageStatus.Pending))
-                historyRepo.save(historyRow("2026-03-04T08:01:00Z", flowA, aRunning, HistoryEntryType.StatusChanged, stage = "Init", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
-                historyRepo.save(historyRow("2026-03-04T08:02:00Z", flowA, aRunning, HistoryEntryType.StageChanged, fromStage = "Init", toStage = "Review"))
-
-                historyRepo.save(historyRow("2026-03-04T08:03:00Z", flowA, aError1, HistoryEntryType.Error, stage = "Review", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-1"))
-                historyRepo.save(historyRow("2026-03-04T08:04:00Z", flowA, aError2, HistoryEntryType.Error, stage = "Review", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-2"))
-
-                historyRepo.save(historyRow("2026-03-04T08:05:00Z", flowB, bCancelled, HistoryEntryType.Cancelled, stage = "Done", fromStatus = StageStatus.Running, toStatus = StageStatus.Cancelled))
-                historyRepo.save(historyRow("2026-03-04T08:06:00Z", flowB, bCompleted, HistoryEntryType.StatusChanged, stage = "Done", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed))
-                historyRepo.save(historyRow("2026-03-04T08:07:00Z", flowB, bError, HistoryEntryType.Error, stage = "Investigate", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-3"))
+                listOf(
+                    historyRow("2026-03-04T08:00:00Z", flowA, aRunning, HistoryEntryType.Started, stage = "Init", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T08:01:00Z", flowA, aRunning, HistoryEntryType.StatusChanged, stage = "Init", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
+                    historyRow("2026-03-04T08:02:00Z", flowA, aRunning, HistoryEntryType.StageChanged, fromStage = "Init", toStage = "Review"),
+                    historyRow("2026-03-04T08:03:00Z", flowA, aError1, HistoryEntryType.Error, stage = "Review", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-1"),
+                    historyRow("2026-03-04T08:04:00Z", flowA, aError2, HistoryEntryType.Error, stage = "Review", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-2"),
+                    historyRow("2026-03-04T08:05:00Z", flowB, bCancelled, HistoryEntryType.Cancelled, stage = "Done", fromStatus = StageStatus.Running, toStatus = StageStatus.Cancelled),
+                    historyRow("2026-03-04T08:06:00Z", flowB, bCompleted, HistoryEntryType.StatusChanged, stage = "Done", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed),
+                    historyRow("2026-03-04T08:07:00Z", flowB, bError, HistoryEntryType.Error, stage = "Investigate", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-3"),
+                ).forEach { historyStore.append(it.toHistoryEntry()) }
             }
 
             seedRows()
@@ -130,13 +136,16 @@ class CockpitServiceTest : BehaviorSpec({
             val unknownFlow = UUID.fromString("00000000-0000-0000-0000-000000000104")
 
             then("it returns diagrams and per-flow counters only for registered flows") {
+                summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                historyRepo.save(historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
-                historyRepo.save(historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending))
-                historyRepo.save(historyRow("2026-03-04T09:01:00Z", ORDER_CONFIRMATION_FLOW_ID, orderError, HistoryEntryType.Error, stage = "InformingCustomer", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "order-failed"))
-                historyRepo.save(historyRow("2026-03-04T09:02:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingCompleted, HistoryEntryType.StatusChanged, stage = "CompleteOnboarding", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed))
-                historyRepo.save(historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending))
-                historyRepo.save(historyRow("2026-03-04T09:03:00Z", "unknown-flow", unknownFlow, HistoryEntryType.StatusChanged, stage = "X", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
+                listOf(
+                    historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
+                    historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T09:01:00Z", ORDER_CONFIRMATION_FLOW_ID, orderError, HistoryEntryType.Error, stage = "InformingCustomer", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "order-failed"),
+                    historyRow("2026-03-04T09:02:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingCompleted, HistoryEntryType.StatusChanged, stage = "CompleteOnboarding", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed),
+                    historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T09:03:00Z", "unknown-flow", unknownFlow, HistoryEntryType.StatusChanged, stage = "X", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
+                ).forEach { historyStore.append(it.toHistoryEntry()) }
 
                 val flows = service.listFlows(longRunningThresholdSeconds = 3600)
 
@@ -179,10 +188,13 @@ class CockpitServiceTest : BehaviorSpec({
             }
 
             then("it derives cockpit activity status for pending event and timer stages") {
+                summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                historyRepo.save(historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
-                historyRepo.save(historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending))
-                historyRepo.save(historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending))
+                listOf(
+                    historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
+                    historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending),
+                ).forEach { historyStore.append(it.toHistoryEntry()) }
 
                 val instances = service.listInstances().associateBy { it.flowInstanceId }
 
@@ -194,10 +206,13 @@ class CockpitServiceTest : BehaviorSpec({
             then("it applies backend long inactive activity filters") {
                 val now = Instant.now()
 
+                summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                historyRepo.save(historyRow(now.minus(Duration.ofMinutes(30)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running))
-                historyRepo.save(historyRow(now.minus(Duration.ofHours(2)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending))
-                historyRepo.save(historyRow(now.minus(Duration.ofMinutes(90)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending))
+                listOf(
+                    historyRow(now.minus(Duration.ofMinutes(30)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
+                    historyRow(now.minus(Duration.ofHours(2)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending),
+                    historyRow(now.minus(Duration.ofMinutes(90)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending),
+                ).forEach { historyStore.append(it.toHistoryEntry()) }
 
                 service.listInstances(
                     bucket = CockpitInstanceBucket.Active,
@@ -220,9 +235,12 @@ class CockpitServiceTest : BehaviorSpec({
             val id = UUID.fromString("00000000-0000-0000-0000-000000000201")
 
             then("timeline returns rows in repository order") {
+                summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                historyRepo.save(historyRow("2026-03-04T10:00:00Z", flowId, id, HistoryEntryType.Started, stage = "InitializingConfirmation", toStatus = StageStatus.Pending))
-                historyRepo.save(historyRow("2026-03-04T10:01:00Z", flowId, id, HistoryEntryType.EventAppended, event = OrderConfirmationEvent.Confirmed.name))
+                listOf(
+                    historyRow("2026-03-04T10:00:00Z", flowId, id, HistoryEntryType.Started, stage = "InitializingConfirmation", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T10:01:00Z", flowId, id, HistoryEntryType.EventAppended, event = OrderConfirmationEvent.Confirmed.name),
+                ).forEach { historyStore.append(it.toHistoryEntry()) }
 
                 val timeline = service.timeline(flowId, id)
                 timeline.map { it.type } shouldContainExactly listOf(HistoryEntryType.Started, HistoryEntryType.EventAppended)

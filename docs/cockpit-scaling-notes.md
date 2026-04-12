@@ -58,3 +58,16 @@ If a future projection needs a more explicit label than `Pending`, a name closer
 
 - Small index/query tuning may still be worth trying as a temporary mitigation, but it will not change the asymptotic shape enough for Cockpit-heavy usage.
 - If Cockpit becomes a serious operator surface, introducing a summary/read-model table is the cleaner fix.
+
+## Implemented in 2026-04-12.1
+
+- Added `flowlite_instance_summary` as a Cockpit read-model table in both H2 and MSSQL schemas.
+- `SpringDataJdbcHistoryStore` now updates that summary projection whenever history entries that affect Cockpit state are appended.
+- `CockpitService` now reads `/api/flows`, `/api/instances`, and `/api/errors` from the summary table instead of rebuilding summaries from `flowlite_history` on every request.
+- `/timeline` still reads directly from `flowlite_history`.
+- For safety during rollout, `CockpitService` lazily backfills the summary table from history if the summary projection is still empty.
+
+Still intentionally not implemented in this batch:
+
+- Persisting `activityStatus`/`cockpitStatus` in the summary table.
+- SQL-level filtering by `activityStatus`; it is still derived in service code from stage definitions.

@@ -8,10 +8,13 @@ import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
+import io.flowlite.FlowLiteInstanceSummaryRepository
 import io.flowlite.FlowLiteTickRepository
 import io.flowlite.HistoryEntryType
 import io.flowlite.PendingEventRepository
+import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
+import io.flowlite.toHistoryEntry
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -67,6 +70,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
     lateinit var playwright: Playwright
     lateinit var browser: Browser
     lateinit var historyRepo: FlowLiteHistoryRepository
+    lateinit var historyStore: SpringDataJdbcHistoryStore
+    lateinit var summaryRepo: FlowLiteInstanceSummaryRepository
     lateinit var tickRepo: FlowLiteTickRepository
     lateinit var pendingEventRepo: PendingEventRepository
     lateinit var orderRepo: OrderConfirmationRepository
@@ -79,6 +84,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
         context = startTestWebApplication(showcaseEnabled = false)
         historyRepo = context.getBean()
+        historyStore = context.getBean()
+        summaryRepo = context.getBean()
         tickRepo = context.getBean()
         pendingEventRepo = context.getBean()
         orderRepo = context.getBean()
@@ -244,6 +251,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
     fun resetCockpitData() {
         tickRepo.deleteAll()
         pendingEventRepo.deleteAll()
+        summaryRepo.deleteAll()
         historyRepo.deleteAll()
         orderRepo.deleteAll()
         employeeRepo.deleteAll()
@@ -292,6 +300,10 @@ class CockpitPlaywrightTest : BehaviorSpec({
         resetCockpitData()
     }
 
+    fun appendHistory(row: FlowLiteHistoryRow) {
+        historyStore.append(row.toHistoryEntry())
+    }
+
     fun seedRichFixture(): CockpitFixture {
         resetCockpitData()
         val now = Instant.now()
@@ -302,7 +314,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             status = StageStatus.Pending,
             orderNumber = "ORD-PENDING",
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(20)),
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
@@ -319,7 +331,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             status = StageStatus.Running,
             orderNumber = "ORD-LONG-RUNNING",
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofHours(3)),
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
@@ -329,7 +341,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 toStatus = StageStatus.Pending,
             ),
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(150)),
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
@@ -347,7 +359,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             status = StageStatus.Error,
             orderNumber = "ORD-ERROR-RETRY",
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(50)),
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
@@ -357,7 +369,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 toStatus = StageStatus.Pending,
             ),
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(15)),
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
@@ -379,7 +391,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             orderNumber = "ORD-ERROR-CHANGE-STAGE",
             confirmationType = ConfirmationType.Physical,
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(45)),
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
@@ -389,7 +401,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 toStatus = StageStatus.Pending,
             ),
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(14)),
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
@@ -409,7 +421,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             stage = EmployeeStage.UpdateHRSystem,
             status = StageStatus.Running,
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofHours(5)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -419,7 +431,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 toStatus = StageStatus.Pending,
             ),
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(270)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -436,7 +448,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             stage = EmployeeStage.WaitingForOnboardingAgreementSigned,
             status = StageStatus.Pending,
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(10)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -452,7 +464,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             stage = EmployeeStage.DelayAfterHRUpdate,
             status = StageStatus.Pending,
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(125)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -468,7 +480,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             stage = EmployeeStage.UpdateHRSystem,
             status = StageStatus.Error,
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(40)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -478,7 +490,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 toStatus = StageStatus.Pending,
             ),
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(12)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -498,7 +510,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             stage = EmployeeStage.CompleteOnboarding,
             status = StageStatus.Completed,
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(90)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -508,7 +520,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 toStatus = StageStatus.Pending,
             ),
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(89)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -526,7 +538,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             status = StageStatus.Cancelled,
             isNotManualPath = false,
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(100)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
@@ -536,7 +548,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 toStatus = StageStatus.Pending,
             ),
         )
-        historyRepo.save(
+        appendHistory(
             historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(98)),
                 flowId = EMPLOYEE_ONBOARDING_FLOW_ID,

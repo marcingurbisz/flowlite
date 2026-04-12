@@ -5,6 +5,8 @@ import io.flowlite.Event
 import io.flowlite.Flow
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
+import io.flowlite.FlowLiteInstanceSummaryRepository
+import io.flowlite.FlowLiteInstanceSummaryRow
 import io.flowlite.HistoryEntryType
 import io.flowlite.MermaidGenerator
 import io.flowlite.Stage
@@ -68,6 +70,7 @@ class CockpitService(
     private val engine: Engine,
     private val mermaid: MermaidGenerator,
     private val historyRepo: FlowLiteHistoryRepository,
+    private val summaryRepo: FlowLiteInstanceSummaryRepository,
 ) {
     private companion object {
         val STAGE_ROW_TYPES = setOf(
@@ -256,30 +259,53 @@ class CockpitService(
 
     private fun loadInstanceSummaries(flowId: String?): List<CockpitInstanceDto> {
         val stageDefinitionsByFlow = stageDefinitionsByFlow()
+        val summaryRows = summaryRepo.findAllSummaries(flowId)
+        val rows = if (summaryRows.isNotEmpty()) summaryRows else backfillSummaries(flowId)
+
+        return rows.map { row ->
+            val statusValue = row.status?.let(StageStatus::valueOf)
+            CockpitInstanceDto(
+                flowId = row.flowId,
+                flowInstanceId = row.flowInstanceId,
+                stage = row.stage,
+                status = statusValue,
+                activityStatus = classifyActivityStatus(stageDefinitionsByFlow[row.flowId], row.stage, statusValue),
+                lastUpdatedAt = row.updatedAt,
+                lastErrorMessage = row.lastErrorMessage,
+            )
+        }
+    }
+
+    private fun backfillSummaries(flowId: String?): List<FlowLiteInstanceSummaryRow> {
         val rowsByKey = historyRepo.findLatestRowsPerType(flowId, INSTANCE_SUMMARY_ROW_TYPES)
             .groupBy { it.asKey() }
 
-        return rowsByKey.mapNotNull { (key, rows) ->
+        val summaries = rowsByKey.mapNotNull { (key, rows) ->
             val stage = rows.latestStageRow()
             val status = rows.latestOfType(STATUS_ROW_TYPES)
             val error = rows.latestOfType(ERROR_ROW_TYPES)
             val stageValue = stage?.stageValue()
-            val statusValue = status?.statusValue()
+            val statusValue = status?.statusValue()?.name
 
             val lastUpdated = listOfNotNull(stage?.occurredAt, status?.occurredAt, error?.occurredAt)
                 .maxOrNull()
                 ?: return@mapNotNull null
 
-            CockpitInstanceDto(
+            FlowLiteInstanceSummaryRow(
                 flowId = key.flowId,
                 flowInstanceId = key.flowInstanceId,
                 stage = stageValue,
                 status = statusValue,
-                activityStatus = classifyActivityStatus(stageDefinitionsByFlow[key.flowId], stageValue, statusValue),
-                lastUpdatedAt = lastUpdated,
                 lastErrorMessage = error?.errorMessage,
+                updatedAt = lastUpdated,
             )
         }
+
+        if (summaries.isNotEmpty()) {
+            summaryRepo.saveAll(summaries)
+        }
+
+        return summaries
     }
 
     private fun List<CockpitInstanceDto>.toFlowCounts(): FlowCounts {

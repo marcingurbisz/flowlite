@@ -188,6 +188,11 @@ const FlowLiteCockpit = () => {
     setActionConfirmation(null);
   };
 
+  const switchActiveView = (view: ActiveView) => {
+    setLoadingView(view);
+    setActiveView(view);
+  };
+
   const fallbackCopyText = (text: string) => {
     const textarea = document.createElement('textarea');
     textarea.value = text;
@@ -262,6 +267,7 @@ const FlowLiteCockpit = () => {
     const applyStateFromLocation = () => {
       const next = readLocationState();
       applyingLocationStateRef.current = true;
+      setLoadingView(next.activeView);
       setActiveView(next.activeView);
       setSearchTerm(next.searchTerm);
       setStatusFilter(next.statusFilter);
@@ -480,6 +486,7 @@ const FlowLiteCockpit = () => {
     errorMessage?: string;
     incompleteOnly?: boolean;
   }) => {
+    setLoadingView('instances');
     setActiveView('instances');
     setSearchTerm(search);
     setStatusFilter(status);
@@ -498,6 +505,7 @@ const FlowLiteCockpit = () => {
     stage?: string;
     errorMessage?: string;
   }) => {
+    setLoadingView('errors');
     setActiveView('errors');
     setErrorFlowFilter(flow);
     setErrorStageFilter(stage);
@@ -638,7 +646,7 @@ const FlowLiteCockpit = () => {
               <button
                 key={view}
                 data-testid={`tab-${view}`}
-                onClick={() => setActiveView(view)}
+                onClick={() => switchActiveView(view)}
                 className={
                   'px-1 py-3 text-sm font-medium border-b-2 transition-colors ' +
                   (activeView === view
@@ -660,6 +668,7 @@ const FlowLiteCockpit = () => {
             isLoading={loadingView === 'flows'}
             onViewDiagram={setSelectedFlowForDiagram}
             onOpenLongRunning={(flowId) => {
+              setLoadingView('long-running');
               setActiveView('long-running');
               setLongRunningFlowFilter(flowId);
               setSelectedInstances(new Set());

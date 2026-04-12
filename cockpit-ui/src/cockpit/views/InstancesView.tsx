@@ -113,8 +113,14 @@ export const InstancesView = ({
       <button data-testid="instances-clear-filters" onClick={clearInstanceFilters} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Clear Filters</button>
     </div>
 
-    {isLoading ? (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+    {!hasInstanceFiltersApplied ? (
+      <div data-testid="instances-apply-filters" className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+        <Database size={48} className="mx-auto mb-4 text-zinc-600" />
+        <p className="text-lg font-medium text-zinc-300 mb-2">Apply filters to view instances</p>
+        <p className="text-sm text-zinc-500">The Instances tab now waits for a search or filter before requesting rows.</p>
+      </div>
+    ) : isLoading ? (
+      <div data-testid="instances-loading" className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
         <p className="text-lg font-medium text-zinc-300 mb-2">Loading instances…</p>
         <p className="text-sm text-zinc-500">Waiting for the filtered instance dataset from the backend.</p>
       </div>
@@ -130,14 +136,6 @@ export const InstancesView = ({
         </div>
       </div>
     )}
-
-    {!hasInstanceFiltersApplied ? (
-      <div data-testid="instances-apply-filters" className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
-        <Database size={48} className="mx-auto mb-4 text-zinc-600" />
-        <p className="text-lg font-medium text-zinc-300 mb-2">Apply filters to view instances</p>
-        <p className="text-sm text-zinc-500">The Instances tab now waits for a search or filter before requesting rows.</p>
-      </div>
-    ) : (
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-zinc-800/50">
@@ -185,7 +183,6 @@ export const InstancesView = ({
           </tbody>
         </table>
       </div>
-    )}
       </>
     )}
   </div>

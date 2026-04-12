@@ -49,13 +49,32 @@ Maybe move also details modal to separate file?
 > - Validation: `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
 > - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
-## Exploratory tests questions
+## [DONE 2026-04-12.1] Exploratory tests questions
 Are you able to find following during exploratory tests?
   * "Loading instances" and then after some moment "Apply filters" on Instances tab - it should be "Apply filters" immediately
+    > Agent:
+    > - Response: Yes. I confirmed this issue from the actual render path and fixed it in this loop. The problem was that `InstancesView` rendered the loading state before checking whether any filters were applied, so the tab briefly showed `Loading instances…` even though no backend query should run yet.
+    > - Changes: The `Instances` tab now prioritizes the `Apply filters` empty state over the loading card when no filters are active.
   * When I go from "Flows" after it displays to data then to Instances and back to Flows then old view flickers for a moment before showing "Loading flows"
+    > Agent:
+    > - Response: Yes. I confirmed the root cause and fixed it in this loop. `loadingView` was being set only inside the refresh effect, so after switching tabs there was one render where the new tab still showed stale content before the loading card took over.
+    > - Changes: Tab/view transitions now set `loadingView` synchronously when the active tab changes, which removes that stale-content flash before `Loading flows` appears.
   * Can you record video from you exploratory tests not only screenshots?
+    > Agent:
+    > - Response: Yes. The existing Playwright `RecordedPageSession` helper already records videos as part of cockpit browser sessions. This loop's Playwright runs produced artifacts under `build/reports/playwright/videos`.
   * Are you able to analyze video or only screenshots?
+    > Agent:
+    > - Response: Screenshots are the stronger path with the current toolset because I can inspect them directly. Videos are useful as an artifact and for replay, but I do not have equally direct native frame-by-frame analysis on mp4 files in this environment. If needed, I can still use video for manual review or extract screenshots/frames from it.
   * With Playwright mcp server your tests could be more free - you would not need to prepare whole script upfront and could click and see what happens. Am I right? Worth to add it to your toolkit?
+    > Agent:
+    > - Response: Yes, that is basically right. A Playwright MCP server would make ad-hoc exploratory interaction more fluid because it supports shorter feedback loops than writing a whole deterministic repo test upfront.
+    > - Response: I do think it would be worth adding if you want exploratory testing to be a frequent part of the workflow. The existing Java Playwright harness is still valuable for durable regression coverage, screenshots, and video artifacts, but MCP would improve freeform exploration.
+
+> Whole item agent notes:
+> - Changes: Fixed two Cockpit UI polish issues discovered during the exploratory pass: the incorrect `Loading instances…` flash before the `Apply filters` state, and the stale-content flicker before `Loading flows` on tab switches.
+> - Validation: `cd cockpit-ui && npm run build` → success.
+> - Validation: `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
+> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Consider gating frontend coverage instrumentation behind a dedicated Gradle property or task
 The current frontend coverage implementation enables `VITE_COVERAGE=true` in `buildCockpitUi`, so every `./gradlew test` rebuilds an instrumented Cockpit bundle even when the run is focused on backend-only tests. That keeps the setup simple and correct, but it is broader and slower than necessary. A likely next refinement is to enable instrumentation only for Playwright-oriented runs or a dedicated coverage task, while leaving the default backend test loop on the normal production-like frontend bundle.

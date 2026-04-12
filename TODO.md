@@ -55,9 +55,17 @@ See: ![alt text](image.png). Feedback to it:
 > - Response: I did not persist `activityStatus` in the summary table in this batch. I do not think it is a good next step inside the current generic `SpringDataJdbcHistoryStore`, because that would couple a generic history projection to Cockpit-specific stage semantics and engine flow definitions. If we want to persist it later, I would do that through a cockpit-owned projector instead of pushing Cockpit knowledge into the generic store.
 > - Validation: `./gradlew test`
 
-## Playwright MCP or playwright-cli plus skills?
+## [DONE 2026-04-12.4] Playwright MCP or playwright-cli plus skills?
 I've installed playwright MCP server. Please use it for exploratory tests. Also check
 https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and https://github.com/microsoft/playwright/blob/main/.claude/skills/playwright-dev/SKILL.md and compare what is better. MCP or playwright-cli + skill. 
+
+> Agent:
+> - Response: For ad-hoc exploratory testing, Playwright MCP is the better interface when the environment supports it. It gives direct page snapshots, targeted interactions, and quick steering without having to author a script first.
+> - Response: `playwright-cli` plus a skill is better for reproducible scripted automation, codegen-heavy flows, and situations where we want the browser execution mode to live entirely inside the repo and CI scripts.
+> - Response: For this repo I would use both, but for different jobs: MCP for manual exploratory sessions, checked-in Playwright tests/CLI for repeatable regressions.
+> - Changes: I started `./gradlew runPerfTestApp` and attempted the requested exploratory pass through Playwright MCP.
+> - Validation: The MCP browser could not start in this dev container because it launched a headed Chrome instance without an available X server / `DISPLAY`. That is an environment blocker in this container, not a Cockpit app failure.
+> - Response: In contrast, the repo's existing Java Playwright tests continue to work headlessly here, so CLI/test-driven automation remains the safer fallback in this specific environment.
 
 ## [DONE 2026-04-12.3] [REOPEN] Sonar shows 0 coverage for tsx files
 

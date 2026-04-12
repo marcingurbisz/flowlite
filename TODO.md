@@ -7,7 +7,7 @@ do czego ten plik? Dodasz go do gitignore czy lepiej zakomitować?
 > - Changes: Dodałem `/cockpit-ui/*.tsbuildinfo` do `.gitignore` i usunąłem `cockpit-ui/tsconfig.app.tsbuildinfo` z indeksu gita, zostawiając lokalny plik roboczy bez zmian.
 > - Validation: `git status --short` pokazuje teraz planowaną tylko jednorazową delecję śledzonego pliku wraz ze zmianą `.gitignore`; po commicie plik przestanie wracać jako zmiana repo.
 
-## [REOPEN] Extension point in IFE/AGENTS.md
+## [DONE 2026-04-12.1] Extension point in IFE/AGENTS.md
 I'd like to add something that I call now "extension point" (not sure if this is the best name) to workspace/AGENTS.md (IFE).
 This extension point should instruct Agent that given repo may have it's own extension to IFE loop.
 In flowlite I'd like to add following extensions:
@@ -20,6 +20,12 @@ In flowlite I'd like to add following extensions:
 > - Response: I kept the current `Exploratory tests` entry on hold because the TODO still says `[ON HOLD]`; the new extension tells the agent to honor that hold until you reopen it.
 
 >> MG: Move extensions to separate file. See my changes in flowlite/AGENTS.md > Repo IEF loop extensions
+
+> Agent:
+> - Response: Done. The base IEF now allows repo extensions to live either directly in `AGENTS.md` or in a separate file explicitly pointed to by `AGENTS.md`.
+> - Changes: In FlowLite, I replaced the inline extension block in `AGENTS.md`/`README.md` with a pointer to the dedicated file `docs/repo-ief-loop-extensions.md`, and moved the recurring `Exploratory tests` plus `Review your own changes` rules there.
+> - Changes: Mirrored the same extension-file rule in `idea-execution-framework/AGENTS.md`, so the source IEF repo and workspace copy stay aligned.
+> - Validation: Documentation-only change; verified the new file location is referenced from FlowLite `AGENTS.md` and that both IEF AGENTS files now describe the separate-file extension model.
 
 ## What is left in App.tsx?
 Maybe move also details modal to separate file?

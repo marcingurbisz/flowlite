@@ -590,8 +590,5 @@ See `LICENSE` for the full license text.
 - After changing the source code, always run `./gradlew test` before returning to user.
 
 ### Repo IEF loop extensions
-#### [WHEN REQUESTED] Exploratory tests
-Do exploratory tests using our local runPerfTestApp. Search for bugs and performance issues. Please shortly document what you have tested as an item in TODO.md. Bugs found put as todo items in a TODO.md and fix immediately. 
-
-#### [EVERY LOOP] Review your own changes
-Please review your own changes from this loop, looking of potential improvements/simplifications both in the code and sounding concepts. Report any finding as a new todo item with [FOR HUMAN REVIEW] marker.
+Repo-specific loop extensions are defined in `docs/repo-ief-loop-extensions.md`.
+Load that file together with this repo AGENTS/README before starting substantive TODO work in FlowLite.

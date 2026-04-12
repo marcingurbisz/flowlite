@@ -1,18 +1,35 @@
-## Retry warning
+## [DONE 2026-04-12.1] Retry warning
 > Retry on non-error rows requeues the current stage by sending the instance back through the same stage entry point.
 I think this message shown on retry is not clear. Maybe just "Retry restarts the processing of the current stage." ?
 
-## Flows tab
+> Agent:
+> - Changes: Simplified the retry confirmation copy in the Cockpit action modal to `Retry restarts the processing of the current stage.`
+> - Validation: Covered by `./gradlew test`.
+
+## [DONE 2026-04-12.1] Flows tab
 See: ![alt text](image.png). Feedback to it:
 * 178 long inactive is red like errors. This is misleading
 * long inactive should only consider Running and "Pending engine"
 * Maybe worth to add "errors" next to "long inactive" and "incomplete"?
 * is incomplete best name? active? or simply "all" because on Flow tab we always show only incomplete and not canceled?
 
-## By default use timezone of the browser by default not UTC for timestamps on GUI
+> Agent:
+> - Changes: Reworked the flow shortcut chips so `long inactive` now uses an amber tone instead of the error red, added a separate `errors` chip when a flow has failures, and renamed the `incomplete` shortcut to `open`.
+> - Changes: Aligned the default long-inactive definition in backend and UI to count only `Running` and pending-engine rows. Waiting-for-timer and waiting-for-event rows are no longer included by default.
+> - Validation: Updated Cockpit service and Playwright coverage, then ran `./gradlew test` successfully.
 
-## Worth to add number of instances returned by backend
+## [DONE 2026-04-12.1] By default use timezone of the browser by default not UTC for timestamps on GUI
+
+> Agent:
+> - Changes: Switched GUI timestamp formatting from UTC to browser-local time while keeping a stable explicit timezone suffix in the rendered text.
+> - Validation: Updated the Playwright assertion to verify browser-local `GMT...` output and ran `./gradlew test` successfully.
+
+## [DONE 2026-04-12.1] Worth to add number of instances returned by backend
 ... somewhere on "Long inactive" and "Instances" tab?
+
+> Agent:
+> - Changes: Added `returned by backend: N` counters to the `Long inactive` and filtered `Instances` views.
+> - Validation: Included in the green `./gradlew test` run.
 
 ## Many instances waiting on WaitForITBusinessHours on Render instance
 ... for more then 2h. Seems like some bug in our mechanism for sending events for seeded processes?

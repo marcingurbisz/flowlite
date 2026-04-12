@@ -348,7 +348,7 @@ class CockpitService(
     }
 
     private fun CockpitActivityStatus?.isCountedAsLongInactiveByDefault(): Boolean {
-        return this == CockpitActivityStatus.Running || this == CockpitActivityStatus.Pending || this == CockpitActivityStatus.WaitingForTimer
+        return this == CockpitActivityStatus.Running || this == CockpitActivityStatus.Pending
     }
 
     private fun FlowLiteHistoryRow.asKey() = InstanceKey(flowId = flowId, flowInstanceId = flowInstanceId)

@@ -44,17 +44,26 @@ export const FlowsView = ({
               <button
                 data-testid={`flow-long-running-${flow.flowId}`}
                 onClick={() => onOpenLongRunning(flow.flowId)}
+                className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded text-xs font-mono transition-colors"
+              >
+                {flow.longRunningCount} long inactive
+              </button>
+            )}
+            {flow.errorCount > 0 && (
+              <button
+                data-testid={`flow-errors-${flow.flowId}`}
+                onClick={() => onOpenErrors({ flow: flow.flowId })}
                 className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded text-xs font-mono transition-colors"
               >
-                {flow.longRunningCount} long inactive ⚠
+                {flow.errorCount} errors
               </button>
             )}
             <button
               data-testid={`flow-incomplete-${flow.flowId}`}
               onClick={() => onOpenInstances({ search: flow.flowId, status: 'all', stage: 'all', errorMessage: '', incompleteOnly: true })}
-              className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded text-xs font-mono transition-colors"
+              className="px-3 py-1 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 rounded text-xs font-mono transition-colors"
             >
-              {flow.notCompletedCount} incomplete →
+              {flow.notCompletedCount} open →
             </button>
           </div>
         </div>

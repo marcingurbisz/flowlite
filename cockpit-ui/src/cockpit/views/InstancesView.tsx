@@ -6,6 +6,7 @@ import { formatDateTime } from '../utils';
 
 export const InstancesView = ({
   isLoading,
+  totalCount,
   searchTerm,
   statusFilter,
   stageFilter,
@@ -30,6 +31,7 @@ export const InstancesView = ({
   renderCopyButton,
 }: {
   isLoading: boolean;
+  totalCount: number;
   searchTerm: string;
   statusFilter: StatusFilter;
   stageFilter: string;
@@ -112,6 +114,12 @@ export const InstancesView = ({
       <button data-testid="instances-deselect" onClick={deselectAll} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Deselect</button>
       <button data-testid="instances-clear-filters" onClick={clearInstanceFilters} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">Clear Filters</button>
     </div>
+
+    {hasInstanceFiltersApplied && !isLoading && (
+      <p data-testid="instances-result-count" className="text-xs text-zinc-500 -mt-2 mb-2">
+        returned by backend: {totalCount}
+      </p>
+    )}
 
     {!hasInstanceFiltersApplied ? (
       <div data-testid="instances-apply-filters" className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">

@@ -2,6 +2,13 @@ import type { ActivityStatus, HistoryEntryDto, LongRunningActivityFilter } from 
 
 const padDateTimePart = (value: number) => value.toString().padStart(2, '0');
 
+const timeZoneFormatter = new Intl.DateTimeFormat(undefined, {
+  timeZoneName: 'shortOffset',
+});
+
+const formatTimeZoneLabel = (date: Date) =>
+  timeZoneFormatter.formatToParts(date).find((part) => part.type === 'timeZoneName')?.value ?? 'local';
+
 const parseDurationToSecondsOrNull = (value: string | null) => {
   const normalized = value?.trim().toLowerCase().replace(/\s+/g, '') ?? '';
   if (!normalized) return null;
@@ -33,7 +40,7 @@ export const toTestIdFragment = (value: string | null) =>
   (value ?? 'none').replace(/[^a-zA-Z0-9-]+/g, '-');
 
 export const formatDateTime = (date: Date) =>
-  `${date.getUTCFullYear()}-${padDateTimePart(date.getUTCMonth() + 1)}-${padDateTimePart(date.getUTCDate())} ${padDateTimePart(date.getUTCHours())}:${padDateTimePart(date.getUTCMinutes())}:${padDateTimePart(date.getUTCSeconds())} UTC`;
+  `${date.getFullYear()}-${padDateTimePart(date.getMonth() + 1)}-${padDateTimePart(date.getDate())} ${padDateTimePart(date.getHours())}:${padDateTimePart(date.getMinutes())}:${padDateTimePart(date.getSeconds())} ${formatTimeZoneLabel(date)}`;
 
 export const formatElapsedDuration = (durationMs: number) => {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));

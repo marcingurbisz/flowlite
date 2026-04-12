@@ -622,7 +622,7 @@ const FlowLiteCockpit = () => {
       ? 'Are you sure you want to cancel?'
       : 'Are you sure you want to change stage?';
   const actionConfirmationSummary = actionConfirmation?.kind === 'retry'
-    ? 'Retry on non-error rows requeues the current stage by sending the instance back through the same stage entry point.'
+    ? 'Retry restarts the processing of the current stage.'
     : actionConfirmation?.kind === 'cancel'
       ? 'Cancelling marks the selected instance(s) as cancelled and removes them from active processing.'
       : `Changing stage moves the selected instance(s) to ${actionConfirmation?.targetStage ?? 'the selected stage'} and reprocesses them from there on the next tick.`;
@@ -708,6 +708,7 @@ const FlowLiteCockpit = () => {
           <LongRunningView
             flows={flows}
             isLoading={loadingView === 'long-running'}
+            totalCount={longRunningInstances.length}
             longRunningFlowFilter={longRunningFlowFilter}
             longRunningActivityFilter={longRunningActivityFilter}
             longRunningThreshold={longRunningThreshold}
@@ -728,6 +729,7 @@ const FlowLiteCockpit = () => {
         {activeView === 'instances' && (
           <InstancesView
             isLoading={loadingView === 'instances'}
+            totalCount={filteredInstances.length}
             searchTerm={searchTerm}
             statusFilter={statusFilter}
             stageFilter={stageFilter}

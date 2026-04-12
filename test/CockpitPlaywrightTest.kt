@@ -18,6 +18,7 @@ import io.flowlite.toHistoryEntry
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -117,6 +118,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
         val browserContext = browser.newContext(
             Browser.NewContextOptions()
                 .setRecordVideoDir(videoDir)
+                .setTimezoneId("Europe/Warsaw")
                 .setViewportSize(1440, 900),
         )
         val page = browserContext.newPage()
@@ -796,7 +798,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("tab-instances").click()
             page.getByTestId("instances-search").fill(fixture.orderLongRunningId.toString())
 
-            then("it filters by flow, activity, and threshold while excluding event waits by default") {
+            then("it filters by flow, activity, and threshold while excluding event and timer waits by default") {
                 verifyRecordedContext(session) { currentPage ->
                     assertThat(currentPage.getByTestId("long-running-selection-bar")).hasCount(0)
                     assertThat(instanceRow(currentPage, fixture.orderLongRunningId)).isVisible()
@@ -854,7 +856,9 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
             then("it supports search, stage, error, status, and clear filters") {
                 verifyRecordedContext(session) { currentPage ->
-                    assertThat(currentPage.getByTestId("instance-history-timestamp-1")).containsText("UTC")
+                    val timestampText = currentPage.getByTestId("instance-history-timestamp-1").textContent() ?: ""
+                    timestampText.shouldContain("GMT")
+                    timestampText.shouldNotContain("UTC")
                     assertThat(currentPage.getByTestId("instance-history-type-1")).containsText(HistoryEntryType.StatusChanged.name)
                     assertThat(currentPage.getByTestId("instance-history-stage-1")).containsText("—")
                 }

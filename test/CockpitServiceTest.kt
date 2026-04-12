@@ -133,6 +133,7 @@ class CockpitServiceTest : BehaviorSpec({
             val orderError = UUID.fromString("00000000-0000-0000-0000-000000000102")
             val onboardingCompleted = UUID.fromString("00000000-0000-0000-0000-000000000103")
             val onboardingWaitingForTimer = UUID.fromString("00000000-0000-0000-0000-000000000106")
+            val onboardingPendingEngine = UUID.fromString("00000000-0000-0000-0000-000000000107")
             val unknownFlow = UUID.fromString("00000000-0000-0000-0000-000000000104")
 
             then("it returns diagrams and per-flow counters only for registered flows") {
@@ -144,6 +145,7 @@ class CockpitServiceTest : BehaviorSpec({
                     historyRow("2026-03-04T09:01:00Z", ORDER_CONFIRMATION_FLOW_ID, orderError, HistoryEntryType.Error, stage = "InformingCustomer", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "order-failed"),
                     historyRow("2026-03-04T09:02:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingCompleted, HistoryEntryType.StatusChanged, stage = "CompleteOnboarding", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed),
                     historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T07:30:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingPendingEngine, HistoryEntryType.Started, stage = "GenerateOnboardingDocuments", toStatus = StageStatus.Pending),
                     historyRow("2026-03-04T09:03:00Z", "unknown-flow", unknownFlow, HistoryEntryType.StatusChanged, stage = "X", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
                 ).forEach { historyStore.append(it.toHistoryEntry()) }
 
@@ -152,14 +154,19 @@ class CockpitServiceTest : BehaviorSpec({
                 flows.map { it.flowId } shouldContainExactly listOf(EMPLOYEE_ONBOARDING_FLOW_ID, ORDER_CONFIRMATION_FLOW_ID)
 
                 val onboarding = flows.first { it.flowId == EMPLOYEE_ONBOARDING_FLOW_ID }
-                onboarding.activeCount shouldBe 1
+                onboarding.activeCount shouldBe 2
                 onboarding.errorCount shouldBe 0
                 onboarding.completedCount shouldBe 1
                 onboarding.longRunningCount shouldBe 1
-                onboarding.notCompletedCount shouldBe 1
+                onboarding.notCompletedCount shouldBe 2
                 onboarding.stageBreakdown shouldContainExactly listOf(
                     io.flowlite.cockpit.CockpitFlowStageDto(
                         stage = "DelayAfterHRUpdate",
+                        totalCount = 1,
+                        errorCount = 0,
+                    ),
+                    io.flowlite.cockpit.CockpitFlowStageDto(
+                        stage = "GenerateOnboardingDocuments",
                         totalCount = 1,
                         errorCount = 0,
                     ),
@@ -205,6 +212,7 @@ class CockpitServiceTest : BehaviorSpec({
 
             then("it applies backend long inactive activity filters") {
                 val now = Instant.now()
+                val onboardingPendingEngine = UUID.fromString("00000000-0000-0000-0000-000000000107")
 
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
@@ -212,13 +220,14 @@ class CockpitServiceTest : BehaviorSpec({
                     historyRow(now.minus(Duration.ofMinutes(30)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
                     historyRow(now.minus(Duration.ofHours(2)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending),
                     historyRow(now.minus(Duration.ofMinutes(90)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending),
+                    historyRow(now.minus(Duration.ofMinutes(95)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingPendingEngine, HistoryEntryType.Started, stage = "GenerateOnboardingDocuments", toStatus = StageStatus.Pending),
                 ).forEach { historyStore.append(it.toHistoryEntry()) }
 
                 service.listInstances(
                     bucket = CockpitInstanceBucket.Active,
                     activityFilter = "default",
                     longInactiveThresholdSeconds = 3600,
-                ).map { it.flowInstanceId } shouldContainExactly listOf(onboardingWaitingForTimer)
+                ).map { it.flowInstanceId } shouldContainExactly listOf(onboardingPendingEngine)
 
                 service.listInstances(
                     bucket = CockpitInstanceBucket.Active,

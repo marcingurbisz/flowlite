@@ -9,6 +9,7 @@ type LongRunningInstance = UiInstance & { inactiveDuration: number };
 export const LongRunningView = ({
   flows,
   isLoading,
+  totalCount,
   longRunningFlowFilter,
   longRunningActivityFilter,
   longRunningThreshold,
@@ -26,6 +27,7 @@ export const LongRunningView = ({
 }: {
   flows: FlowDto[];
   isLoading: boolean;
+  totalCount: number;
   longRunningFlowFilter: string;
   longRunningActivityFilter: LongRunningActivityFilter;
   longRunningThreshold: string;
@@ -45,7 +47,7 @@ export const LongRunningView = ({
     <div className="flex items-center justify-between mb-6">
       <div>
         <h2 data-testid="long-running-heading" className="text-xl font-bold text-zinc-50">Long Inactive Instances</h2>
-        <p className="text-sm text-zinc-500 mt-1">Instances with no stage or status change beyond the threshold. Waiting for event is excluded by default.</p>
+        <p className="text-sm text-zinc-500 mt-1">Instances with no stage or status change beyond the threshold. By default this includes only Running and Pending engine rows.</p>
       </div>
       <div className="flex items-center gap-3">
         <select
@@ -65,7 +67,7 @@ export const LongRunningView = ({
           onChange={(event) => setLongRunningActivityFilter(event.target.value as LongRunningActivityFilter)}
           className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
         >
-          <option value="default">Running + actionable pending</option>
+          <option value="default">Running + pending engine</option>
           <option value="all">All activity kinds</option>
           <option value="Running">Running only</option>
           <option value="Pending">Pending only</option>
@@ -83,6 +85,12 @@ export const LongRunningView = ({
         <span className="text-xs text-zinc-500">Examples: 30s, 1m, 1h 30m</span>
       </div>
     </div>
+
+    {!isLoading && (
+      <p data-testid="long-running-result-count" className="text-xs text-zinc-500 -mt-3 mb-3">
+        returned by backend: {totalCount}
+      </p>
+    )}
 
     {isLoading ? (
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">

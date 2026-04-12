@@ -76,12 +76,25 @@ Are you able to find following during exploratory tests?
 > - Validation: `./gradlew test --tests io.flowlite.test.CockpitPlaywrightTest` → BUILD SUCCESSFUL.
 > - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
-## Consider gating frontend coverage instrumentation behind a dedicated Gradle property or task
+## [DONE 2026-04-12.1] Consider gating frontend coverage instrumentation behind a dedicated Gradle property or task
 The current frontend coverage implementation enables `VITE_COVERAGE=true` in `buildCockpitUi`, so every `./gradlew test` rebuilds an instrumented Cockpit bundle even when the run is focused on backend-only tests. That keeps the setup simple and correct, but it is broader and slower than necessary. A likely next refinement is to enable instrumentation only for Playwright-oriented runs or a dedicated coverage task, while leaving the default backend test loop on the normal production-like frontend bundle.
 
 > MG: What is the difference in between the run with coverage and run without? If it is not much I would not bother adding gradle prop/task for that.
 
-## Sonar shows 0 coverage for tsx files
+> Agent:
+> - Response: I measured the current Cockpit UI production build both ways. Without instrumentation `npm run build` finished in `8.239s`; with `VITE_COVERAGE=true` it finished in `9.785s`. The instrumented bundle also grew from `248.50 kB` to `432.15 kB` before gzip.
+> - Response: That is not catastrophic, but it is material enough to justify a flag. The extra ~`1.55s` per frontend build is about a `19%` wall-clock increase, and the larger instrumented artifact is only useful for browser coverage runs.
+> - Changes: Added an opt-in Gradle property `-PfrontendCoverage=true` that turns on `VITE_COVERAGE` only for coverage-oriented runs. Default `./gradlew test` now uses the normal Cockpit build; CI enables the property explicitly for the main-branch Sonar run.
+> - Validation: Measured `cd cockpit-ui && TIMEFORMAT='elapsed=%R'; time npm run build` and `cd cockpit-ui && TIMEFORMAT='elapsed=%R'; time env VITE_COVERAGE=true npm run build`.
+
+## [DONE 2026-04-12.1] Sonar shows 0 coverage for tsx files
+
+> Agent:
+> - Response: Root cause was not missing instrumentation. The merged LCOV file used `SF:src/...` paths, while Sonar scans TSX sources from repo root as `cockpit-ui/src/...`, so Sonar could not match the coverage records back to the files it had indexed.
+> - Changes: Updated the frontend coverage merge script to normalize coverage paths to repo-root-relative values before emitting `coverage-final.json` and `lcov.info`. That makes the final LCOV entries align with Sonar's `cockpit-ui/src` source tree.
+> - Changes: Documented the new `-PfrontendCoverage=true` workflow in `README.md` and wired the main-branch CI Sonar job to enable frontend instrumentation explicitly.
+> - Validation: Verified the merge script on a controlled coverage sample; the generated LCOV now emits `SF:cockpit-ui/src/App.tsx`.
+> - Validation: `./gradlew -PfrontendCoverage=true test --tests io.flowlite.test.CockpitPlaywrightTest` stayed green in this container, but Playwright also reported missing host browser libraries and did not produce raw frontend coverage files here, so I could not re-check the fix against a real browser trace in this environment.
 
 ## Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

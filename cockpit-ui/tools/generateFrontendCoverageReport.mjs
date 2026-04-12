@@ -7,10 +7,48 @@ import reports from 'istanbul-reports';
 const { createCoverageMap } = istanbulCoverage;
 const { createContext } = istanbulReport;
 
+function toPosixPath(value) {
+  return value.split(path.sep).join('/');
+}
+
+function normalizeSourcePath(sourcePath, repoRoot, cockpitUiDir) {
+  const absolutePath = path.isAbsolute(sourcePath)
+    ? sourcePath
+    : path.resolve(cockpitUiDir, sourcePath);
+  const relativeToRepoRoot = path.relative(repoRoot, absolutePath);
+  return toPosixPath(relativeToRepoRoot);
+}
+
+function normalizeInputSourceMap(inputSourceMap, repoRoot, cockpitUiDir) {
+  if (!inputSourceMap || !Array.isArray(inputSourceMap.sources)) {
+    return inputSourceMap;
+  }
+
+  return {
+    ...inputSourceMap,
+    sources: inputSourceMap.sources.map((source) => normalizeSourcePath(source, repoRoot, cockpitUiDir)),
+  };
+}
+
+function normalizeCoverageEntries(rawCoverage, repoRoot, cockpitUiDir) {
+  return Object.fromEntries(
+    Object.entries(rawCoverage).map(([filePath, fileCoverage]) => {
+      const normalizedPath = normalizeSourcePath(fileCoverage.path ?? filePath, repoRoot, cockpitUiDir);
+      return [normalizedPath, {
+        ...fileCoverage,
+        path: normalizedPath,
+        inputSourceMap: normalizeInputSourceMap(fileCoverage.inputSourceMap, repoRoot, cockpitUiDir),
+      }];
+    }),
+  );
+}
+
 async function main() {
   const [rawDirArg, outputDirArg] = process.argv.slice(2);
-  const rawDir = path.resolve(process.cwd(), rawDirArg ?? '../build/reports/playwright/frontend-coverage/raw');
-  const outputDir = path.resolve(process.cwd(), outputDirArg ?? '../build/reports/playwright/frontend-coverage');
+  const cockpitUiDir = process.cwd();
+  const repoRoot = path.resolve(cockpitUiDir, '..');
+  const rawDir = path.resolve(cockpitUiDir, rawDirArg ?? '../build/reports/playwright/frontend-coverage/raw');
+  const outputDir = path.resolve(cockpitUiDir, outputDirArg ?? '../build/reports/playwright/frontend-coverage');
 
   let entries = [];
   try {
@@ -39,7 +77,7 @@ async function main() {
     if (!content.trim()) {
       continue;
     }
-    coverageMap.merge(JSON.parse(content));
+    coverageMap.merge(normalizeCoverageEntries(JSON.parse(content), repoRoot, cockpitUiDir));
   }
 
   await fs.mkdir(outputDir, { recursive: true });

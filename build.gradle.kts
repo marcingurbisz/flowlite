@@ -21,6 +21,9 @@ val generatedCockpitUiDistDir = generatedTestAppResourcesDir.map { it.dir("cockp
 val testAppRuntimeLibsDir = layout.buildDirectory.dir("test-app-libs")
 val frontendCoverageReportDir = layout.buildDirectory.dir("reports/playwright/frontend-coverage")
 val frontendCoverageRawDir = frontendCoverageReportDir.map { it.dir("raw") }
+val frontendCoverageEnabled = providers.gradleProperty("frontendCoverage")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
 val usePrebuiltCockpitUi = providers.gradleProperty("usePrebuiltCockpitUi")
     .map { it.equals("true", ignoreCase = true) }
     .orElse(false)
@@ -95,7 +98,9 @@ val buildCockpitUi by tasks.registering(Exec::class) {
     dependsOn(installCockpitUiDeps)
     workingDir = cockpitUiDir.asFile
     commandLine(npmCommand, "run", "build")
-    environment("VITE_COVERAGE", "true")
+    if (frontendCoverageEnabled.get()) {
+        environment("VITE_COVERAGE", "true")
+    }
     onlyIf { !usePrebuiltCockpitUi.get() }
 
     inputs.files(
@@ -105,6 +110,7 @@ val buildCockpitUi by tasks.registering(Exec::class) {
         cockpitUiDir.file("vite.config.ts"),
         fileTree(cockpitUiDir.dir("src")) { include("**/*") },
     )
+    inputs.property("frontendCoverageEnabled", frontendCoverageEnabled)
     outputs.dir(cockpitUiDir.dir("dist"))
 }
 

@@ -497,6 +497,7 @@ External updates exist (GUI / notifications / other services):
 - `./gradlew build` - Build the entire project
 - `./gradlew test` - Run all tests
 - `./gradlew test jacocoTestReport` - Run tests and generate backend JaCoCo coverage report (HTML + XML)
+- `./gradlew -PfrontendCoverage=true test jacocoTestReport sonar` - Run tests with frontend Istanbul instrumentation enabled so Sonar ingests Cockpit TSX coverage
 - `./gradlew runTestApp` - Run the test Spring Boot app with Cockpit UI served by Tomcat (http://localhost:8080)
 - `./gradlew runPerfTestApp` - Run the test app with an immediate large showcase dataset for local cockpit/performance testing
 - `./gradlew testAppBundle` - Build the public test app jar plus runtime libs for container deployment (`build/libs/*-test-app.jar` + `build/test-app-libs/`)
@@ -551,6 +552,8 @@ Local coverage output:
 Notes:
 - `./gradlew test` now produces backend JaCoCo coverage for all JVM tests, including backend code exercised indirectly by Playwright scenarios because those scenarios run inside the same Gradle `test` task.
 - Frontend coverage is gathered separately for cockpit UI code executed in the browser during `CockpitPlaywrightTest`, using an instrumented Vite build plus post-test Istanbul report merging.
+- Frontend Istanbul instrumentation is now opt-in via `-PfrontendCoverage=true`, so the default `./gradlew test` path keeps the normal faster Cockpit build while Sonar/main-branch coverage runs still enable TSX coverage explicitly.
+- The merged LCOV report is normalized to repo-root-relative paths such as `cockpit-ui/src/App.tsx`, which allows SonarCloud to map the report back to scanned TSX sources.
 
 GitHub CI publishes:
 - GitHub Pages (coverage): https://marcingurbisz.github.io/flowlite/ (from `main`)

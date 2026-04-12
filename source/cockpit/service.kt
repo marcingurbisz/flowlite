@@ -259,8 +259,7 @@ class CockpitService(
 
     private fun loadInstanceSummaries(flowId: String?): List<CockpitInstanceDto> {
         val stageDefinitionsByFlow = stageDefinitionsByFlow()
-        val summaryRows = summaryRepo.findAllSummaries(flowId)
-        val rows = if (summaryRows.isNotEmpty()) summaryRows else backfillSummaries(flowId)
+        val rows = if (flowId == null) summaryRepo.findAllSummaries() else summaryRepo.findAllSummariesByFlowId(flowId)
 
         return rows.map { row ->
             val statusValue = row.status?.let(StageStatus::valueOf)
@@ -274,38 +273,6 @@ class CockpitService(
                 lastErrorMessage = row.lastErrorMessage,
             )
         }
-    }
-
-    private fun backfillSummaries(flowId: String?): List<FlowLiteInstanceSummaryRow> {
-        val rowsByKey = historyRepo.findLatestRowsPerType(flowId, INSTANCE_SUMMARY_ROW_TYPES)
-            .groupBy { it.asKey() }
-
-        val summaries = rowsByKey.mapNotNull { (key, rows) ->
-            val stage = rows.latestStageRow()
-            val status = rows.latestOfType(STATUS_ROW_TYPES)
-            val error = rows.latestOfType(ERROR_ROW_TYPES)
-            val stageValue = stage?.stageValue()
-            val statusValue = status?.statusValue()?.name
-
-            val lastUpdated = listOfNotNull(stage?.occurredAt, status?.occurredAt, error?.occurredAt)
-                .maxOrNull()
-                ?: return@mapNotNull null
-
-            FlowLiteInstanceSummaryRow(
-                flowId = key.flowId,
-                flowInstanceId = key.flowInstanceId,
-                stage = stageValue,
-                status = statusValue,
-                lastErrorMessage = error?.errorMessage,
-                updatedAt = lastUpdated,
-            )
-        }
-
-        if (summaries.isNotEmpty()) {
-            summaryRepo.saveAll(summaries)
-        }
-
-        return summaries
     }
 
     private fun List<CockpitInstanceDto>.toFlowCounts(): FlowCounts {
@@ -351,21 +318,4 @@ class CockpitService(
         return this == CockpitActivityStatus.Running || this == CockpitActivityStatus.Pending
     }
 
-    private fun FlowLiteHistoryRow.asKey() = InstanceKey(flowId = flowId, flowInstanceId = flowInstanceId)
-
-    private fun FlowLiteHistoryRow.stageValue() = toStage ?: stage
-
-    private fun List<FlowLiteHistoryRow>.latestOfType(types: Set<HistoryEntryType>) = asSequence()
-        .filter { it.type in types }
-        .maxWithOrNull(ROW_RECENCY)
-
-    private fun List<FlowLiteHistoryRow>.latestStageRow() =
-        latestOfType(STAGE_ROW_TYPES)
-            ?: asSequence().filter { it.stageValue() != null }.maxWithOrNull(ROW_RECENCY)
-
-    private fun FlowLiteHistoryRow.statusValue(): StageStatus? {
-        val entry = toHistoryEntry()
-        if (entry.type == HistoryEntryType.Error) return StageStatus.Error
-        return entry.toStatus
-    }
 }

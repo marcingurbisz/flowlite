@@ -31,10 +31,16 @@ See: ![alt text](image.png). Feedback to it:
 > - Changes: Added `returned by backend: N` counters to the `Long inactive` and filtered `Instances` views.
 > - Validation: Included in the green `./gradlew test` run.
 
-## Many instances waiting on WaitForITBusinessHours on Render instance
+## [DONE 2026-04-12.3] Many instances waiting on WaitForITBusinessHours on Render instance
 ... for more then 2h. Seems like some bug in our mechanism for sending events for seeded processes?
 
-## Feedback to "Implement recommendations from cockpit-scaling-notes.md"
+> Agent:
+> - Response: I do not see an event-delivery bug here. `WaitForITBusinessHours` is a timer stage, not an event wait. It intentionally schedules the next wake-up in `Europe/Warsaw` business hours only.
+> - Response: That means waits longer than 2h are expected whenever showcase onboarding instances are created after 17:00 Warsaw time, before 08:00 Warsaw time, or across a weekend.
+> - Changes: Added explicit regression tests for the business-hours timer so we now cover same-day opening, after-hours next-day wake-up, and Friday-to-Monday weekend rollover.
+> - Validation: `./gradlew test --tests io.flowlite.test.EmployeeOnboardingFlowTest`
+
+## [DONE 2026-04-12.2] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
 > added a lazy backfill path so existing deployments with already-populated history can repopulate the new summary table on first Cockpit read
 
 >> MG: That's not needed. Remove it.
@@ -43,11 +49,17 @@ See: ![alt text](image.png). Feedback to it:
 
 >> MG: If you agree that this is a good change go for it
 
+> Agent:
+> - Changes: Removed the lazy backfill path entirely. Cockpit reads now use only the maintained summary table, and the summary repository API was simplified to explicit `all` versus `by flow` queries.
+> - Changes: Added a regression test that proves history rows alone no longer repopulate the summary table during Cockpit reads.
+> - Response: I did not persist `activityStatus` in the summary table in this batch. I do not think it is a good next step inside the current generic `SpringDataJdbcHistoryStore`, because that would couple a generic history projection to Cockpit-specific stage semantics and engine flow definitions. If we want to persist it later, I would do that through a cockpit-owned projector instead of pushing Cockpit knowledge into the generic store.
+> - Validation: `./gradlew test`
+
 ## Playwright MCP or playwright-cli plus skills?
 I've installed playwright MCP server. Please use it for exploratory tests. Also check
 https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and https://github.com/microsoft/playwright/blob/main/.claude/skills/playwright-dev/SKILL.md and compare what is better. MCP or playwright-cli + skill. 
 
-## [REOPEN] Sonar shows 0 coverage for tsx files
+## [DONE 2026-04-12.3] [REOPEN] Sonar shows 0 coverage for tsx files
 
 > Agent:
 > - Response: Root cause was not missing instrumentation. The merged LCOV file used `SF:src/...` paths, while Sonar scans TSX sources from repo root as `cockpit-ui/src/...`, so Sonar could not match the coverage records back to the files it had indexed.
@@ -58,7 +70,15 @@ https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and ht
 
 >> MG: Sonar still shows 0 coverage after recent changes. Check yourself if need here https://sonarcloud.io/component_measures?id=marcingurbisz_flowlite&metric=coverage&view=list
 
-## Question to queries
+> Agent:
+> - Response: I checked the Sonar page and confirmed the symptom: all `cockpit-ui/src/*.tsx` files still show `0.0%`.
+> - Response: The remaining root cause was not Sonar path matching. The frontend coverage merge task was incorrectly modeled in Gradle: raw Playwright snapshots lived inside the report output directory, so `generateCockpitFrontendCoverage` could be treated as `UP-TO-DATE` and skip regenerating `lcov.info` after tests.
+> - Changes: Moved raw frontend coverage snapshots to a separate `build/reports/playwright/frontend-coverage-raw` directory and declared that directory as an explicit input to the merge task.
+> - Changes: Kept the report output in `build/reports/playwright/frontend-coverage`, so the Sonar path stays stable while the merge task now actually reruns when new raw snapshots appear.
+> - Changes: Stabilized one Playwright scenario that timed out only under frontend instrumentation, so the `-PfrontendCoverage=true` pipeline completes end-to-end.
+> - Validation: `./gradlew -PfrontendCoverage=true test --tests io.flowlite.test.CockpitPlaywrightTest` now produces `build/reports/playwright/frontend-coverage/lcov.info` plus a merged coverage summary instead of leaving only raw JSON snapshots.
+
+## [DONE 2026-04-12.3] Question to queries
 ```
 interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSummaryRow, UUID> {
     @Query(
@@ -85,10 +105,22 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
 
 Why :flowId is null and limit 1? I think flowId should never be null and there should always be only one row for flowInstanceId.
 
-## What do you think about adding 3 index on status, stage and instance id?
+> Agent:
+> - Response: `flowId` was nullable only because one repository method was serving both "all summaries" and "one-flow summaries". I agreed that this API was too loose and removed that nullable shape.
+> - Changes: Split the repository into explicit `findAllSummaries()` and `findAllSummariesByFlowId(flowId)` methods.
+> - Response: `limit 1` on `findSummary` was redundant because the table already has the unique key `(flow_id, flow_instance_id)`. I removed that clause.
+> - Validation: `./gradlew test`
+
+## [DONE 2026-04-12.3] What do you think about adding 3 index on status, stage and instance id?
 ... these will be quite frequent queries to FlowLiteInstanceSummary tables from "Instances" tab.
 
-## [REOPEN] Frontend and backend sources together
+> Agent:
+> - Response: I would not add those three single-column indexes in the current shape.
+> - Response: Right now Cockpit loads `flowlite_instance_summary` rows by flow/all and then applies most `Instances` filtering in JVM code. Because the SQL does not predicate on `status`, `stage`, or free-text instance search, those indexes would not materially help the hot path yet.
+> - Response: If we later push `Instances` filtering into SQL, then the useful indexes will be composite indexes that match the actual predicates and sort order, not three independent indexes by default.
+> - Response: The existing unique key on `(flow_id, flow_instance_id)` and the `(flow_id, updated_at, flow_instance_id)` ordering index are the right base indexes for the current query plan.
+
+## [DONE 2026-04-12.3] [REOPEN] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?
 
 > Agent:
@@ -98,6 +130,16 @@ Moving cockpit-ui/src under source/cockpit. Pros and cons?
 > - Response: My recommendation is: keep the dedicated top-level `cockpit-ui/` project, but continue tightening naming and docs so the conceptual ownership is obvious. If you ever shrink the frontend into a tiny mostly-static bundle, then revisiting a co-located layout would make more sense.
 
 >> MG: Get the point but still I'm not fully convinced :). Can you enumerate what we would need to change in fe and be build system to have the sources together?
+
+> Agent:
+> - Response: Yes. If we colocated the frontend sources under `source/cockpit`, the build-system changes would be concrete rather than cosmetic.
+> - Response: Gradle source sets: we would need to stop treating the whole `source/` tree as both Kotlin sources and JVM resources, otherwise the frontend source tree would be swept into `processResources`. That means redefining `sourceSets.main.resources` to exclude the frontend subtree or moving JVM resources to a narrower directory.
+> - Response: Frontend tool root: Vite, TypeScript, `package.json`, lockfile, and `node_modules` would need either a new root under `source/cockpit` or a top-level package file that points into that subtree. Today the frontend build assumes `cockpit-ui/` is its working directory.
+> - Response: Gradle frontend tasks: `installCockpitUiDeps`, `buildCockpitUi`, coverage merge paths, and dist sync paths would all need their working directory and input globs rewritten away from `cockpit-ui/**`.
+> - Response: Sonar config: `sonar.sources`, `sonar.tests`, and frontend LCOV path normalization would need to move from `cockpit-ui/src` and `cockpit-ui/tests` to the new colocated paths.
+> - Response: Test/resource packaging: the copy-to-test-app step would still need to publish a built static dist into test resources; colocating sources does not remove that packaging boundary.
+> - Response: Developer tooling: TS config, Vite config, IDE excludes, and cache ignores would all need to be retargeted so TypeScript artifacts do not pollute the JVM `source/` tree.
+> - Response: So it is feasible, but it is a real Gradle/Vite/source-set reshaping task, not just a folder move.
 
 ## [FOR HUMAN] review for improvements
 * Research: How Peter and Simon are handling that (prompts, workflows)

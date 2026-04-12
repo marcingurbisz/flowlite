@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "coverage:merge": "node tools/generateFrontendCoverageReport.mjs ../build/reports/playwright/frontend-coverage/raw ../build/reports/playwright/frontend-coverage"
+    "coverage:merge": "node tools/generateFrontendCoverageReport.mjs ../build/reports/playwright/frontend-coverage-raw ../build/reports/playwright/frontend-coverage"
   },
   "dependencies": {
     "lucide-react": "^0.553.0",

@@ -20,7 +20,7 @@ val generatedTestAppResourcesDir = layout.buildDirectory.dir("generated/test-app
 val generatedCockpitUiDistDir = generatedTestAppResourcesDir.map { it.dir("cockpit-ui/dist") }
 val testAppRuntimeLibsDir = layout.buildDirectory.dir("test-app-libs")
 val frontendCoverageReportDir = layout.buildDirectory.dir("reports/playwright/frontend-coverage")
-val frontendCoverageRawDir = frontendCoverageReportDir.map { it.dir("raw") }
+val frontendCoverageRawDir = layout.buildDirectory.dir("reports/playwright/frontend-coverage-raw")
 val frontendCoverageEnabled = providers.gradleProperty("frontendCoverage")
     .map { it.equals("true", ignoreCase = true) }
     .orElse(false)
@@ -126,6 +126,7 @@ val generateCockpitFrontendCoverage by tasks.registering(Exec::class) {
     )
     onlyIf { frontendCoverageRawDir.get().asFile.exists() }
 
+    inputs.dir(frontendCoverageRawDir)
     outputs.dir(frontendCoverageReportDir)
 }
 
@@ -157,6 +158,7 @@ tasks.test {
 
     doFirst {
         delete(frontendCoverageReportDir)
+        delete(frontendCoverageRawDir)
     }
     
     testLogging {

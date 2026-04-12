@@ -33,7 +33,7 @@ import org.springframework.context.ConfigurableApplicationContext
 class CockpitPlaywrightTest : BehaviorSpec({
     val artifactsRoot = Path.of("build", "reports", "playwright")
     val frontendCoverageDir = artifactsRoot.resolve("frontend-coverage")
-    val frontendCoverageRawDir = frontendCoverageDir.resolve("raw")
+    val frontendCoverageRawDir = artifactsRoot.resolve("frontend-coverage-raw")
     val screenshotDir = artifactsRoot.resolve("screenshots")
     val videoDir = artifactsRoot.resolve("videos")
     val artifactTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
@@ -820,6 +820,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("change-stage-confirm").click()
             page.getByTestId("action-confirmation-confirm").click()
             page.getByTestId("instance-details-close").click()
+            assertThat(page.getByTestId("instance-details-modal")).hasCount(0)
 
             assertThat(page.getByTestId("error-instance-${fixture.employeeErrorCancelId}")).isVisible()
             page.getByTestId("error-instance-${fixture.employeeErrorCancelId}").click()

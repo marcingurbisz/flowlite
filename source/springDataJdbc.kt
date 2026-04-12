@@ -310,18 +310,26 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         """
         select *
         from flowlite_instance_summary
-        where (:flowId is null or flow_id = :flowId)
         order by flow_id asc, updated_at desc, flow_instance_id asc
         """,
     )
-    fun findAllSummaries(flowId: String?): List<FlowLiteInstanceSummaryRow>
+    fun findAllSummaries(): List<FlowLiteInstanceSummaryRow>
+
+    @Query(
+        """
+        select *
+        from flowlite_instance_summary
+        where flow_id = :flowId
+        order by flow_id asc, updated_at desc, flow_instance_id asc
+        """,
+    )
+    fun findAllSummariesByFlowId(flowId: String): List<FlowLiteInstanceSummaryRow>
 
     @Query(
         """
         select *
         from flowlite_instance_summary
         where flow_id = :flowId and flow_instance_id = :flowInstanceId
-        limit 1
         """,
     )
     fun findSummary(flowId: String, flowInstanceId: UUID): FlowLiteInstanceSummaryRow?

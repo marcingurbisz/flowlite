@@ -123,6 +123,27 @@ class CockpitServiceTest : BehaviorSpec({
                     ),
                 )
             }
+
+            then("it does not rebuild summaries lazily from history rows") {
+                summaryRepo.deleteAll()
+                historyRepo.deleteAll()
+                listOf(
+                    historyRow("2026-03-04T08:00:00Z", flowA, aRunning, HistoryEntryType.Started, stage = "Init", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T08:01:00Z", flowA, aRunning, HistoryEntryType.StatusChanged, stage = "Init", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
+                ).forEach { historyRepo.save(it) }
+
+                service.listInstances() shouldContainExactly emptyList()
+                val flows = service.listFlows()
+                flows.map { it.flowId } shouldContainExactly listOf(EMPLOYEE_ONBOARDING_FLOW_ID, ORDER_CONFIRMATION_FLOW_ID)
+                flows.all {
+                    it.notCompletedCount == 0 &&
+                        it.errorCount == 0 &&
+                        it.activeCount == 0 &&
+                        it.completedCount == 0 &&
+                        it.longRunningCount == 0 &&
+                        it.stageBreakdown.isEmpty()
+                } shouldBe true
+            }
         }
     }
 

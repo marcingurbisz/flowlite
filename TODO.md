@@ -1,5 +1,11 @@
-## tsconfig.app.tsbuildinfo
+## [DONE 2026-04-12.1] tsconfig.app.tsbuildinfo
 do czego ten plik? Dodasz go do gitignore czy lepiej zakomitować?
+
+> Agent:
+> - Response: `tsconfig.app.tsbuildinfo` to cache incremental compilation TypeScript tworzone przez `tsc -b`. Zawiera metadane o poprzednim buildzie, żeby kolejne przebiegi były szybsze; nie jest to artefakt źródłowy ani nic, co warto przeglądać w review.
+> - Response: W tym repo lepiej go ignorować niż commitować. Plik i tak odtwarza się lokalnie po buildzie, a wersjonowanie go generuje tylko szum w diffach i konfliktach.
+> - Changes: Dodałem `/cockpit-ui/*.tsbuildinfo` do `.gitignore` i usunąłem `cockpit-ui/tsconfig.app.tsbuildinfo` z indeksu gita, zostawiając lokalny plik roboczy bez zmian.
+> - Validation: `git status --short` pokazuje teraz planowaną tylko jednorazową delecję śledzonego pliku wraz ze zmianą `.gitignore`; po commicie plik przestanie wracać jako zmiana repo.
 
 ## [REOPEN] Extension point in IFE/AGENTS.md
 I'd like to add something that I call now "extension point" (not sure if this is the best name) to workspace/AGENTS.md (IFE).

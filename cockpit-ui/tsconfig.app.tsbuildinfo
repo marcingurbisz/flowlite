@@ -1,1 +1,0 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/cockpit/MermaidDiagram.tsx","./src/cockpit/badges.tsx","./src/cockpit/locationState.ts","./src/cockpit/types.ts","./src/cockpit/utils.ts","./src/cockpit/views/ErrorsView.tsx","./src/cockpit/views/FlowsView.tsx","./src/cockpit/views/InstancesView.tsx","./src/cockpit/views/LongRunningView.tsx"],"version":"5.9.3"}

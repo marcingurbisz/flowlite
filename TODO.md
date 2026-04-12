@@ -27,8 +27,15 @@ In flowlite I'd like to add following extensions:
 > - Changes: Mirrored the same extension-file rule in `idea-execution-framework/AGENTS.md`, so the source IEF repo and workspace copy stay aligned.
 > - Validation: Documentation-only change; verified the new file location is referenced from FlowLite `AGENTS.md` and that both IEF AGENTS files now describe the separate-file extension model.
 
-## What is left in App.tsx?
+## [DONE 2026-04-12.1] What is left in App.tsx?
 Maybe move also details modal to separate file?
+
+> Agent:
+> - Response: After the earlier tab split, what remained in `App.tsx` was mostly the top-level cockpit container: shared state, URL sync, fetch/mutation handlers, selection logic, and the modal layer. The biggest leftover render block was indeed the instance details modal.
+> - Changes: Extracted the instance details modal into `cockpit-ui/src/cockpit/modals/InstanceDetailsModal.tsx`. `App.tsx` now passes the selected instance state, timeline data, and action handlers into that dedicated component while keeping container responsibilities in one place.
+> - Response: I intentionally did not split the smaller change-stage and action-confirmation dialogs yet. Those are much shorter and still reasonably tied to the container's mutation workflow, so pulling only the details modal gives a clear readability win without over-fragmenting the file.
+> - Validation: `cd cockpit-ui && npm run build` → success.
+> - Validation: `./gradlew test` → BUILD SUCCESSFUL.
 
 ## Implement recommendations from cockpit-scaling-notes.md
 ... see also my comment in cockpit-scaling-notes.md

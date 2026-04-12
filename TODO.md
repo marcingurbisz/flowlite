@@ -105,8 +105,14 @@ Moving cockpit-ui/src under source/cockpit. Pros and cons?
 > - Response: The downsides are more important here. Kotlin/Gradle/JVM sources and Vite/TypeScript/browser sources have different toolchains, cache directories, dependency graphs, and packaging assumptions. Mixing them under one source tree makes source-set rules, Sonar scoping, IDE indexing, and future publishing boundaries less clear. It also obscures the fact that the frontend is an independently buildable static app with its own lifecycle.
 > - Response: My recommendation is: keep the dedicated top-level `cockpit-ui/` project, but continue tightening naming and docs so the conceptual ownership is obvious. If you ever shrink the frontend into a tiny mostly-static bundle, then revisiting a co-located layout would make more sense.
 
-## Change FE from React to HTML+JS
+## [DONE 2026-04-12.1] Change FE from React to HTML+JS
 Pros and cons?
+
+> Agent:
+> - Response: For the current Cockpit, I would not rewrite from React to plain HTML+JS.
+> - Response: The argument for HTML+JS is valid when the UI is tiny, mostly static, or intentionally dependency-light. It would reduce framework/runtime dependencies, lower conceptual overhead for very small screens, and make the shipped artifact feel closer to a simple server-rendered/admin page.
+> - Response: That is not the shape of this Cockpit anymore. The app already has tab state, URL synchronization, async data loading, filter forms, optimistic UI transitions, modal workflows, Mermaid rendering, and a growing set of reusable views/components. Rewriting that to manual DOM updates would trade one dependency for a lot of ad-hoc state and rendering code.
+> - Response: So the likely outcome of switching to HTML+JS now is not real simplification; it is moving complexity into custom imperative code with weaker reuse and higher regression risk. If you want to reduce frontend stack weight later, a better question would be React-to-lighter-view-layer, not React-to-handwritten DOM from scratch.
 
 ## [FOR HUMAN] review for improvements
 * Research: How Peter and Simon are handling that (prompts, workflows)

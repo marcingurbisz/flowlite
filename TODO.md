@@ -1,4 +1,4 @@
-## [DONE 2026-04-13.1] [REOPEN] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
+## [REOPEN] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
 
 > I did not persist `activityStatus` in the summary table in this batch. I do not think it is a good next step inside the current generic `SpringDataJdbcHistoryStore`, because that would couple a generic history projection to Cockpit-specific stage semantics and engine flow definitions. If we want to persist it later, I would do that through a cockpit-owned projector instead of pushing Cockpit knowledge into the generic store.
 > Validation: `./gradlew test`
@@ -12,7 +12,15 @@
 > - Changes: `CockpitService.listInstances(...)` now filters through SQL against the summary table instead of loading all rows and filtering in JVM code.
 > - Validation: `./gradlew test`
 
-## [DONE 2026-04-13.1] [REOPEN] Playwright MCP or playwright-cli plus skills?
+>> MG:
+* What do you think about renaming CockpitActivityStatus to CockpitStatus and keep there all cockpit statues - all statuses + forked Pending into WaitingForTimer, WaitingForEvent and PendingEngine?
+* activityStatus -> cockpitStatus ? Isn't it a better name?
+* Remove "Added a one-time refresh of existing summary rows with `NULL activity_status`,". Why not to make make this column non nullable together with status column?
+* derived from their current `(flowId, stage, status)` tuple - what flowId is needed for?
+* sets an `activityStatus` resolver after flow registration - why we need resolver per flow? This should be the same for all flows.
+
+
+## [REOPEN] Playwright MCP or playwright-cli plus skills?
 I've installed playwright MCP server. Please use it for exploratory tests. Also check
 https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and https://github.com/microsoft/playwright/blob/main/.claude/skills/playwright-dev/SKILL.md and compare what is better. MCP or playwright-cli + skill. 
 
@@ -33,7 +41,9 @@ https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and ht
 > - Response: `playwright-cli` is not limited to one-shot scripts. The Playwright docs explicitly show step-by-step command usage like `playwright-cli open ...`, then `playwright-cli type ...`, `playwright-cli press Enter`, `playwright-cli screenshot`, and a `playwright-cli show` dashboard for live session monitoring.
 > - Response: One important nuance: the `.claude` `playwright-dev` skill you linked is a maintainer/development guide for adding Playwright APIs/MCP tools/CLI commands inside the Playwright repo itself. It is not the thing that gives end users interactive browser control.
 
-## [DONE 2026-04-13.1] [REOPEN] What do you think about adding 3 index on status, stage and instance id?
+>> MG: I have switched MCP to headless mode. Please try again. Regarding link to SKILL.md. I thought it is a skill for you how to use playwright-cli. Anyway, I wonder why you prefer Playwright MCP over playwright-cli for free/exploratory testing?
+
+## [REOPEN] What do you think about adding 3 index on status, stage and instance id?
 ... these will be quite frequent queries to FlowLiteInstanceSummary tables from "Instances" tab.
 
 > Agent:
@@ -50,31 +60,7 @@ https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and ht
 > - Response: I still did not add three standalone indexes. Instead I added composite indexes that match the new query shapes better: one around `(flow_id, status, stage, updated_at, flow_instance_id)` and one around `(flow_id, activity_status, updated_at, flow_instance_id)`.
 > - Response: A standalone `instance id` index still does not buy us much because exact per-instance lookups are already covered by the unique `(flow_id, flow_instance_id)` key.
 
-## [DONE 2026-04-13.1] listFlows question
-What do you think about doing agregation in db query? Or at least moving part of it to db? Or you think it is better load everything to jvm and do in Kotlin?
-I think that at least we do not need to load "Complete" and "Canceled" instances to save memory.
-
-> Agent:
-> - Response: I agree with moving this at least partially to DB.
-> - Changes: `listFlows(...)` now gets per-flow counts and stage breakdown through SQL aggregation queries instead of materializing all summary rows in JVM and grouping there.
-> - Response: This also addresses the specific memory point: we no longer load completed/cancelled instance rows as individual JVM objects just to compute flow counters and stage breakdowns.
-> - Validation: `./gradlew test`
-
-## [DONE 2026-04-13.1] Do we need then("it does not rebuild summaries lazily from history rows") test ?
-
-> Agent:
-> - Response: I do not think this test is worth keeping anymore. It was guarding a removed migration/backfill path rather than current behavior that is central to FlowLite.
-> - Changes: Removed that test in this batch.
-
-## [DONE 2026-04-13.1] given("the IT business-hours timer") - worth to have these tests? We are testing test code.
-
-> Agent:
-> - Response: Agreed. Those assertions were testing showcase/test-domain helper behavior rather than the FlowLite engine contract, so I do not think they are worth keeping in the main suite.
-> - Changes: Removed those timer tests in this batch.
-
-> Whole item agent notes:
-> Changes: Persisted `activityStatus`, refreshed legacy rows missing it, moved `Instances` filtering into SQL, moved `listFlows` aggregation into SQL, added composite summary indexes for the new query shapes, and aligned the frontend long-inactive helper with the backend default semantics.
-> Validation: `./gradlew test`
+>> MG: Don't we query this table by flow_instance_id alone (in case I use only this in filter on Instance tab?). If so I think composite index starting with flow_id will not be used or am I wrong?
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

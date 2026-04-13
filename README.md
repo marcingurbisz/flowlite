@@ -591,7 +591,3 @@ See `LICENSE` for the full license text.
 
 ## Special notes for agent
 - After changing the source code, always run `./gradlew test` before returning to user.
-
-### Repo IEF loop extensions
-Repo-specific loop extensions are defined in `docs/repo-ief-loop-extensions.md`.
-Load that file together with this repo AGENTS/README before starting substantive TODO work in FlowLite.

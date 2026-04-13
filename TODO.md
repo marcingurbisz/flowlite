@@ -34,7 +34,7 @@ Move repo loop extensions next to the repo `AGENTS.md` under a standard filename
 > - Validation: Re-checked the current `CockpitService` / `SpringDataJdbcHistoryStore` flow after the SQL-filtering/activity-status changes and kept the model unchanged in this loop.
 
 
-## [REOPEN] Playwright MCP or playwright-cli plus skills?
+## [DONE 2026-04-13.1] Playwright MCP or playwright-cli plus skills?
 I've installed playwright MCP server. Please use it for exploratory tests. Also check
 https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and https://github.com/microsoft/playwright/blob/main/.claude/skills/playwright-dev/SKILL.md and compare what is better. MCP or playwright-cli + skill. 
 
@@ -56,6 +56,22 @@ https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and ht
 > - Response: One important nuance: the `.claude` `playwright-dev` skill you linked is a maintainer/development guide for adding Playwright APIs/MCP tools/CLI commands inside the Playwright repo itself. It is not the thing that gives end users interactive browser control.
 
 >> MG: I have switched MCP to headless mode. Please try again. Regarding link to SKILL.md. I thought it is a skill for you how to use playwright-cli. Anyway, I wonder why you prefer Playwright MCP over playwright-cli for free/exploratory testing?
+
+> Agent:
+> - Response: After your headless change I retried with Playwright MCP and it now works in this container. For exploratory work I still prefer MCP because it keeps the browser session live between steps, gives direct accessibility snapshots/network/console inspection, and lets me steer the page interactively without first authoring or editing a script.
+> - Response: `playwright-cli` can also be used step by step, but it is a lower-level command workflow. It is stronger when we want something reproducible, scriptable, and easy to move into checked-in regression coverage. MCP is the better probe; CLI/tests are the better artifact.
+> - Changes: Ran exploratory testing against `./gradlew runPerfTestApp` through Playwright MCP. The first pass found a real regression: `/` and `/cockpit` returned 404 while `/cockpit/index.html` worked.
+> - Changes: Fixed `CockpitUiStaticConfig` so `/` and `/cockpit` now forward to `/cockpit/index.html`, and added an integration test covering both entrypoints.
+> - Validation: `./gradlew test`
+> - Validation: MCP exploratory pass after the fix loaded `http://127.0.0.1:8080/cockpit?tab=flows` without console errors, and the `Instances` tab returned exactly one row for a full `flow_instance_id` search.
+
+## [DONE 2026-04-13.1] Review own loop changes
+Review the control-plane update, cockpit search/index changes, and exploratory-test follow-up for potential gaps.
+
+> Agent:
+> Changes: Reviewed the current loop changes end to end: repo extension-file normalization, exact `flow_instance_id` search/index support, and the Cockpit SPA entrypoint fix.
+> Validation: Re-ran `./gradlew test` after stopping the local perf app to avoid the expected `8080` port conflict with `CockpitPlaywrightTest`, then re-ran exploratory checks separately with `runPerfTestApp` + Playwright MCP.
+> Learning: The Cockpit static resource setup already served `/cockpit/index.html`; the actual regression was only missing forwards for `/` and `/cockpit`, which is now guarded by a dedicated integration test.
 
 ## [DONE 2026-04-13.1] What do you think about adding 3 index on status, stage and instance id?
 ... these will be quite frequent queries to FlowLiteInstanceSummary tables from "Instances" tab.

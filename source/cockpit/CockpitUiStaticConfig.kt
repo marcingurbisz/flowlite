@@ -4,6 +4,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import org.springframework.core.io.Resource
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 import org.springframework.web.servlet.resource.PathResourceResolver
 
@@ -24,6 +25,12 @@ class CockpitUiStaticConfig(
             .addResourceLocations(distLocation)
             .resourceChain(false)
             .addResolver(AssetsPathResourceResolver())
+    }
+
+    override fun addViewControllers(registry: ViewControllerRegistry) {
+        registry.addViewController("/").setViewName("forward:/cockpit/index.html")
+        registry.addViewController("/cockpit").setViewName("forward:/cockpit/index.html")
+        registry.addViewController("/cockpit/").setViewName("forward:/cockpit/index.html")
     }
 
     private fun resolveDistLocation(): String {

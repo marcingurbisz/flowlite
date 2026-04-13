@@ -363,7 +363,12 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
               or (:bucket = 'Completed' and status in ('Completed', 'Cancelled'))
           )
           and (:status is null or status = :status)
-          and (:searchPattern is null or lower(flow_id) like :searchPattern or lower(cast(flow_instance_id as varchar(36))) like :searchPattern)
+          and (
+              :searchPattern is null
+              or lower(flow_id) like :searchPattern
+              or lower(cast(flow_instance_id as varchar(36))) like :searchPattern
+              or (:searchFlowInstanceId is not null and flow_instance_id = :searchFlowInstanceId)
+          )
           and (:stage is null or stage = :stage)
           and (:errorMessagePattern is null or lower(last_error_message) like :errorMessagePattern)
           and (:showIncompleteOnly = false or status not in ('Completed', 'Cancelled') or status is null)
@@ -381,6 +386,7 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         bucket: String?,
         status: String?,
         searchPattern: String?,
+        searchFlowInstanceId: UUID?,
         stage: String?,
         errorMessagePattern: String?,
         showIncompleteOnly: Boolean,

@@ -113,6 +113,16 @@ END;
 IF NOT EXISTS (
     SELECT 1
     FROM sys.indexes
+    WHERE name = 'idx_flowlite_instance_summary_instance'
+      AND object_id = OBJECT_ID('dbo.flowlite_instance_summary')
+)
+BEGIN
+    CREATE INDEX idx_flowlite_instance_summary_instance ON dbo.flowlite_instance_summary(flow_instance_id)
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
     WHERE name = 'idx_flowlite_instance_summary_updated'
       AND object_id = OBJECT_ID('dbo.flowlite_instance_summary')
 )

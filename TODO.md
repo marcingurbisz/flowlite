@@ -5,7 +5,7 @@ Move repo loop extensions next to the repo `AGENTS.md` under a standard filename
 > Changes: Moved the FlowLite repo loop extensions from `docs/repo-ief-loop-extensions.md` to sibling `ief-loop-extensions.md` and updated both workspace and repo agent instructions to use that standard location.
 > Validation: Verified there were no remaining references to the old filename in the workspace or repo after the move.
 
-## [REOPEN] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
+## [DONE 2026-04-13.1] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
 
 > I did not persist `activityStatus` in the summary table in this batch. I do not think it is a good next step inside the current generic `SpringDataJdbcHistoryStore`, because that would couple a generic history projection to Cockpit-specific stage semantics and engine flow definitions. If we want to persist it later, I would do that through a cockpit-owned projector instead of pushing Cockpit knowledge into the generic store.
 > Validation: `./gradlew test`
@@ -25,6 +25,13 @@ Move repo loop extensions next to the repo `AGENTS.md` under a standard filename
 * Remove "Added a one-time refresh of existing summary rows with `NULL activity_status`,". Why not to make make this column non nullable together with status column?
 * derived from their current `(flowId, stage, status)` tuple - what flowId is needed for?
 * sets an `activityStatus` resolver after flow registration - why we need resolver per flow? This should be the same for all flows.
+
+> Agent:
+> - Response: I would keep `CockpitActivityStatus` and `activityStatus` for now. The current field models only the Cockpit-specific split of active work, while `status` still carries the engine lifecycle. Renaming it to `CockpitStatus`/`cockpitStatus` becomes cleaner only if we actually collapse those two concepts into one Cockpit-facing status model.
+> - Response: I would also keep `status` and `activity_status` nullable in the schema for now. For newly written rows they are populated, but making them `NOT NULL` safely would require an explicit data migration path for all legacy summaries rather than only the startup refresh for derived activity values.
+> - Response: `flowId` is needed during derivation because `Pending` must be refined by the owning flow definition. The same stage name is not guaranteed to mean the same thing across flows, so we need the flow to know whether the current stage is a timer stage, an event wait stage, or plain engine-pending work.
+> - Response: The resolver is not really "per flow" in registration count. It is one resolver that receives `flowId` and uses that to look up the relevant stage definitions. The dependency on flow-specific stage metadata is real even though the classification rule itself is shared.
+> - Validation: Re-checked the current `CockpitService` / `SpringDataJdbcHistoryStore` flow after the SQL-filtering/activity-status changes and kept the model unchanged in this loop.
 
 
 ## [REOPEN] Playwright MCP or playwright-cli plus skills?
@@ -50,7 +57,7 @@ https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and ht
 
 >> MG: I have switched MCP to headless mode. Please try again. Regarding link to SKILL.md. I thought it is a skill for you how to use playwright-cli. Anyway, I wonder why you prefer Playwright MCP over playwright-cli for free/exploratory testing?
 
-## [REOPEN] What do you think about adding 3 index on status, stage and instance id?
+## [DONE 2026-04-13.1] What do you think about adding 3 index on status, stage and instance id?
 ... these will be quite frequent queries to FlowLiteInstanceSummary tables from "Instances" tab.
 
 > Agent:
@@ -68,6 +75,13 @@ https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and ht
 > - Response: A standalone `instance id` index still does not buy us much because exact per-instance lookups are already covered by the unique `(flow_id, flow_instance_id)` key.
 
 >> MG: Don't we query this table by flow_instance_id alone (in case I use only this in filter on Instance tab?). If so I think composite index starting with flow_id will not be used or am I wrong?
+
+> Agent:
+> - Response: You were right for the exact `flow_instance_id` case. A composite index starting with `flow_id` is not the right access path when the user searches only by instance id.
+> - Changes: Added an exact-UUID search path in `CockpitService.listInstances(...)` / `findFilteredSummaries(...)` so a full instance id search no longer depends only on `lower(cast(flow_instance_id as varchar(...))) like ...`.
+> - Changes: Added a standalone `flow_instance_id` index to both H2 and MSSQL schemas for that exact-match path.
+> - Response: I did not add standalone indexes for `status` and `stage`. Those are still better served by the existing composite indexes because the hot query shape combines them with `flow_id`, ordering, and other predicates.
+> - Validation: `./gradlew test --tests io.flowlite.test.CockpitServiceTest`
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

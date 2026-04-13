@@ -123,6 +123,9 @@ class CockpitServiceTest : BehaviorSpec({
                         instanceIds = listOf(aError1),
                     ),
                 )
+
+                service.listInstances(searchTerm = bError.toString())
+                    .map { it.flowInstanceId } shouldContainExactly listOf(bError)
             }
 
             then("it can refresh persisted activity status for existing summary rows") {

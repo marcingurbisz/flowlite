@@ -116,6 +116,7 @@ class CockpitService(
             ?.coerceAtLeast(1)
             ?.let(Duration::ofSeconds)
         val normalizedSearchTerm = searchTerm?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
+        val exactFlowInstanceId = normalizedSearchTerm?.let { runCatching { UUID.fromString(it) }.getOrNull() }
         val normalizedStage = stage?.trim()?.takeIf { it.isNotEmpty() }
         val normalizedErrorMessage = errorMessage?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
         val normalizedActivityFilter = activityFilter?.trim()?.takeIf { it.isNotEmpty() && it != "all" }
@@ -127,6 +128,7 @@ class CockpitService(
             bucket = bucket?.name,
             status = status?.name,
             searchPattern = normalizedSearchTerm?.let { "%$it%" },
+            searchFlowInstanceId = exactFlowInstanceId,
             stage = normalizedStage,
             errorMessagePattern = normalizedErrorMessage?.let { "%$it%" },
             showIncompleteOnly = showIncompleteOnly,

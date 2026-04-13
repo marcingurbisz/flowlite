@@ -89,9 +89,15 @@ BEGIN
         flow_instance_id uniqueidentifier NOT NULL,
         stage varchar(128) NULL,
         status varchar(32) NULL,
+        activity_status varchar(32) NULL,
         last_error_message varchar(4000) NULL,
         updated_at datetime2 NOT NULL
     )
+END;
+
+IF COL_LENGTH('dbo.flowlite_instance_summary', 'activity_status') IS NULL
+BEGIN
+    ALTER TABLE dbo.flowlite_instance_summary ADD activity_status varchar(32) NULL
 END;
 
 IF NOT EXISTS (
@@ -112,4 +118,24 @@ IF NOT EXISTS (
 )
 BEGIN
     CREATE INDEX idx_flowlite_instance_summary_updated ON dbo.flowlite_instance_summary(flow_id, updated_at, flow_instance_id)
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'idx_flowlite_instance_summary_status_stage'
+      AND object_id = OBJECT_ID('dbo.flowlite_instance_summary')
+)
+BEGIN
+    CREATE INDEX idx_flowlite_instance_summary_status_stage ON dbo.flowlite_instance_summary(flow_id, status, stage, updated_at, flow_instance_id)
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'idx_flowlite_instance_summary_activity'
+      AND object_id = OBJECT_ID('dbo.flowlite_instance_summary')
+)
+BEGIN
+    CREATE INDEX idx_flowlite_instance_summary_activity ON dbo.flowlite_instance_summary(flow_id, activity_status, updated_at, flow_instance_id)
 END;

@@ -10,8 +10,10 @@ import io.flowlite.StageStatus
 import io.flowlite.SpringDataJdbcEventStore
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.SpringDataJdbcTickScheduler
+import io.flowlite.historyValueOf
 import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
+import io.flowlite.cockpit.classifyCockpitActivityStatus
 import io.flowlite.cockpit.cockpitRouter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
@@ -118,6 +120,14 @@ object Beans {
             ).also { engine ->
                 engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)
                 engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(onboardingActions), onboardingPersister)
+                historyStore.setActivityStatusResolver { flowId, stage, status ->
+                    val stageDefinitions = engine.registeredFlows()[flowId]
+                        ?.stages
+                        ?.entries
+                        ?.associate { entry -> historyValueOf(entry.key) to entry.value }
+                    classifyCockpitActivityStatus(stageDefinitions, stage, status)?.name
+                }
+                historyStore.refreshActivityStatuses()
             }
         }
 

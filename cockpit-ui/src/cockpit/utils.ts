@@ -31,7 +31,7 @@ const parseDurationToSecondsOrNull = (value: string | null) => {
 };
 
 const isDefaultLongRunningActivity = (activityStatus: ActivityStatus | null) =>
-  activityStatus !== null && activityStatus !== 'WaitingForEvent';
+  activityStatus === 'Running' || activityStatus === 'Pending';
 
 export const parseDurationToSeconds = (value: string | null, fallback: number) =>
   parseDurationToSecondsOrNull(value) ?? fallback;

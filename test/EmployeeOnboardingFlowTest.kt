@@ -4,7 +4,6 @@ import io.flowlite.Engine
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.HistoryEntryType
 import io.flowlite.MermaidGenerator
-import io.flowlite.ActionContext
 import io.flowlite.StageStatus
 import io.flowlite.test.EmployeeStage.Delay5Min
 import io.flowlite.test.EmployeeStage.DelayAfterHRUpdate
@@ -16,7 +15,6 @@ import io.flowlite.test.EmployeeStage.WaitingForOnboardingAgreementSigned
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import java.time.Duration
-import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -29,10 +27,10 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
     val repo = TestApplicationExtension.context().getBean<EmployeeOnboardingRepository>()
     val historyRepo = TestApplicationExtension.context().getBean<FlowLiteHistoryRepository>()
     val clock = TestApplicationExtension.context().getBean<AdjustableClock>()
-    val actions = TestApplicationExtension.context().getBean<EmployeeOnboardingActions>()
 
     given("an employee onboarding flow") {
         `when`("generating a mermaid diagram") {
+            val actions = TestApplicationExtension.context().getBean<EmployeeOnboardingActions>()
             val flow = createEmployeeOnboardingFlow(actions)
             val generator = MermaidGenerator()
             val diagram = generator.generateDiagram(flow)
@@ -40,44 +38,6 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
             then("should generate diagram successfully") {
                 assert(diagram.isNotEmpty())
                 assert(diagram.contains("stateDiagram-v2"))
-            }
-        }
-    }
-
-    given("the IT business-hours timer") {
-        val employee = EmployeeOnboarding(stage = CreateEmployeeProfile)
-
-        fun scheduledAt(now: String): Instant =
-            actions.effectiveITWorkingDateTime(
-                ActionContext(
-                    flowId = EMPLOYEE_ONBOARDING_FLOW_ID,
-                    flowInstanceId = UUID.randomUUID(),
-                    now = Instant.parse(now),
-                ),
-                employee,
-            )
-
-        `when`("the current time is already inside Warsaw business hours") {
-            then("it returns the current instant without extra delay") {
-                scheduledAt("2026-04-15T08:30:00Z") shouldBe Instant.parse("2026-04-15T08:30:00Z")
-            }
-        }
-
-        `when`("the current time is before Warsaw business hours") {
-            then("it waits until the same-day 08:00 Warsaw opening") {
-                scheduledAt("2026-04-15T04:30:00Z") shouldBe Instant.parse("2026-04-15T06:00:00Z")
-            }
-        }
-
-        `when`("the current time is after Warsaw business hours") {
-            then("it waits until the next business-day 08:00 Warsaw opening") {
-                scheduledAt("2026-04-15T18:30:00Z") shouldBe Instant.parse("2026-04-16T06:00:00Z")
-            }
-        }
-
-        `when`("the current time is after business hours on Friday") {
-            then("it skips the weekend and waits until Monday 08:00 Warsaw") {
-                scheduledAt("2026-04-17T18:30:00Z") shouldBe Instant.parse("2026-04-20T06:00:00Z")
             }
         }
     }

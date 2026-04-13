@@ -45,9 +45,14 @@ create table if not exists flowlite_instance_summary (
     flow_instance_id uuid not null,
     stage varchar(128),
     status varchar(32),
+    activity_status varchar(32),
     last_error_message varchar(4000),
     updated_at timestamp not null
 );
 
+alter table flowlite_instance_summary add column if not exists activity_status varchar(32);
+
 create unique index if not exists idx_flowlite_instance_summary_key on flowlite_instance_summary(flow_id, flow_instance_id);
 create index if not exists idx_flowlite_instance_summary_updated on flowlite_instance_summary(flow_id, updated_at, flow_instance_id);
+create index if not exists idx_flowlite_instance_summary_status_stage on flowlite_instance_summary(flow_id, status, stage, updated_at, flow_instance_id);
+create index if not exists idx_flowlite_instance_summary_activity on flowlite_instance_summary(flow_id, activity_status, updated_at, flow_instance_id);

@@ -3,6 +3,7 @@ package io.flowlite.test
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
 import io.flowlite.FlowLiteInstanceSummaryRepository
+import io.flowlite.FlowLiteInstanceSummaryRow
 import io.flowlite.HistoryEntryType
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
@@ -124,26 +125,26 @@ class CockpitServiceTest : BehaviorSpec({
                 )
             }
 
-            then("it does not rebuild summaries lazily from history rows") {
+            then("it can refresh persisted activity status for existing summary rows") {
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                listOf(
-                    historyRow("2026-03-04T08:00:00Z", flowA, aRunning, HistoryEntryType.Started, stage = "Init", toStatus = StageStatus.Pending),
-                    historyRow("2026-03-04T08:01:00Z", flowA, aRunning, HistoryEntryType.StatusChanged, stage = "Init", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
-                ).forEach { historyRepo.save(it) }
+                summaryRepo.save(
+                    FlowLiteInstanceSummaryRow(
+                        flowId = ORDER_CONFIRMATION_FLOW_ID,
+                        flowInstanceId = aRunning,
+                        stage = "WaitingForConfirmation",
+                        status = StageStatus.Pending.name,
+                        activityStatus = null,
+                        updatedAt = Instant.parse("2026-03-04T08:01:00Z"),
+                    ),
+                )
 
-                service.listInstances() shouldContainExactly emptyList()
-                val flows = service.listFlows()
-                flows.map { it.flowId } shouldContainExactly listOf(EMPLOYEE_ONBOARDING_FLOW_ID, ORDER_CONFIRMATION_FLOW_ID)
-                flows.all {
-                    it.notCompletedCount == 0 &&
-                        it.errorCount == 0 &&
-                        it.activeCount == 0 &&
-                        it.completedCount == 0 &&
-                        it.longRunningCount == 0 &&
-                        it.stageBreakdown.isEmpty()
-                } shouldBe true
+                historyStore.refreshActivityStatuses()
+
+                service.listInstances(activityFilter = CockpitActivityStatus.WaitingForEvent.name)
+                    .map { it.flowInstanceId } shouldContainExactly listOf(aRunning)
             }
+
         }
     }
 

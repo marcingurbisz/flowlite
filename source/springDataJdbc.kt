@@ -274,8 +274,25 @@ data class FlowLiteInstanceSummaryRow(
     val flowInstanceId: UUID,
     val stage: String? = null,
     val status: String? = null,
+    val activityStatus: String? = null,
     val lastErrorMessage: String? = null,
     val updatedAt: Instant,
+)
+
+data class FlowLiteFlowSummaryAggregateRow(
+    val flowId: String,
+    val activeCount: Int,
+    val errorCount: Int,
+    val completedCount: Int,
+    val notCompletedCount: Int,
+    val longRunningCount: Int,
+)
+
+data class FlowLiteFlowStageBreakdownRow(
+    val flowId: String,
+    val stage: String,
+    val totalCount: Int,
+    val errorCount: Int,
 )
 
 interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
@@ -333,12 +350,101 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         """,
     )
     fun findSummary(flowId: String, flowInstanceId: UUID): FlowLiteInstanceSummaryRow?
+
+    @Query(
+        """
+        select *
+        from flowlite_instance_summary
+        where (:flowId is null or flow_id = :flowId)
+          and (
+              :bucket is null
+              or (:bucket = 'Active' and status in ('Pending', 'Running'))
+              or (:bucket = 'Error' and status = 'Error')
+              or (:bucket = 'Completed' and status in ('Completed', 'Cancelled'))
+          )
+          and (:status is null or status = :status)
+          and (:searchPattern is null or lower(flow_id) like :searchPattern or lower(cast(flow_instance_id as varchar(36))) like :searchPattern)
+          and (:stage is null or stage = :stage)
+          and (:errorMessagePattern is null or lower(last_error_message) like :errorMessagePattern)
+          and (:showIncompleteOnly = false or status not in ('Completed', 'Cancelled') or status is null)
+          and (
+              :activityFilter is null
+              or (:activityFilter = 'default' and activity_status in ('Running', 'Pending'))
+              or activity_status = :activityFilter
+          )
+          and (:updatedBefore is null or updated_at < :updatedBefore)
+        order by flow_id asc, updated_at desc, flow_instance_id asc
+        """,
+    )
+    fun findFilteredSummaries(
+        flowId: String?,
+        bucket: String?,
+        status: String?,
+        searchPattern: String?,
+        stage: String?,
+        errorMessagePattern: String?,
+        showIncompleteOnly: Boolean,
+        activityFilter: String?,
+        updatedBefore: Instant?,
+    ): List<FlowLiteInstanceSummaryRow>
+
+    @Query(
+        """
+        select
+            flow_id as flow_id,
+            sum(case when status in ('Pending', 'Running') then 1 else 0 end) as active_count,
+            sum(case when status = 'Error' then 1 else 0 end) as error_count,
+            sum(case when status in ('Completed', 'Cancelled') then 1 else 0 end) as completed_count,
+            sum(case when status not in ('Completed', 'Cancelled') or status is null then 1 else 0 end) as not_completed_count,
+            sum(case when activity_status in ('Running', 'Pending') and updated_at < :updatedBefore then 1 else 0 end) as long_running_count
+        from flowlite_instance_summary
+        group by flow_id
+        order by flow_id asc
+        """,
+    )
+    fun findFlowSummaryAggregates(updatedBefore: Instant): List<FlowLiteFlowSummaryAggregateRow>
+
+    @Query(
+        """
+        select
+            flow_id as flow_id,
+            stage as stage,
+            count(*) as total_count,
+            sum(case when status = 'Error' then 1 else 0 end) as error_count
+        from flowlite_instance_summary
+        where stage is not null
+          and (status not in ('Completed', 'Cancelled') or status is null)
+        group by flow_id, stage
+        order by flow_id asc, stage asc
+        """,
+    )
+    fun findIncompleteStageBreakdown(): List<FlowLiteFlowStageBreakdownRow>
 }
 
 class SpringDataJdbcHistoryStore(
     private val repo: FlowLiteHistoryRepository,
     private val summaryRepo: FlowLiteInstanceSummaryRepository,
 ) : HistoryStore {
+    @Volatile
+    private var activityStatusResolver: ((flowId: String, stage: String?, status: StageStatus?) -> String?)? = null
+
+    fun setActivityStatusResolver(resolver: (flowId: String, stage: String?, status: StageStatus?) -> String?) {
+        activityStatusResolver = resolver
+    }
+
+    fun refreshActivityStatuses() {
+        val resolver = activityStatusResolver ?: return
+        val updates = summaryRepo.findAllSummaries().mapNotNull { row ->
+            if (row.activityStatus != null) return@mapNotNull null
+            val statusValue = row.status?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() }
+            val resolved = resolver(row.flowId, row.stage, statusValue) ?: return@mapNotNull null
+            row.copy(activityStatus = resolved)
+        }
+        if (updates.isNotEmpty()) {
+            summaryRepo.saveAll(updates)
+        }
+    }
+
     override fun append(entry: HistoryEntry) {
         repo.save(
             FlowLiteHistoryRow(
@@ -367,14 +473,17 @@ class SpringDataJdbcHistoryStore(
             flowId = entry.flowId,
             flowInstanceId = entry.flowInstanceId,
             updatedAt = entry.occurredAt,
-        )).apply(entry)
+        )).apply(entry, activityStatusResolver)
         summaryRepo.save(next)
     }
 }
 
 private fun HistoryEntry.affectsSummary(): Boolean = type != HistoryEntryType.EventAppended
 
-private fun FlowLiteInstanceSummaryRow.apply(entry: HistoryEntry): FlowLiteInstanceSummaryRow {
+private fun FlowLiteInstanceSummaryRow.apply(
+    entry: HistoryEntry,
+    activityStatusResolver: ((flowId: String, stage: String?, status: StageStatus?) -> String?)?,
+): FlowLiteInstanceSummaryRow {
     val nextStage = when (entry.type) {
         HistoryEntryType.Started,
         HistoryEntryType.StatusChanged,
@@ -401,6 +510,9 @@ private fun FlowLiteInstanceSummaryRow.apply(entry: HistoryEntry): FlowLiteInsta
         -> status
     }
 
+    val nextStatusValue = nextStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() }
+    val nextActivityStatus = activityStatusResolver?.invoke(entry.flowId, nextStage, nextStatusValue)
+
     val nextErrorMessage = when {
         entry.type == HistoryEntryType.Error -> entry.errorMessage
         nextStatus == StageStatus.Error.name -> lastErrorMessage
@@ -410,6 +522,7 @@ private fun FlowLiteInstanceSummaryRow.apply(entry: HistoryEntry): FlowLiteInsta
     return copy(
         stage = nextStage,
         status = nextStatus,
+        activityStatus = nextActivityStatus,
         lastErrorMessage = nextErrorMessage,
         updatedAt = entry.occurredAt,
     )

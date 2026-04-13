@@ -1,3 +1,10 @@
+## [DONE 2026-04-13.1] Normalize repo loop extension file placement
+Move repo loop extensions next to the repo `AGENTS.md` under a standard filename and align the base IEF instructions with that convention.
+
+> Agent:
+> Changes: Moved the FlowLite repo loop extensions from `docs/repo-ief-loop-extensions.md` to sibling `ief-loop-extensions.md` and updated both workspace and repo agent instructions to use that standard location.
+> Validation: Verified there were no remaining references to the old filename in the workspace or repo after the move.
+
 ## [REOPEN] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
 
 > I did not persist `activityStatus` in the summary table in this batch. I do not think it is a good next step inside the current generic `SpringDataJdbcHistoryStore`, because that would couple a generic history projection to Cockpit-specific stage semantics and engine flow definitions. If we want to persist it later, I would do that through a cockpit-owned projector instead of pushing Cockpit knowledge into the generic store.

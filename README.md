@@ -590,4 +590,5 @@ FlowLite is available under the MIT License.
 See `LICENSE` for the full license text.
 
 ## Special notes for agent
+- Load the repo loop extensions from the sibling `ief-loop-extensions.md` before starting substantive work in this repo.
 - After changing the source code, always run `./gradlew test` before returning to user.

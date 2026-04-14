@@ -273,8 +273,8 @@ data class FlowLiteInstanceSummaryRow(
     val flowId: String,
     val flowInstanceId: UUID,
     val stage: String? = null,
-    val status: String? = null,
-    val activityStatus: String? = null,
+    val status: String = StageStatus.Pending.name,
+    val cockpitStatus: String = "PendingEngine",
     val lastErrorMessage: String? = null,
     val updatedAt: Instant,
 )
@@ -293,6 +293,12 @@ data class FlowLiteFlowStageBreakdownRow(
     val stage: String,
     val totalCount: Int,
     val errorCount: Int,
+)
+
+data class FlowLiteErrorGroupRow(
+    val flowId: String,
+    val stage: String?,
+    val count: Int,
 )
 
 interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
@@ -358,11 +364,11 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         where (:flowId is null or flow_id = :flowId)
           and (
               :bucket is null
-              or (:bucket = 'Active' and status in ('Pending', 'Running'))
-              or (:bucket = 'Error' and status = 'Error')
-              or (:bucket = 'Completed' and status in ('Completed', 'Cancelled'))
+              or (:bucket = 'Active' and cockpit_status in ('Running', 'WaitingForTimer', 'WaitingForEvent', 'PendingEngine'))
+              or (:bucket = 'Error' and cockpit_status = 'Error')
+              or (:bucket = 'Completed' and cockpit_status in ('Completed', 'Cancelled'))
           )
-          and (:status is null or status = :status)
+          and (:status is null or cockpit_status = :status)
           and (
               :searchPattern is null
               or lower(flow_id) like :searchPattern
@@ -371,11 +377,11 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
           )
           and (:stage is null or stage = :stage)
           and (:errorMessagePattern is null or lower(last_error_message) like :errorMessagePattern)
-          and (:showIncompleteOnly = false or status not in ('Completed', 'Cancelled') or status is null)
+          and (:showIncompleteOnly = false or cockpit_status not in ('Completed', 'Cancelled'))
           and (
-              :activityFilter is null
-              or (:activityFilter = 'default' and activity_status in ('Running', 'Pending'))
-              or activity_status = :activityFilter
+              :cockpitStatusFilter is null
+              or (:cockpitStatusFilter = 'default' and cockpit_status in ('Running', 'PendingEngine'))
+              or cockpit_status = :cockpitStatusFilter
           )
           and (:updatedBefore is null or updated_at < :updatedBefore)
         order by flow_id asc, updated_at desc, flow_instance_id asc
@@ -390,7 +396,7 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         stage: String?,
         errorMessagePattern: String?,
         showIncompleteOnly: Boolean,
-        activityFilter: String?,
+        cockpitStatusFilter: String?,
         updatedBefore: Instant?,
     ): List<FlowLiteInstanceSummaryRow>
 
@@ -398,11 +404,32 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         """
         select
             flow_id as flow_id,
-            sum(case when status in ('Pending', 'Running') then 1 else 0 end) as active_count,
-            sum(case when status = 'Error' then 1 else 0 end) as error_count,
-            sum(case when status in ('Completed', 'Cancelled') then 1 else 0 end) as completed_count,
-            sum(case when status not in ('Completed', 'Cancelled') or status is null then 1 else 0 end) as not_completed_count,
-            sum(case when activity_status in ('Running', 'Pending') and updated_at < :updatedBefore then 1 else 0 end) as long_running_count
+            stage as stage,
+            count(*) as count
+        from flowlite_instance_summary
+        where cockpit_status = 'Error'
+          and (:flowId is null or flow_id = :flowId)
+          and (:stagePattern is null or lower(stage) like :stagePattern)
+          and (:errorMessagePattern is null or lower(last_error_message) like :errorMessagePattern)
+        group by flow_id, stage
+        order by flow_id asc, stage asc
+        """,
+    )
+    fun findErrorGroups(
+        flowId: String?,
+        stagePattern: String?,
+        errorMessagePattern: String?,
+    ): List<FlowLiteErrorGroupRow>
+
+    @Query(
+        """
+        select
+            flow_id as flow_id,
+            sum(case when cockpit_status in ('Running', 'WaitingForTimer', 'WaitingForEvent', 'PendingEngine') then 1 else 0 end) as active_count,
+            sum(case when cockpit_status = 'Error' then 1 else 0 end) as error_count,
+            sum(case when cockpit_status in ('Completed', 'Cancelled') then 1 else 0 end) as completed_count,
+            sum(case when cockpit_status not in ('Completed', 'Cancelled') then 1 else 0 end) as not_completed_count,
+            sum(case when cockpit_status in ('Running', 'PendingEngine') and updated_at < :updatedBefore then 1 else 0 end) as long_running_count
         from flowlite_instance_summary
         group by flow_id
         order by flow_id asc
@@ -419,7 +446,7 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
             sum(case when status = 'Error' then 1 else 0 end) as error_count
         from flowlite_instance_summary
         where stage is not null
-          and (status not in ('Completed', 'Cancelled') or status is null)
+                    and cockpit_status not in ('Completed', 'Cancelled')
         group by flow_id, stage
         order by flow_id asc, stage asc
         """,
@@ -432,23 +459,10 @@ class SpringDataJdbcHistoryStore(
     private val summaryRepo: FlowLiteInstanceSummaryRepository,
 ) : HistoryStore {
     @Volatile
-    private var activityStatusResolver: ((flowId: String, stage: String?, status: StageStatus?) -> String?)? = null
+    private var cockpitStatusResolver: ((flowId: String, stage: String?, status: StageStatus?) -> String?)? = null
 
-    fun setActivityStatusResolver(resolver: (flowId: String, stage: String?, status: StageStatus?) -> String?) {
-        activityStatusResolver = resolver
-    }
-
-    fun refreshActivityStatuses() {
-        val resolver = activityStatusResolver ?: return
-        val updates = summaryRepo.findAllSummaries().mapNotNull { row ->
-            if (row.activityStatus != null) return@mapNotNull null
-            val statusValue = row.status?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() }
-            val resolved = resolver(row.flowId, row.stage, statusValue) ?: return@mapNotNull null
-            row.copy(activityStatus = resolved)
-        }
-        if (updates.isNotEmpty()) {
-            summaryRepo.saveAll(updates)
-        }
+    fun setCockpitStatusResolver(resolver: (flowId: String, stage: String?, status: StageStatus?) -> String?) {
+        cockpitStatusResolver = resolver
     }
 
     override fun append(entry: HistoryEntry) {
@@ -479,7 +493,7 @@ class SpringDataJdbcHistoryStore(
             flowId = entry.flowId,
             flowInstanceId = entry.flowInstanceId,
             updatedAt = entry.occurredAt,
-        )).apply(entry, activityStatusResolver)
+        )).apply(entry, cockpitStatusResolver)
         summaryRepo.save(next)
     }
 }
@@ -488,7 +502,7 @@ private fun HistoryEntry.affectsSummary(): Boolean = type != HistoryEntryType.Ev
 
 private fun FlowLiteInstanceSummaryRow.apply(
     entry: HistoryEntry,
-    activityStatusResolver: ((flowId: String, stage: String?, status: StageStatus?) -> String?)?,
+    cockpitStatusResolver: ((flowId: String, stage: String?, status: StageStatus?) -> String?)?,
 ): FlowLiteInstanceSummaryRow {
     val nextStage = when (entry.type) {
         HistoryEntryType.Started,
@@ -516,8 +530,8 @@ private fun FlowLiteInstanceSummaryRow.apply(
         -> status
     }
 
-    val nextStatusValue = nextStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() }
-    val nextActivityStatus = activityStatusResolver?.invoke(entry.flowId, nextStage, nextStatusValue)
+    val nextStatusValue = runCatching { StageStatus.valueOf(nextStatus) }.getOrNull()
+    val nextCockpitStatus = cockpitStatusResolver?.invoke(entry.flowId, nextStage, nextStatusValue) ?: cockpitStatus
 
     val nextErrorMessage = when {
         entry.type == HistoryEntryType.Error -> entry.errorMessage
@@ -528,7 +542,7 @@ private fun FlowLiteInstanceSummaryRow.apply(
     return copy(
         stage = nextStage,
         status = nextStatus,
-        activityStatus = nextActivityStatus,
+        cockpitStatus = nextCockpitStatus,
         lastErrorMessage = nextErrorMessage,
         updatedAt = entry.occurredAt,
     )

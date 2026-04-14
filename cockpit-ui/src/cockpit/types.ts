@@ -6,12 +6,11 @@ export interface ConfirmationActionState {
   targetStage?: string;
 }
 
-export type InstanceStatus = 'Pending' | 'Running' | 'Completed' | 'Error' | 'Cancelled';
-export type ActivityStatus = 'Running' | 'Pending' | 'WaitingForTimer' | 'WaitingForEvent';
+export type CockpitStatus = 'Running' | 'WaitingForTimer' | 'WaitingForEvent' | 'PendingEngine' | 'Error' | 'Completed' | 'Cancelled';
 export type HistoryEventType = 'Started' | 'EventAppended' | 'StatusChanged' | 'StageChanged' | 'Retried' | 'ManualStageChanged' | 'Cancelled' | 'Error';
 export type ActiveView = 'flows' | 'errors' | 'long-running' | 'instances';
-export type StatusFilter = 'all' | InstanceStatus;
-export type LongRunningActivityFilter = 'default' | 'all' | ActivityStatus;
+export type StatusFilter = 'all' | CockpitStatus;
+export type LongRunningStatusFilter = 'default' | 'all' | Extract<CockpitStatus, 'Running' | 'WaitingForTimer' | 'WaitingForEvent' | 'PendingEngine'>;
 
 export interface FlowDto {
   flowId: string;
@@ -33,8 +32,7 @@ export interface InstanceDto {
   flowId: string;
   flowInstanceId: string;
   stage: string | null;
-  status: InstanceStatus | null;
-  activityStatus: ActivityStatus | null;
+  cockpitStatus: CockpitStatus;
   lastUpdatedAt: string;
   lastErrorMessage: string | null;
 }
@@ -43,7 +41,6 @@ export interface ErrorGroupDto {
   flowId: string;
   stage: string | null;
   count: number;
-  instanceIds: string[];
 }
 
 export interface HistoryEntryDto {
@@ -64,8 +61,7 @@ export interface UiInstance {
   id: string;
   flowId: string;
   stage: string;
-  status: InstanceStatus;
-  activityStatus: ActivityStatus | null;
+  cockpitStatus: CockpitStatus;
   updatedAt: Date;
   createdAt: Date;
   errorMessage: string | null;
@@ -82,16 +78,15 @@ export interface CockpitLocationState {
   errorStageFilter: string;
   errorMessageFilterErrors: string;
   longRunningFlowFilter: string;
-  longRunningActivityFilter: LongRunningActivityFilter;
+  longRunningStatusFilter: LongRunningStatusFilter;
   longRunningThreshold: string;
   selectedInstanceFlowId: string | null;
   selectedInstanceId: string | null;
 }
 
 export const activeViews: ActiveView[] = ['flows', 'errors', 'long-running', 'instances'];
-export const statusFilters: StatusFilter[] = ['all', 'Pending', 'Running', 'Completed', 'Error', 'Cancelled'];
-export const activityStatuses: ActivityStatus[] = ['Running', 'Pending', 'WaitingForTimer', 'WaitingForEvent'];
-export const longRunningActivityFilters: LongRunningActivityFilter[] = ['default', 'all', ...activityStatuses];
+export const statusFilters: StatusFilter[] = ['all', 'Running', 'WaitingForTimer', 'WaitingForEvent', 'PendingEngine', 'Error', 'Completed', 'Cancelled'];
+export const longRunningStatusFilters: LongRunningStatusFilter[] = ['default', 'all', 'Running', 'PendingEngine', 'WaitingForTimer', 'WaitingForEvent'];
 export const defaultLongRunningThreshold = '1h';
 export const defaultLongRunningThresholdSeconds = 60 * 60;
 
@@ -106,7 +101,7 @@ export const defaultLocationState: CockpitLocationState = {
   errorStageFilter: 'all',
   errorMessageFilterErrors: '',
   longRunningFlowFilter: 'all',
-  longRunningActivityFilter: 'default',
+  longRunningStatusFilter: 'default',
   longRunningThreshold: defaultLongRunningThreshold,
   selectedInstanceFlowId: null,
   selectedInstanceId: null,
@@ -116,8 +111,7 @@ export const toUiInstance = (instance: InstanceDto): UiInstance => ({
   id: instance.flowInstanceId,
   flowId: instance.flowId,
   stage: instance.stage ?? '',
-  status: instance.status as InstanceStatus,
-  activityStatus: instance.activityStatus,
+  cockpitStatus: instance.cockpitStatus,
   updatedAt: new Date(instance.lastUpdatedAt),
   createdAt: new Date(instance.lastUpdatedAt),
   errorMessage: instance.lastErrorMessage,

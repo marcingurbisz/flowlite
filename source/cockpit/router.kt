@@ -1,6 +1,5 @@
 package io.flowlite.cockpit
 
-import io.flowlite.StageStatus
 import java.util.UUID
 import org.springframework.http.HttpStatus
 import org.springframework.web.servlet.function.ServerResponse
@@ -28,8 +27,7 @@ fun cockpitRouter(service: CockpitService) =
             val status = request.param("status")
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
-                .map { it.replaceFirstChar { ch -> ch.uppercaseChar() } }
-                .map { StageStatus.valueOf(it) }
+                .map { CockpitStatus.valueOf(it) }
                 .orElse(null)
             val searchTerm = request.param("q").orElse(null)
             val stage = request.param("stage")
@@ -44,7 +42,7 @@ fun cockpitRouter(service: CockpitService) =
                 .map { it.trim().lowercase() }
                 .map { it == "1" || it == "true" || it == "yes" }
                 .orElse(false)
-            val activityFilter = request.param("activityStatus")
+            val cockpitStatusFilter = request.param("cockpitStatus")
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
                 .orElse(null)
@@ -63,7 +61,7 @@ fun cockpitRouter(service: CockpitService) =
                     stage = stage,
                     errorMessage = errorMessage,
                     showIncompleteOnly = showIncompleteOnly,
-                    activityFilter = activityFilter,
+                    cockpitStatusFilter = cockpitStatusFilter,
                     longInactiveThresholdSeconds = longInactiveThresholdSeconds,
                 ),
             )

@@ -9,11 +9,12 @@ import {
   toUiInstance,
   type ActiveView,
   type ConfirmationActionState,
+  type CockpitStatus,
   type ErrorGroupDto,
   type FlowDto,
   type HistoryEntryDto,
   type InstanceDto,
-  type LongRunningActivityFilter,
+  type LongRunningStatusFilter,
   type StatusFilter,
   type UiInstance,
 } from './cockpit/types';
@@ -28,6 +29,28 @@ interface MermaidHostWindow extends Window {
     initialize: (config: Record<string, unknown>) => void;
   };
 }
+
+const isActionableStatus = (status: CockpitStatus) =>
+  status === 'PendingEngine' || status === 'WaitingForTimer' || status === 'WaitingForEvent' || status === 'Error';
+
+const groupErrors = (rows: InstanceDto[]): ErrorGroupDto[] => {
+  const grouped = new Map<string, ErrorGroupDto>();
+
+  rows.forEach((row) => {
+    const key = `${row.flowId}::${row.stage ?? ''}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.count += 1;
+      return;
+    }
+    grouped.set(key, { flowId: row.flowId, stage: row.stage, count: 1 });
+  });
+
+  return Array.from(grouped.values()).sort((left, right) => {
+    if (left.flowId !== right.flowId) return left.flowId.localeCompare(right.flowId);
+    return (left.stage ?? '').localeCompare(right.stage ?? '');
+  });
+};
 
 const FlowLiteCockpit = () => {
   const initialLocationState = useMemo(() => readLocationState(), []);
@@ -48,7 +71,7 @@ const FlowLiteCockpit = () => {
   const [errorStageFilter, setErrorStageFilter] = useState(initialLocationState.errorStageFilter);
   const [errorMessageFilterErrors, setErrorMessageFilterErrors] = useState(initialLocationState.errorMessageFilterErrors);
   const [longRunningFlowFilter, setLongRunningFlowFilter] = useState(initialLocationState.longRunningFlowFilter);
-  const [longRunningActivityFilter, setLongRunningActivityFilter] = useState<LongRunningActivityFilter>(initialLocationState.longRunningActivityFilter);
+  const [longRunningStatusFilter, setLongRunningStatusFilter] = useState<LongRunningStatusFilter>(initialLocationState.longRunningStatusFilter);
   const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
   const [showDiagram, setShowDiagram] = useState(false);
   const [showStackTrace, setShowStackTrace] = useState(false);
@@ -106,27 +129,22 @@ const FlowLiteCockpit = () => {
       setInstances([]);
     }
 
+    const shouldFetchFlows = view !== 'instances' && (flows.length === 0 || view === 'flows');
     const flowPath = `/api/flows?longRunningThresholdSeconds=${encodeURIComponent(longRunningThresholdSeconds.toString())}`;
     const instancesParams = new URLSearchParams();
-    const errorsParams = new URLSearchParams();
     let instancesPath: string | null = null;
-    let errorsPath: string | null = null;
 
     if (view === 'errors') {
       if (errorFlowFilter !== 'all') {
         instancesParams.set('flowId', errorFlowFilter);
-        errorsParams.set('flowId', errorFlowFilter);
       }
       if (errorStageFilter !== 'all' && errorStageFilter.trim() !== '') {
         instancesParams.set('stage', errorStageFilter.trim());
-        errorsParams.set('stage', errorStageFilter.trim());
       }
       if (errorMessageFilterErrors.trim() !== '') {
         instancesParams.set('errorMessage', errorMessageFilterErrors.trim());
-        errorsParams.set('errorMessage', errorMessageFilterErrors.trim());
       }
       instancesParams.set('bucket', 'error');
-      errorsPath = `/api/errors?${errorsParams.toString()}`;
       instancesPath = `/api/instances?${instancesParams.toString()}`;
     }
 
@@ -135,7 +153,7 @@ const FlowLiteCockpit = () => {
         instancesParams.set('flowId', longRunningFlowFilter);
       }
       instancesParams.set('bucket', 'active');
-      instancesParams.set('activityStatus', longRunningActivityFilter);
+      instancesParams.set('cockpitStatus', longRunningStatusFilter);
       instancesParams.set('longInactiveThresholdSeconds', longRunningThresholdSeconds.toString());
       instancesPath = `/api/instances?${instancesParams.toString()}`;
     }
@@ -150,15 +168,15 @@ const FlowLiteCockpit = () => {
     }
 
     try {
-      const [flowRows, allRows, errorRows] = await Promise.all([
-        apiGet<FlowDto[]>(flowPath),
+      const [flowRows, allRows] = await Promise.all([
+        shouldFetchFlows ? apiGet<FlowDto[]>(flowPath) : Promise.resolve<FlowDto[] | null>(null),
         instancesPath ? apiGet<InstanceDto[]>(instancesPath) : Promise.resolve<InstanceDto[] | null>(null),
-        errorsPath ? apiGet<ErrorGroupDto[]>(errorsPath) : Promise.resolve<ErrorGroupDto[] | null>(null),
       ]);
 
-      setFlows(flowRows);
-      setErrorsByGroup(errorRows ?? []);
-      setInstances((allRows ?? []).filter((item) => item.status !== null).map(toUiInstance));
+      if (flowRows) setFlows(flowRows);
+      const nextRows = allRows ?? [];
+      setInstances(nextRows.map(toUiInstance));
+      setErrorsByGroup(view === 'errors' ? groupErrors(nextRows) : []);
     } finally {
       setLoadingView((current) => (current === view ? null : current));
     }
@@ -245,7 +263,7 @@ const FlowLiteCockpit = () => {
     ? `${errorFlowFilter}|${errorStageFilter}|${errorMessageFilterErrors}`
     : null;
   const longRunningRefreshToken = activeView === 'long-running'
-    ? `${longRunningFlowFilter}|${longRunningActivityFilter}|${longRunningThresholdSeconds}`
+    ? `${longRunningFlowFilter}|${longRunningStatusFilter}|${longRunningThresholdSeconds}`
     : null;
   const instancesRefreshToken = activeView === 'instances'
     ? `${searchTerm}|${statusFilter}|${stageFilter}|${errorMessageFilter}|${showIncompleteOnly}`
@@ -278,7 +296,7 @@ const FlowLiteCockpit = () => {
       setErrorStageFilter(next.errorStageFilter);
       setErrorMessageFilterErrors(next.errorMessageFilterErrors);
       setLongRunningFlowFilter(next.longRunningFlowFilter);
-      setLongRunningActivityFilter(next.longRunningActivityFilter);
+      setLongRunningStatusFilter(next.longRunningStatusFilter);
       setLongRunningThreshold(next.longRunningThreshold);
       setSelectedInstances(new Set());
       setSelectedInstanceFlowId(next.selectedInstanceFlowId);
@@ -311,7 +329,7 @@ const FlowLiteCockpit = () => {
       errorStageFilter,
       errorMessageFilterErrors,
       longRunningFlowFilter,
-      longRunningActivityFilter,
+      longRunningStatusFilter,
       longRunningThreshold,
       selectedInstanceFlowId,
       selectedInstanceId,
@@ -342,7 +360,7 @@ const FlowLiteCockpit = () => {
     errorStageFilter,
     errorMessageFilterErrors,
     longRunningFlowFilter,
-    longRunningActivityFilter,
+    longRunningStatusFilter,
     longRunningThreshold,
     selectedInstanceFlowId,
     selectedInstanceId,
@@ -534,7 +552,9 @@ const FlowLiteCockpit = () => {
   };
 
   const selectAllVisible = () => {
-    const actionable = filteredInstances.filter((instance) => instance.status === 'Pending' || instance.status === 'Error').map((instance) => instance.id);
+    const actionable = filteredInstances
+      .filter((instance) => isActionableStatus(instance.cockpitStatus))
+      .map((instance) => instance.id);
     setSelectedInstances(new Set(actionable));
   };
 
@@ -545,7 +565,7 @@ const FlowLiteCockpit = () => {
     await Promise.all(
       selected.map((instance) => {
         const basePath = `/api/instances/${encodeURIComponent(instance.flowId)}/${encodeURIComponent(instance.id)}`;
-        if (instance.status === 'Error') return apiPost(`${basePath}/retry`);
+        if (instance.cockpitStatus === 'Error') return apiPost(`${basePath}/retry`);
         if (instance.stage) return apiPost(`${basePath}/change-stage?stage=${encodeURIComponent(instance.stage)}`);
         return Promise.resolve();
       }),
@@ -710,13 +730,13 @@ const FlowLiteCockpit = () => {
             isLoading={loadingView === 'long-running'}
             totalCount={longRunningInstances.length}
             longRunningFlowFilter={longRunningFlowFilter}
-            longRunningActivityFilter={longRunningActivityFilter}
+            longRunningStatusFilter={longRunningStatusFilter}
             longRunningThreshold={longRunningThreshold}
             longRunningInstances={longRunningInstances}
             selectedLongRunningIds={selectedLongRunningIds}
             selectedInstances={selectedInstances}
             setLongRunningFlowFilter={setLongRunningFlowFilter}
-            setLongRunningActivityFilter={setLongRunningActivityFilter}
+            setLongRunningStatusFilter={setLongRunningStatusFilter}
             setLongRunningThreshold={setLongRunningThreshold}
             deselectAll={deselectAll}
             toggleSelectInstance={toggleSelectInstance}

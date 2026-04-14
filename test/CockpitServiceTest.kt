@@ -8,9 +8,9 @@ import io.flowlite.HistoryEntryType
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
 import io.flowlite.toHistoryEntry
-import io.flowlite.cockpit.CockpitActivityStatus
 import io.flowlite.cockpit.CockpitErrorGroupDto
 import io.flowlite.cockpit.CockpitInstanceBucket
+import io.flowlite.cockpit.CockpitStatus
 import io.flowlite.cockpit.CockpitService
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -82,13 +82,11 @@ class CockpitServiceTest : BehaviorSpec({
                         flowId = flowA,
                         stage = "Review",
                         count = 2,
-                        instanceIds = listOf(aError1, aError2),
                     ),
                     CockpitErrorGroupDto(
                         flowId = flowB,
                         stage = "Investigate",
                         count = 1,
-                        instanceIds = listOf(bError),
                     ),
                 )
 
@@ -97,7 +95,6 @@ class CockpitServiceTest : BehaviorSpec({
                         flowId = flowA,
                         stage = "Review",
                         count = 2,
-                        instanceIds = listOf(aError1, aError2),
                     ),
                 )
             }
@@ -105,7 +102,7 @@ class CockpitServiceTest : BehaviorSpec({
             then("listInstances and listErrorGroups apply backend filters") {
                 service.listInstances(
                     flowId = flowA,
-                    status = StageStatus.Error,
+                    status = CockpitStatus.Error,
                     stage = "Review",
                     errorMessage = "boom-2",
                     showIncompleteOnly = true,
@@ -120,32 +117,11 @@ class CockpitServiceTest : BehaviorSpec({
                         flowId = flowA,
                         stage = "Review",
                         count = 1,
-                        instanceIds = listOf(aError1),
                     ),
                 )
 
                 service.listInstances(searchTerm = bError.toString())
                     .map { it.flowInstanceId } shouldContainExactly listOf(bError)
-            }
-
-            then("it can refresh persisted activity status for existing summary rows") {
-                summaryRepo.deleteAll()
-                historyRepo.deleteAll()
-                summaryRepo.save(
-                    FlowLiteInstanceSummaryRow(
-                        flowId = ORDER_CONFIRMATION_FLOW_ID,
-                        flowInstanceId = aRunning,
-                        stage = "WaitingForConfirmation",
-                        status = StageStatus.Pending.name,
-                        activityStatus = null,
-                        updatedAt = Instant.parse("2026-03-04T08:01:00Z"),
-                    ),
-                )
-
-                historyStore.refreshActivityStatuses()
-
-                service.listInstances(activityFilter = CockpitActivityStatus.WaitingForEvent.name)
-                    .map { it.flowInstanceId } shouldContainExactly listOf(aRunning)
             }
 
         }
@@ -219,7 +195,7 @@ class CockpitServiceTest : BehaviorSpec({
                 order.diagram.contains("stateDiagram-v2") shouldBe true
             }
 
-            then("it derives cockpit activity status for pending event and timer stages") {
+            then("it derives cockpit status for pending event and timer stages") {
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
                 listOf(
@@ -230,12 +206,12 @@ class CockpitServiceTest : BehaviorSpec({
 
                 val instances = service.listInstances().associateBy { it.flowInstanceId }
 
-                instances[orderActive]?.activityStatus shouldBe CockpitActivityStatus.Running
-                instances[orderWaitingForEvent]?.activityStatus shouldBe CockpitActivityStatus.WaitingForEvent
-                instances[onboardingWaitingForTimer]?.activityStatus shouldBe CockpitActivityStatus.WaitingForTimer
+                instances[orderActive]?.cockpitStatus shouldBe CockpitStatus.Running
+                instances[orderWaitingForEvent]?.cockpitStatus shouldBe CockpitStatus.WaitingForEvent
+                instances[onboardingWaitingForTimer]?.cockpitStatus shouldBe CockpitStatus.WaitingForTimer
             }
 
-            then("it applies backend long inactive activity filters") {
+            then("it applies backend long inactive cockpit status filters") {
                 val now = Instant.now()
                 val onboardingPendingEngine = UUID.fromString("00000000-0000-0000-0000-000000000107")
 
@@ -250,13 +226,13 @@ class CockpitServiceTest : BehaviorSpec({
 
                 service.listInstances(
                     bucket = CockpitInstanceBucket.Active,
-                    activityFilter = "default",
+                    cockpitStatusFilter = "default",
                     longInactiveThresholdSeconds = 3600,
                 ).map { it.flowInstanceId } shouldContainExactly listOf(onboardingPendingEngine)
 
                 service.listInstances(
                     bucket = CockpitInstanceBucket.Active,
-                    activityFilter = CockpitActivityStatus.WaitingForEvent.name,
+                    cockpitStatusFilter = CockpitStatus.WaitingForEvent.name,
                     longInactiveThresholdSeconds = 1800,
                 ).map { it.flowInstanceId } shouldContainExactly listOf(orderWaitingForEvent)
             }

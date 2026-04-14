@@ -137,7 +137,7 @@ export const ErrorsView = ({
     ) : (
       filteredErrorGroups.map((group, index) => {
         const groupInstances = instances.filter(
-          (instance) => instance.flowId === group.flowId && instance.stage === (group.stage ?? '') && instance.status === 'Error',
+          (instance) => instance.flowId === group.flowId && instance.stage === (group.stage ?? '') && instance.cockpitStatus === 'Error',
         );
         const groupTestIdSuffix = `${group.flowId}-${toTestIdFragment(group.stage)}`;
 

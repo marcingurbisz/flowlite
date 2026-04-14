@@ -40,8 +40,7 @@ data class CockpitInstanceDto(
     val flowId: String,
     val flowInstanceId: UUID,
     val stage: String?,
-    val status: StageStatus?,
-    val activityStatus: CockpitActivityStatus?,
+    val cockpitStatus: CockpitStatus,
     val lastUpdatedAt: Instant,
     val lastErrorMessage: String? = null,
 )
@@ -50,7 +49,6 @@ data class CockpitErrorGroupDto(
     val flowId: String,
     val stage: String?,
     val count: Int,
-    val instanceIds: List<UUID>,
 )
 
 enum class CockpitInstanceBucket {
@@ -59,12 +57,21 @@ enum class CockpitInstanceBucket {
     Completed,
 }
 
-enum class CockpitActivityStatus {
+enum class CockpitStatus {
     Running,
-    Pending,
     WaitingForTimer,
     WaitingForEvent,
+    PendingEngine,
+    Error,
+    Completed,
+    Cancelled,
 }
+
+private data class RegisteredFlowMetadata(
+    val diagram: String,
+    val stages: List<String>,
+    val stageDefinitions: Map<String, StageDefinition<Any, Stage, Event>>,
+)
 
 class CockpitService(
     private val engine: Engine,
@@ -72,8 +79,17 @@ class CockpitService(
     private val historyRepo: FlowLiteHistoryRepository,
     private val summaryRepo: FlowLiteInstanceSummaryRepository,
 ) {
+    private val flowMetadataById by lazy {
+        engine.registeredFlows().mapValues { (_, flow) ->
+            RegisteredFlowMetadata(
+                diagram = mermaid.generateDiagram(flow),
+                stages = flow.stages.keys.map { historyValueOf(it) },
+                stageDefinitions = flow.stages.entries.associate { (stage, definition) -> historyValueOf(stage) to definition },
+            )
+        }
+    }
+
     fun listFlows(longRunningThresholdSeconds: Long = 3600): List<CockpitFlowDto> {
-        val registered = engine.registeredFlows()
         val longRunningThreshold = Duration.ofSeconds(longRunningThresholdSeconds.coerceAtLeast(1))
         val updatedBefore = Instant.now().minus(longRunningThreshold)
         val countsByFlow = summaryRepo.findFlowSummaryAggregates(updatedBefore)
@@ -81,15 +97,15 @@ class CockpitService(
         val stageBreakdownByFlow = summaryRepo.findIncompleteStageBreakdown()
             .groupBy { it.flowId }
 
-        return registered.keys.sorted().mapNotNull { flowId ->
-            val flow = registered[flowId] ?: return@mapNotNull null
+        return flowMetadataById.keys.sorted().mapNotNull { flowId ->
+            val metadata = flowMetadataById[flowId] ?: return@mapNotNull null
             val counts = countsByFlow[flowId]
             val stageBreakdown = stageBreakdownByFlow[flowId].orEmpty().map { it.toDto() }
 
             CockpitFlowDto(
                 flowId = flowId,
-                diagram = mermaid.generateDiagram(flow),
-                stages = flow.stages.keys.map { historyValueOf(it) },
+                diagram = metadata.diagram,
+                stages = metadata.stages,
                 notCompletedCount = counts?.notCompletedCount ?: 0,
                 errorCount = counts?.errorCount ?: 0,
                 activeCount = counts?.activeCount ?: 0,
@@ -103,12 +119,12 @@ class CockpitService(
     fun listInstances(
         flowId: String? = null,
         bucket: CockpitInstanceBucket? = null,
-        status: StageStatus? = null,
+        status: CockpitStatus? = null,
         searchTerm: String? = null,
         stage: String? = null,
         errorMessage: String? = null,
         showIncompleteOnly: Boolean = false,
-        activityFilter: String? = null,
+        cockpitStatusFilter: String? = null,
         longInactiveThresholdSeconds: Long? = null,
     ): List<CockpitInstanceDto> {
         val now = Instant.now()
@@ -119,9 +135,8 @@ class CockpitService(
         val exactFlowInstanceId = normalizedSearchTerm?.let { runCatching { UUID.fromString(it) }.getOrNull() }
         val normalizedStage = stage?.trim()?.takeIf { it.isNotEmpty() }
         val normalizedErrorMessage = errorMessage?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
-        val normalizedActivityFilter = activityFilter?.trim()?.takeIf { it.isNotEmpty() && it != "all" }
+        val normalizedCockpitStatusFilter = cockpitStatusFilter?.trim()?.takeIf { it.isNotEmpty() && it != "all" }
         val updatedBefore = longInactiveThreshold?.let { now.minus(it) }
-        val stageDefinitionsByFlow = stageDefinitionsByFlow()
 
         return summaryRepo.findFilteredSummaries(
             flowId = flowId,
@@ -132,9 +147,9 @@ class CockpitService(
             stage = normalizedStage,
             errorMessagePattern = normalizedErrorMessage?.let { "%$it%" },
             showIncompleteOnly = showIncompleteOnly,
-            activityFilter = normalizedActivityFilter,
+            cockpitStatusFilter = normalizedCockpitStatusFilter,
             updatedBefore = updatedBefore,
-        ).map { row -> row.toDto(stageDefinitionsByFlow) }
+        ).map { row -> row.toDto() }
     }
 
     fun listErrorGroups(
@@ -144,31 +159,22 @@ class CockpitService(
     ): List<CockpitErrorGroupDto> {
         val normalizedStage = stageContains?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
         val normalizedErrorMessage = errorMessage?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
-        val errors = loadInstanceSummaries(flowId)
-            .filter { it.status == StageStatus.Error }
-            .filter { summary ->
-                normalizedStage == null || summary.stage?.lowercase()?.contains(normalizedStage) == true
-            }
-            .filter { summary ->
-                normalizedErrorMessage == null ||
-                    summary.lastErrorMessage?.lowercase()?.contains(normalizedErrorMessage) == true
-            }
-        return errors.groupBy { it.flowId to it.stage }
-            .map { (k, instances) ->
-                CockpitErrorGroupDto(
-                    flowId = k.first,
-                    stage = k.second,
-                    count = instances.size,
-                    instanceIds = instances.map { it.flowInstanceId }.sortedBy { it.toString() },
-                )
-            }
-            .sortedWith(compareBy<CockpitErrorGroupDto> { it.flowId }.thenBy { it.stage ?: "" })
+        return summaryRepo.findErrorGroups(
+            flowId = flowId,
+            stagePattern = normalizedStage?.let { "%$it%" },
+            errorMessagePattern = normalizedErrorMessage?.let { "%$it%" },
+        ).map {
+            CockpitErrorGroupDto(
+                flowId = it.flowId,
+                stage = it.stage,
+                count = it.count,
+            )
+        }
     }
 
     fun instance(flowId: String, flowInstanceId: UUID): CockpitInstanceDto? {
-        val stageDefinitionsByFlow = stageDefinitionsByFlow()
         return summaryRepo.findSummary(flowId, flowInstanceId)
-            ?.toDto(stageDefinitionsByFlow)
+            ?.toDto()
     }
 
     fun timeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow> {
@@ -187,31 +193,13 @@ class CockpitService(
         engine.changeStage(flowId, flowInstanceId, stage)
     }
 
-    private typealias StageDefinitionsByFlow = Map<String, Map<String, StageDefinition<Any, Stage, Event>>>
-
-    private fun loadInstanceSummaries(flowId: String?): List<CockpitInstanceDto> {
-        val stageDefinitionsByFlow = stageDefinitionsByFlow()
-        val rows = if (flowId == null) summaryRepo.findAllSummaries() else summaryRepo.findAllSummariesByFlowId(flowId)
-
-        return rows.map { row -> row.toDto(stageDefinitionsByFlow) }
-    }
-
-    private fun stageDefinitionsByFlow(registeredFlows: Map<String, Flow<Any, Stage, Event>> = engine.registeredFlows()): StageDefinitionsByFlow {
-        return registeredFlows.mapValues { (_, flow) ->
-            flow.stages.entries.associate { (stage, definition) -> historyValueOf(stage) to definition }
-        }
-    }
-
-    private fun FlowLiteInstanceSummaryRow.toDto(stageDefinitionsByFlow: StageDefinitionsByFlow): CockpitInstanceDto {
-        val statusValue = status?.let(StageStatus::valueOf)
-        val activityStatusValue = activityStatus?.let(CockpitActivityStatus::valueOf)
-            ?: classifyCockpitActivityStatus(stageDefinitionsByFlow[flowId], stage, statusValue)
+    private fun FlowLiteInstanceSummaryRow.toDto(): CockpitInstanceDto {
+        val statusValue = runCatching { CockpitStatus.valueOf(cockpitStatus) }.getOrDefault(CockpitStatus.PendingEngine)
         return CockpitInstanceDto(
             flowId = flowId,
             flowInstanceId = flowInstanceId,
             stage = stage,
-            status = statusValue,
-            activityStatus = activityStatusValue,
+            cockpitStatus = statusValue,
             lastUpdatedAt = updatedAt,
             lastErrorMessage = lastErrorMessage,
         )
@@ -226,21 +214,24 @@ class CockpitService(
 
 }
 
-internal fun classifyCockpitActivityStatus(
+internal fun classifyCockpitStatus(
     stageDefinitions: Map<String, StageDefinition<Any, Stage, Event>>?,
     stage: String?,
     status: StageStatus?,
-): CockpitActivityStatus? {
+): CockpitStatus? {
     return when (status) {
-        StageStatus.Running -> CockpitActivityStatus.Running
+        StageStatus.Running -> CockpitStatus.Running
         StageStatus.Pending -> {
             val definition = stage?.let { stageDefinitions?.get(it) }
             when {
-                definition?.timer != null -> CockpitActivityStatus.WaitingForTimer
-                definition?.eventHandlers?.isNotEmpty() == true -> CockpitActivityStatus.WaitingForEvent
-                else -> CockpitActivityStatus.Pending
+                definition?.timer != null -> CockpitStatus.WaitingForTimer
+                definition?.eventHandlers?.isNotEmpty() == true -> CockpitStatus.WaitingForEvent
+                else -> CockpitStatus.PendingEngine
             }
         }
-        else -> null
+        StageStatus.Error -> CockpitStatus.Error
+        StageStatus.Completed -> CockpitStatus.Completed
+        StageStatus.Cancelled -> CockpitStatus.Cancelled
+        null -> null
     }
 }

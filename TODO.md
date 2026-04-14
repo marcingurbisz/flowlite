@@ -1,4 +1,6 @@
-## [REOPEN] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
+## [DONE 2026-04-14.1] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
+
+> Agent: Picking this item in loop `2026-04-14.1` together with the linked Cockpit follow-ups below, because the requested status-model change, UI slowness investigation, and the `CockpitUiStaticConfigTest` question all touch the same Cockpit code paths.
 
 > I did not persist `activityStatus` in the summary table in this batch. I do not think it is a good next step inside the current generic `SpringDataJdbcHistoryStore`, because that would couple a generic history projection to Cockpit-specific stage semantics and engine flow definitions. If we want to persist it later, I would do that through a cockpit-owned projector instead of pushing Cockpit knowledge into the generic store.
 > Validation: `./gradlew test`
@@ -30,15 +32,54 @@
 * Let's collapse these two concepts into one Cockpit-facing status model. Rename CockpitActivityStatus to CockpitStatus and keep there all cockpit statues - all engine statuses with Pending split into WaitingForTimer, WaitingForEvent and PendingEngine
 * `NOT NULL` safely would require an explicit data migration path for all legacy summaries rather - we do not have legacy summaries
 
-## Slow UI when 6.5k instances
+> Agent:
+> - Response: Implemented. Cockpit now exposes a single `CockpitStatus` model end to end. `Pending` is split into `WaitingForTimer`, `WaitingForEvent`, and `PendingEngine`, and the summary projection persists `cockpit_status` directly.
+> - Response: Because there are no legacy summaries to preserve, I made both summary `status` and `cockpit_status` non-null and removed the refresh path for nullable activity statuses.
+> - Changes: Renamed backend/frontend DTOs, filters, router params, and UI state from `activityStatus` to `cockpitStatus`; switched long-running filters to the new status name; updated badges, views, details modal, and tests to the collapsed model.
+> - Changes: Reworked Cockpit summary queries and schema/indexes around `cockpit_status`, and removed the separate error-group `instanceIds` payload because the UI now derives group membership from the filtered instance rows it already loads.
+> - Validation: `./gradlew test`
+
+## [DONE 2026-04-14.1] Slow UI when 6.5k instances
+> Agent: Investigating this in loop `2026-04-14.1`.
+
 * /flows?longRunningThresholdSeconds=1 is considerably slower than /flows?longRunningThresholdSeconds=3600. Why?
 * /instances?flowId=employee-onboarding&stage=UpdateDepartmentAssignment&bucket=error - takes ages
 * Why Error tab triggers 3 requests /flows /instances and /errors?
 * Why Instances tab calls both flows/ and /instances ?
 * Right now on render there are only 15 instances in status Running. Usually I was seeing 40 (as many as threads). There are pending engine instances ready to be processed. Any idea why?
 
-# Remove CockpitUiStaticConfigTest?
+> Agent:
+> - Response: `/flows?longRunningThresholdSeconds=1` was slower because it forced the aggregate query to count almost every active row as long-running. On the ~7k-instance perf app it took about `1.50s`, while `/flows?longRunningThresholdSeconds=3600` took about `0.25s`. The endpoint itself is still heavier than the narrower instance queries because it computes grouped aggregates and stage breakdowns, but caching the registered flow diagrams/stage metadata removed repeated JVM-side regeneration from each call.
+> - Response: The specific `/instances?flowId=employee-onboarding&stage=UpdateDepartmentAssignment&bucket=error` query was not slow during this loop because the live perf data had no errors in that stage; it returned `0` rows in about `0.10s`. On currently populated error stages, targeted error queries such as `order-confirmation/InitializingConfirmation` and `employee-onboarding/CreateEmployeeProfile` returned `54` and `51` rows in about `15-18ms`, and `/api/instances?bucket=error` returned `236` rows in about `35ms`.
+> - Response: The `Errors` tab used to trigger three requests because the app fetched grouped errors and raw error instances separately. It now makes only two API calls when opened directly: `/api/flows` and `/api/instances?bucket=error`. The UI groups error rows client-side instead of calling `/api/errors`.
+> - Response: The `Instances` tab used to always fetch `/api/flows` together with `/api/instances`. It now does not fetch `/api/flows` there at all. With no filters it makes no API requests, and with a concrete query it makes only `/api/instances?...`.
+> - Response: On the restarted ~7k perf app with normal delays, `Running` rows tracked worker concurrency again: repeated samples returned `39`, `39`, and `38` running rows, while the `Running` endpoint also showed `40` rows in one sample. The much larger active backlog sat mostly in `PendingEngine` and `WaitingForEvent`, which explains why total active work can be in the thousands while `Running` stays near the worker-count ceiling.
+> - Changes: Stopped unconditional `/api/flows` fetches on the `Instances` tab, removed `/api/errors` from the `Errors` tab flow, switched error grouping to SQL-backed aggregation + client-side grouping from the fetched rows, and kept long-running filtering on `cockpitStatus`.
+> - Validation: `./gradlew test`
+> - Validation: Exploratory checks with `runPerfTestApp --args='--flowlite.showcase.initial-seed-count=3500 --flowlite.showcase.repeat-seeding-enabled=false'`, curl timings against local Cockpit APIs, and browser-network inspection of the `Errors` and `Instances` tabs.
+
+## [DONE 2026-04-14.1] Remove CockpitUiStaticConfigTest?
+> Agent: Reviewing this in loop `2026-04-14.1` as part of the same Cockpit follow-up batch.
+
 Worth to keep it? Regression is not that important and we are starting whole app in this test so it is quite heavy.
+
+> Agent:
+> - Response: Removed it. The regression is low-value compared with the cost of booting a whole servlet app just to assert two static forwards.
+> - Changes: Deleted `CockpitUiStaticConfigTest` and pointed `CockpitPlaywrightTest` at `/cockpit` instead of `/index.html`, so the browser suite now exercises the real SPA entrypoint during normal Cockpit coverage.
+> - Validation: `./gradlew test`
+
+## [DONE 2026-04-14.1] Exploratory tests on ~7k instances
+> Agent:
+> - Tested the local `runPerfTestApp` twice: once with zero delays to verify large completed datasets and once with `--flowlite.showcase.initial-seed-count=3500 --flowlite.showcase.repeat-seeding-enabled=false` under normal delays so active, waiting, and error states were still visible.
+> - Tested API timings with curl and checked browser-network requests on the live Cockpit UI.
+> - Findings: with active data present, `/api/flows?longRunningThresholdSeconds=1` took about `1.50s`, `/api/flows?longRunningThresholdSeconds=3600` about `0.25s`, `/api/instances?bucket=error` about `35ms` for `236` rows, `/api/instances?bucket=active&cockpitStatus=Running&longInactiveThresholdSeconds=1` about `113ms` for `40` rows, `/api/instances?bucket=active&cockpitStatus=WaitingForEvent&longInactiveThresholdSeconds=1` about `103ms` for `229` rows, and `/api/instances?bucket=active&cockpitStatus=PendingEngine&longInactiveThresholdSeconds=1` about `459ms` for `6659` rows.
+> - Findings: current error hotspots were `order-confirmation::InitializingConfirmation (46)` and `employee-onboarding::CreateEmployeeProfile (39)` plus several smaller employee-onboarding action stages.
+
+## [DONE 2026-04-14.1] Self-review of loop changes
+> Agent:
+> - Reviewed the current loop diff for unnecessary surface area, missing tests, and follow-on regressions around Cockpit routing, query fan-out, and status semantics.
+> - Result: kept the solution focused on the Cockpit-facing status collapse, request fan-out reduction, and test coverage realignment. I did not find a separate issue that needs a new `[FOR HUMAN REVIEW]` item in this loop.
+> - Validation: `./gradlew test`
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

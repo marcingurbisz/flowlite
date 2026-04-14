@@ -2,11 +2,11 @@ import {
   activeViews,
   defaultLocationState,
   defaultLongRunningThreshold,
-  longRunningActivityFilters,
+  longRunningStatusFilters,
   statusFilters,
   type ActiveView,
   type CockpitLocationState,
-  type LongRunningActivityFilter,
+  type LongRunningStatusFilter,
   type StatusFilter,
 } from './types';
 
@@ -16,8 +16,8 @@ const isActiveView = (value: string | null): value is ActiveView =>
 const isStatusFilter = (value: string | null): value is StatusFilter =>
   value !== null && statusFilters.includes(value as StatusFilter);
 
-const isLongRunningActivityFilter = (value: string | null): value is LongRunningActivityFilter =>
-  value !== null && longRunningActivityFilters.includes(value as LongRunningActivityFilter);
+const isLongRunningStatusFilter = (value: string | null): value is LongRunningStatusFilter =>
+  value !== null && longRunningStatusFilters.includes(value as LongRunningStatusFilter);
 
 const normalizeFilterValue = (value: string | null) => {
   const trimmed = value?.trim();
@@ -47,9 +47,9 @@ export const readLocationState = (): CockpitLocationState => {
     errorStageFilter: normalizeFilterValue(params.get('errorStage')),
     errorMessageFilterErrors: params.get('errorMessage') ?? defaultLocationState.errorMessageFilterErrors,
     longRunningFlowFilter: normalizeFilterValue(params.get('lrFlow')),
-    longRunningActivityFilter: isLongRunningActivityFilter(params.get('lrActivity'))
-      ? params.get('lrActivity') as LongRunningActivityFilter
-      : defaultLocationState.longRunningActivityFilter,
+    longRunningStatusFilter: isLongRunningStatusFilter(params.get('lrStatus'))
+      ? params.get('lrStatus') as LongRunningStatusFilter
+      : defaultLocationState.longRunningStatusFilter,
     longRunningThreshold: normalizeLongRunningThreshold(params.get('lrThreshold')),
     selectedInstanceFlowId: selectedInstanceFlowId && selectedInstanceId ? selectedInstanceFlowId : null,
     selectedInstanceId: selectedInstanceFlowId && selectedInstanceId ? selectedInstanceId : null,
@@ -69,7 +69,7 @@ export const buildLocationSearch = (state: CockpitLocationState) => {
   if (state.errorStageFilter !== 'all') params.set('errorStage', state.errorStageFilter);
   if (state.errorMessageFilterErrors) params.set('errorMessage', state.errorMessageFilterErrors);
   if (state.longRunningFlowFilter !== 'all') params.set('lrFlow', state.longRunningFlowFilter);
-  if (state.longRunningActivityFilter !== 'default') params.set('lrActivity', state.longRunningActivityFilter);
+  if (state.longRunningStatusFilter !== 'default') params.set('lrStatus', state.longRunningStatusFilter);
   if (state.longRunningThreshold.trim() && state.longRunningThreshold.trim() !== defaultLongRunningThreshold) {
     params.set('lrThreshold', state.longRunningThreshold.trim());
   }

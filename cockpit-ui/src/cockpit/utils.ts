@@ -1,4 +1,4 @@
-import type { ActivityStatus, HistoryEntryDto, LongRunningActivityFilter } from './types';
+import type { CockpitStatus, HistoryEntryDto, LongRunningStatusFilter } from './types';
 
 const padDateTimePart = (value: number) => value.toString().padStart(2, '0');
 
@@ -30,8 +30,8 @@ const parseDurationToSecondsOrNull = (value: string | null) => {
   return totalSeconds > 0 ? Math.round(totalSeconds) : null;
 };
 
-const isDefaultLongRunningActivity = (activityStatus: ActivityStatus | null) =>
-  activityStatus === 'Running' || activityStatus === 'Pending';
+const isDefaultLongRunningStatus = (cockpitStatus: CockpitStatus) =>
+  cockpitStatus === 'Running' || cockpitStatus === 'PendingEngine';
 
 export const parseDurationToSeconds = (value: string | null, fallback: number) =>
   parseDurationToSecondsOrNull(value) ?? fallback;
@@ -53,14 +53,13 @@ export const formatElapsedDuration = (durationMs: number) => {
   return `${seconds}s`;
 };
 
-export const matchesLongRunningActivityFilter = (
-  activityStatus: ActivityStatus | null,
-  filter: LongRunningActivityFilter,
+export const matchesLongRunningStatusFilter = (
+  cockpitStatus: CockpitStatus,
+  filter: LongRunningStatusFilter,
 ) => {
-  if (activityStatus === null) return false;
-  if (filter === 'default') return isDefaultLongRunningActivity(activityStatus);
+  if (filter === 'default') return isDefaultLongRunningStatus(cockpitStatus);
   if (filter === 'all') return true;
-  return activityStatus === filter;
+  return cockpitStatus === filter;
 };
 
 export const historyStageLabel = (event: HistoryEntryDto) => {

@@ -53,13 +53,13 @@ export const InstanceDetailsModal = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {selectedInstance.status === 'Error' && (
+          {selectedInstance.cockpitStatus === 'Error' && (
             <button data-testid="instance-retry" onClick={() => onRetry([selectedInstance.id])} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><RefreshCw size={14} />Retry</button>
           )}
-          {(selectedInstance.status === 'Pending' || selectedInstance.status === 'Error') && (
+          {(selectedInstance.cockpitStatus === 'PendingEngine' || selectedInstance.cockpitStatus === 'WaitingForTimer' || selectedInstance.cockpitStatus === 'WaitingForEvent' || selectedInstance.cockpitStatus === 'Error') && (
             <button data-testid="instance-change-stage" onClick={() => onChangeStage([selectedInstance.id])} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><ChevronRight size={14} />Change Stage</button>
           )}
-          {(selectedInstance.status === 'Pending' || selectedInstance.status === 'Error') && (
+          {(selectedInstance.cockpitStatus === 'PendingEngine' || selectedInstance.cockpitStatus === 'WaitingForTimer' || selectedInstance.cockpitStatus === 'WaitingForEvent' || selectedInstance.cockpitStatus === 'Error') && (
             <button data-testid="instance-cancel" onClick={() => onCancel([selectedInstance.id])} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition-colors text-sm font-medium flex items-center gap-2"><X size={14} />Cancel</button>
           )}
           <button data-testid="instance-details-close" onClick={onClose} className="p-2 hover:bg-zinc-800 rounded transition-colors"><X size={20} /></button>
@@ -72,7 +72,7 @@ export const InstanceDetailsModal = ({
           <div className="grid grid-cols-2 gap-4">
             <div><div className="text-xs text-zinc-500 mb-1">Flow ID</div><div className="text-sm font-mono text-zinc-300">{selectedInstance.flowId}</div></div>
             <div><div className="text-xs text-zinc-500 mb-1">Current Stage</div><div data-testid="instance-details-stage" className="text-sm font-mono text-zinc-300">{selectedInstance.stage || '—'}</div></div>
-            <div><div className="text-xs text-zinc-500 mb-1">Status</div><div data-testid="instance-details-status"><StatusBadge status={selectedInstance.status} /></div></div>
+            <div><div className="text-xs text-zinc-500 mb-1">Status</div><div data-testid="instance-details-status"><StatusBadge status={selectedInstance.cockpitStatus} /></div></div>
             <div><div className="text-xs text-zinc-500 mb-1">Updated At</div><div className="text-sm text-zinc-300">{formatDateTime(selectedInstance.updatedAt)}</div></div>
           </div>
         </div>
@@ -88,7 +88,7 @@ export const InstanceDetailsModal = ({
           )}
         </div>
 
-        {selectedInstance.status === 'Error' && (
+        {selectedInstance.cockpitStatus === 'Error' && (
           <div>
             <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-wide mb-3">Error Information</h4>
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-3">

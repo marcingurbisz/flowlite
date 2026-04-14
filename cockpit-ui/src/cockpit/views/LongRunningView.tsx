@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { CheckCircle, RefreshCw } from 'lucide-react';
-import { ActivityBadge, StatusBadge } from '../badges';
-import type { FlowDto, LongRunningActivityFilter, UiInstance } from '../types';
+import { StatusBadge } from '../badges';
+import type { FlowDto, LongRunningStatusFilter, UiInstance } from '../types';
 import { formatElapsedDuration } from '../utils';
 
 type LongRunningInstance = UiInstance & { inactiveDuration: number };
@@ -11,13 +11,13 @@ export const LongRunningView = ({
   isLoading,
   totalCount,
   longRunningFlowFilter,
-  longRunningActivityFilter,
+  longRunningStatusFilter,
   longRunningThreshold,
   longRunningInstances,
   selectedLongRunningIds,
   selectedInstances,
   setLongRunningFlowFilter,
-  setLongRunningActivityFilter,
+  setLongRunningStatusFilter,
   setLongRunningThreshold,
   deselectAll,
   toggleSelectInstance,
@@ -29,13 +29,13 @@ export const LongRunningView = ({
   isLoading: boolean;
   totalCount: number;
   longRunningFlowFilter: string;
-  longRunningActivityFilter: LongRunningActivityFilter;
+  longRunningStatusFilter: LongRunningStatusFilter;
   longRunningThreshold: string;
   longRunningInstances: LongRunningInstance[];
   selectedLongRunningIds: string[];
   selectedInstances: Set<string>;
   setLongRunningFlowFilter: (value: string) => void;
-  setLongRunningActivityFilter: (value: LongRunningActivityFilter) => void;
+  setLongRunningStatusFilter: (value: LongRunningStatusFilter) => void;
   setLongRunningThreshold: (value: string) => void;
   deselectAll: () => void;
   toggleSelectInstance: (instanceId: string) => void;
@@ -62,15 +62,15 @@ export const LongRunningView = ({
           ))}
         </select>
         <select
-          data-testid="long-running-activity-filter"
-          value={longRunningActivityFilter}
-          onChange={(event) => setLongRunningActivityFilter(event.target.value as LongRunningActivityFilter)}
+          data-testid="long-running-status-filter"
+          value={longRunningStatusFilter}
+          onChange={(event) => setLongRunningStatusFilter(event.target.value as LongRunningStatusFilter)}
           className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
         >
           <option value="default">Running + pending engine</option>
           <option value="all">All activity kinds</option>
           <option value="Running">Running only</option>
-          <option value="Pending">Pending only</option>
+          <option value="PendingEngine">Pending engine only</option>
           <option value="WaitingForTimer">Waiting for timer</option>
           <option value="WaitingForEvent">Waiting for event</option>
         </select>
@@ -136,7 +136,6 @@ export const LongRunningView = ({
               <th className="px-4 py-3 font-medium">Flow</th>
               <th className="px-4 py-3 font-medium">Stage</th>
               <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Activity</th>
               <th className="px-4 py-3 font-medium">Inactive Duration</th>
             </tr>
           </thead>
@@ -165,14 +164,7 @@ export const LongRunningView = ({
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
                 <td className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage}</td>
-                <td className="px-4 py-3"><div data-testid={`long-running-status-${instance.id}`}><StatusBadge status={instance.status} /></div></td>
-                <td className="px-4 py-3">
-                  {instance.activityStatus && (
-                    <div data-testid={`long-running-activity-${instance.id}`}>
-                      <ActivityBadge activityStatus={instance.activityStatus} />
-                    </div>
-                  )}
-                </td>
+                <td className="px-4 py-3"><div data-testid={`long-running-status-${instance.id}`}><StatusBadge status={instance.cockpitStatus} /></div></td>
                 <td className="px-4 py-3"><span className="px-2 py-1 rounded text-xs font-mono bg-amber-500/20 text-amber-400">{formatElapsedDuration(instance.inactiveDuration)}</span></td>
               </tr>
             ))}

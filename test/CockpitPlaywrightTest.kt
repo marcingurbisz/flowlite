@@ -37,7 +37,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
     val screenshotDir = artifactsRoot.resolve("screenshots")
     val videoDir = artifactsRoot.resolve("videos")
     val artifactTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
-    val cockpitBaseUrl = "http://127.0.0.1:8080/index.html"
+    lateinit var cockpitBaseUrl: String
     val frontendCoverageStorageKey = "__flowlite_frontend_coverage_snapshots__"
 
     fun testUuid(number: Int): UUID =
@@ -83,7 +83,12 @@ class CockpitPlaywrightTest : BehaviorSpec({
         Files.createDirectories(screenshotDir)
         Files.createDirectories(videoDir)
 
-        context = startTestWebApplication(showcaseEnabled = false)
+        context = startTestWebApplication(
+            showcaseEnabled = false,
+            extraArgs = arrayOf("--server.port=0"),
+        )
+        val port = requireNotNull(context.environment.getProperty("local.server.port"))
+        cockpitBaseUrl = "http://127.0.0.1:$port/cockpit"
         historyRepo = context.getBean()
         historyStore = context.getBean()
         summaryRepo = context.getBean()
@@ -786,9 +791,9 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("long-running-flow-filter").selectOption("all")
             page.getByTestId("long-running-threshold").fill("3h 1m")
             page.getByTestId("long-running-threshold").fill("30s")
-            page.getByTestId("long-running-activity-filter").selectOption("WaitingForEvent")
-            page.getByTestId("long-running-activity-filter").selectOption("Running")
-            page.getByTestId("long-running-activity-filter").selectOption("default")
+            page.getByTestId("long-running-status-filter").selectOption("WaitingForEvent")
+            page.getByTestId("long-running-status-filter").selectOption("Running")
+            page.getByTestId("long-running-status-filter").selectOption("default")
             page.getByTestId("long-running-flow-filter").selectOption(ORDER_CONFIRMATION_FLOW_ID)
             page.getByTestId("long-running-checkbox-${fixture.orderLongRunningId}").check()
             page.getByTestId("long-running-deselect-selected").click()
@@ -798,11 +803,11 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("tab-instances").click()
             page.getByTestId("instances-search").fill(fixture.orderLongRunningId.toString())
 
-            then("it filters by flow, activity, and threshold while excluding event and timer waits by default") {
+            then("it filters by flow, cockpit status, and threshold while excluding event and timer waits by default") {
                 verifyRecordedContext(session) { currentPage ->
                     assertThat(currentPage.getByTestId("long-running-selection-bar")).hasCount(0)
                     assertThat(instanceRow(currentPage, fixture.orderLongRunningId)).isVisible()
-                    assertThat(currentPage.getByTestId("instance-status-${fixture.orderLongRunningId}")).containsText(StageStatus.Pending.name)
+                    assertThat(currentPage.getByTestId("instance-status-${fixture.orderLongRunningId}")).containsText("Waiting for event")
                 }
             }
         }

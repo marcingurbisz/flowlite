@@ -75,8 +75,10 @@ export const InstancesView = ({
         className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
       >
         <option value="all">All Status</option>
-        <option value="Pending">Pending</option>
         <option value="Running">Running</option>
+        <option value="WaitingForTimer">Waiting for timer</option>
+        <option value="WaitingForEvent">Waiting for event</option>
+        <option value="PendingEngine">Pending engine</option>
         <option value="Error">Error</option>
         <option value="Completed">Completed</option>
         <option value="Cancelled">Cancelled</option>
@@ -166,7 +168,7 @@ export const InstancesView = ({
                 onClick={() => openSelectedInstance(instance)}
               >
                 <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
-                  {(instance.status === 'Pending' || instance.status === 'Error') && (
+                  {(instance.cockpitStatus === 'PendingEngine' || instance.cockpitStatus === 'WaitingForTimer' || instance.cockpitStatus === 'WaitingForEvent' || instance.cockpitStatus === 'Error') && (
                     <input
                       data-testid={`instances-checkbox-${instance.id}`}
                       type="checkbox"
@@ -184,7 +186,7 @@ export const InstancesView = ({
                 </td>
                 <td data-testid="instance-flow-id" className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
                 <td data-testid={`instance-stage-${instance.id}`} className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage || '—'}</td>
-                <td data-testid={`instance-status-${instance.id}`} className="px-4 py-3"><StatusBadge status={instance.status} /></td>
+                <td data-testid={`instance-status-${instance.id}`} className="px-4 py-3"><StatusBadge status={instance.cockpitStatus} /></td>
                 <td className="px-4 py-3 text-xs text-zinc-500">{formatDateTime(instance.updatedAt)}</td>
               </tr>
             ))}

@@ -1,11 +1,4 @@
-## [DONE 2026-04-13.1] Normalize repo loop extension file placement
-Move repo loop extensions next to the repo `AGENTS.md` under a standard filename and align the base IEF instructions with that convention.
-
-> Agent:
-> Changes: Moved the FlowLite repo loop extensions from `docs/repo-ief-loop-extensions.md` to sibling `ief-loop-extensions.md` and updated both workspace and repo agent instructions to use that standard location.
-> Validation: Verified there were no remaining references to the old filename in the workspace or repo after the move.
-
-## [DONE 2026-04-13.1] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
+## [REOPEN] Feedback to "Implement recommendations from cockpit-scaling-notes.md"
 
 > I did not persist `activityStatus` in the summary table in this batch. I do not think it is a good next step inside the current generic `SpringDataJdbcHistoryStore`, because that would couple a generic history projection to Cockpit-specific stage semantics and engine flow definitions. If we want to persist it later, I would do that through a cockpit-owned projector instead of pushing Cockpit knowledge into the generic store.
 > Validation: `./gradlew test`
@@ -33,71 +26,19 @@ Move repo loop extensions next to the repo `AGENTS.md` under a standard filename
 > - Response: The resolver is not really "per flow" in registration count. It is one resolver that receives `flowId` and uses that to look up the relevant stage definitions. The dependency on flow-specific stage metadata is real even though the classification rule itself is shared.
 > - Validation: Re-checked the current `CockpitService` / `SpringDataJdbcHistoryStore` flow after the SQL-filtering/activity-status changes and kept the model unchanged in this loop.
 
+>> MG: 
+* Let's collapse these two concepts into one Cockpit-facing status model. Rename CockpitActivityStatus to CockpitStatus and keep there all cockpit statues - all engine statuses with Pending split into WaitingForTimer, WaitingForEvent and PendingEngine
+* `NOT NULL` safely would require an explicit data migration path for all legacy summaries rather - we do not have legacy summaries
 
-## [DONE 2026-04-13.1] Playwright MCP or playwright-cli plus skills?
-I've installed playwright MCP server. Please use it for exploratory tests. Also check
-https://github.com/microsoft/playwright?tab=readme-ov-file#playwright-cli and https://github.com/microsoft/playwright/blob/main/.claude/skills/playwright-dev/SKILL.md and compare what is better. MCP or playwright-cli + skill. 
+## Slow UI when 6.5k instances
+* /flows?longRunningThresholdSeconds=1 is considerably slower than /flows?longRunningThresholdSeconds=3600. Why?
+* /instances?flowId=employee-onboarding&stage=UpdateDepartmentAssignment&bucket=error - takes ages
+* Why Error tab triggers 3 requests /flows /instances and /errors?
+* Why Instances tab calls both flows/ and /instances ?
+* Right now on render there are only 15 instances in status Running. Usually I was seeing 40 (as many as threads). There are pending engine instances ready to be processed. Any idea why?
 
-> Agent:
-> For ad-hoc exploratory testing, Playwright MCP is the better interface when the environment supports it. It gives direct page snapshots, targeted interactions, and quick steering without having to author a script first.
-> `playwright-cli` plus a skill is better for reproducible scripted automation, codegen-heavy flows, and situations where we want the browser execution mode to live entirely inside the repo and CI scripts.
-> For this repo I would use both, but for different jobs: MCP for manual exploratory sessions, checked-in Playwright tests/CLI for repeatable regressions.
-> Changes: I started `./gradlew runPerfTestApp` and attempted the requested exploratory pass through Playwright MCP.
-> Validation: The MCP browser could not start in this dev container because it launched a headed Chrome instance without an available X server / `DISPLAY`. That is an environment blocker in this container, not a Cockpit app failure.
-> Response: In contrast, the repo's existing Java Playwright tests continue to work headlessly here, so CLI/test-driven automation remains the safer fallback in this specific environment.
-
->> MG:
->> * Playwright MCP cannot use headless browser?
->> * With playwright-cli you cannot run one command then see what is displayed on page and run next command?
-
-> Agent:
-> - Response: Playwright itself supports both headed and headless execution. MCP can also be wired that way in principle, but in this specific VS Code MCP integration available here I do not have a headless toggle and the server launched headed Chrome, which is why it failed without `DISPLAY`.
-> - Response: `playwright-cli` is not limited to one-shot scripts. The Playwright docs explicitly show step-by-step command usage like `playwright-cli open ...`, then `playwright-cli type ...`, `playwright-cli press Enter`, `playwright-cli screenshot`, and a `playwright-cli show` dashboard for live session monitoring.
-> - Response: One important nuance: the `.claude` `playwright-dev` skill you linked is a maintainer/development guide for adding Playwright APIs/MCP tools/CLI commands inside the Playwright repo itself. It is not the thing that gives end users interactive browser control.
-
->> MG: I have switched MCP to headless mode. Please try again. Regarding link to SKILL.md. I thought it is a skill for you how to use playwright-cli. Anyway, I wonder why you prefer Playwright MCP over playwright-cli for free/exploratory testing?
-
-> Agent:
-> - Response: After your headless change I retried with Playwright MCP and it now works in this container. For exploratory work I still prefer MCP because it keeps the browser session live between steps, gives direct accessibility snapshots/network/console inspection, and lets me steer the page interactively without first authoring or editing a script.
-> - Response: `playwright-cli` can also be used step by step, but it is a lower-level command workflow. It is stronger when we want something reproducible, scriptable, and easy to move into checked-in regression coverage. MCP is the better probe; CLI/tests are the better artifact.
-> - Changes: Ran exploratory testing against `./gradlew runPerfTestApp` through Playwright MCP. The first pass found a real regression: `/` and `/cockpit` returned 404 while `/cockpit/index.html` worked.
-> - Changes: Fixed `CockpitUiStaticConfig` so `/` and `/cockpit` now forward to `/cockpit/index.html`, and added an integration test covering both entrypoints.
-> - Validation: `./gradlew test`
-> - Validation: MCP exploratory pass after the fix loaded `http://127.0.0.1:8080/cockpit?tab=flows` without console errors, and the `Instances` tab returned exactly one row for a full `flow_instance_id` search.
-
-## [DONE 2026-04-13.1] Review own loop changes
-Review the control-plane update, cockpit search/index changes, and exploratory-test follow-up for potential gaps.
-
-> Agent:
-> Changes: Reviewed the current loop changes end to end: repo extension-file normalization, exact `flow_instance_id` search/index support, and the Cockpit SPA entrypoint fix.
-> Validation: Re-ran `./gradlew test` after stopping the local perf app to avoid the expected `8080` port conflict with `CockpitPlaywrightTest`, then re-ran exploratory checks separately with `runPerfTestApp` + Playwright MCP.
-> Learning: The Cockpit static resource setup already served `/cockpit/index.html`; the actual regression was only missing forwards for `/` and `/cockpit`, which is now guarded by a dedicated integration test.
-
-## [DONE 2026-04-13.1] What do you think about adding 3 index on status, stage and instance id?
-... these will be quite frequent queries to FlowLiteInstanceSummary tables from "Instances" tab.
-
-> Agent:
-> I would not add those three single-column indexes in the current shape.
-> Right now Cockpit loads `flowlite_instance_summary` rows by flow/all and then applies most `Instances` filtering in JVM code. Because the SQL does not predicate on `status`, `stage`, or free-text instance search, those indexes would not materially help the hot path yet.
-> If we later push `Instances` filtering into SQL, then the useful indexes will be composite indexes that match the actual predicates and sort order, not three independent indexes by default.
-> The existing unique key on `(flow_id, flow_instance_id)` and the `(flow_id, updated_at, flow_instance_id)` ordering index are the right base indexes for the current query plan.
-
->> MG: I think we should move whole filtering into SQL not in JVM code.
-
-> Agent:
-> - Response: Agreed, and I implemented that direction in this batch.
-> - Changes: `Instances` filtering now goes through SQL on `flowlite_instance_summary`.
-> - Response: I still did not add three standalone indexes. Instead I added composite indexes that match the new query shapes better: one around `(flow_id, status, stage, updated_at, flow_instance_id)` and one around `(flow_id, activity_status, updated_at, flow_instance_id)`.
-> - Response: A standalone `instance id` index still does not buy us much because exact per-instance lookups are already covered by the unique `(flow_id, flow_instance_id)` key.
-
->> MG: Don't we query this table by flow_instance_id alone (in case I use only this in filter on Instance tab?). If so I think composite index starting with flow_id will not be used or am I wrong?
-
-> Agent:
-> - Response: You were right for the exact `flow_instance_id` case. A composite index starting with `flow_id` is not the right access path when the user searches only by instance id.
-> - Changes: Added an exact-UUID search path in `CockpitService.listInstances(...)` / `findFilteredSummaries(...)` so a full instance id search no longer depends only on `lower(cast(flow_instance_id as varchar(...))) like ...`.
-> - Changes: Added a standalone `flow_instance_id` index to both H2 and MSSQL schemas for that exact-match path.
-> - Response: I did not add standalone indexes for `status` and `stage`. Those are still better served by the existing composite indexes because the hot query shape combines them with `flow_id`, ordering, and other predicates.
-> - Validation: `./gradlew test --tests io.flowlite.test.CockpitServiceTest`
+# Remove CockpitUiStaticConfigTest?
+Worth to keep it? Regression is not that important and we are starting whole app in this test so it is quite heavy.
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

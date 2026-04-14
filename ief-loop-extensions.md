@@ -2,6 +2,10 @@
 
 These rules extend the base IEF loop described in the workspace-level `AGENTS.md`.
 
+# TODO
+
+Below the tasks that extend each loop.
+
 ## [WHEN REQUESTED] Exploratory tests
 
 Do exploratory tests using our local `runPerfTestApp`.

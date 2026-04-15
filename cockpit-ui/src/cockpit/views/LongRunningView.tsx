@@ -69,8 +69,8 @@ export const LongRunningView = ({
         >
           <option value="default">Running + pending engine</option>
           <option value="all">All activity kinds</option>
-          <option value="Running">Running only</option>
-          <option value="PendingEngine">Pending engine only</option>
+          <option value="Running">Running</option>
+          <option value="PendingEngine">Pending engine</option>
           <option value="WaitingForTimer">Waiting for timer</option>
           <option value="WaitingForEvent">Waiting for event</option>
         </select>

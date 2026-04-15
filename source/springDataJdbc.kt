@@ -311,43 +311,9 @@ interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
         """,
     )
     fun findTimeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow>
-
-    @Query(
-        """
-        select h.*
-        from flowlite_history h
-        join (
-            select id, row_number() over (partition by flow_id, flow_instance_id, type order by occurred_at desc, id desc) as rn
-            from flowlite_history
-            where (:flowId is null or flow_id = :flowId)
-              and type in (:types)
-        ) ranked on ranked.id = h.id
-        where ranked.rn = 1
-        """,
-    )
-    fun findLatestRowsPerType(flowId: String?, types: Collection<String>): List<FlowLiteHistoryRow>
 }
 
 interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSummaryRow, UUID> {
-    @Query(
-        """
-        select *
-        from flowlite_instance_summary
-        order by flow_id asc, updated_at desc, flow_instance_id asc
-        """,
-    )
-    fun findAllSummaries(): List<FlowLiteInstanceSummaryRow>
-
-    @Query(
-        """
-        select *
-        from flowlite_instance_summary
-        where flow_id = :flowId
-        order by flow_id asc, updated_at desc, flow_instance_id asc
-        """,
-    )
-    fun findAllSummariesByFlowId(flowId: String): List<FlowLiteInstanceSummaryRow>
-
     @Query(
         """
         select *

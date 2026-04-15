@@ -45,12 +45,6 @@ data class CockpitInstanceDto(
     val lastErrorMessage: String? = null,
 )
 
-data class CockpitErrorGroupDto(
-    val flowId: String,
-    val stage: String?,
-    val count: Int,
-)
-
 enum class CockpitInstanceBucket {
     Active,
     Error,
@@ -150,26 +144,6 @@ class CockpitService(
             cockpitStatusFilter = normalizedCockpitStatusFilter,
             updatedBefore = updatedBefore,
         ).map { row -> row.toDto() }
-    }
-
-    fun listErrorGroups(
-        flowId: String? = null,
-        stageContains: String? = null,
-        errorMessage: String? = null,
-    ): List<CockpitErrorGroupDto> {
-        val normalizedStage = stageContains?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
-        val normalizedErrorMessage = errorMessage?.trim()?.takeIf { it.isNotEmpty() }?.lowercase()
-        return summaryRepo.findErrorGroups(
-            flowId = flowId,
-            stagePattern = normalizedStage?.let { "%$it%" },
-            errorMessagePattern = normalizedErrorMessage?.let { "%$it%" },
-        ).map {
-            CockpitErrorGroupDto(
-                flowId = it.flowId,
-                stage = it.stage,
-                count = it.count,
-            )
-        }
     }
 
     fun instance(flowId: String, flowInstanceId: UUID): CockpitInstanceDto? {

@@ -52,6 +52,5 @@ create table if not exists flowlite_instance_summary (
 
 create unique index if not exists idx_flowlite_instance_summary_key on flowlite_instance_summary(flow_id, flow_instance_id);
 create index if not exists idx_flowlite_instance_summary_instance on flowlite_instance_summary(flow_instance_id);
-create index if not exists idx_flowlite_instance_summary_updated on flowlite_instance_summary(flow_id, updated_at, flow_instance_id);
 create index if not exists idx_flowlite_instance_summary_status_stage on flowlite_instance_summary(flow_id, cockpit_status, stage, updated_at, flow_instance_id);
-create index if not exists idx_flowlite_instance_summary_cockpit_status on flowlite_instance_summary(flow_id, cockpit_status, updated_at, flow_instance_id);
+create index if not exists idx_flowlite_instance_summary_cockpit_status on flowlite_instance_summary(cockpit_status, updated_at, flow_id, flow_instance_id);

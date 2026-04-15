@@ -58,7 +58,7 @@ interface FlowLiteTickRepository : CrudRepository<FlowLiteTick, UUID> {
 class SpringDataJdbcTickScheduler(
     private val tickRepo: FlowLiteTickRepository,
     private val idleDelay: Duration = Duration.ofMillis(1000),
-    workerThreads: Int = 40,
+    workerThreads: Int = 60,
     private val clock: Clock = Clock.systemUTC(),
 ) : TickScheduler, SmartLifecycle {
 
@@ -273,8 +273,8 @@ data class FlowLiteInstanceSummaryRow(
     val flowId: String,
     val flowInstanceId: UUID,
     val stage: String? = null,
-    val status: String = StageStatus.Pending.name,
-    val cockpitStatus: String = "PendingEngine",
+    val status: String,
+    val cockpitStatus: String,
     val lastErrorMessage: String? = null,
     val updatedAt: Instant,
 )
@@ -293,12 +293,6 @@ data class FlowLiteFlowStageBreakdownRow(
     val stage: String,
     val totalCount: Int,
     val errorCount: Int,
-)
-
-data class FlowLiteErrorGroupRow(
-    val flowId: String,
-    val stage: String?,
-    val count: Int,
 )
 
 interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
@@ -365,27 +359,6 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         cockpitStatusFilter: String?,
         updatedBefore: Instant?,
     ): List<FlowLiteInstanceSummaryRow>
-
-    @Query(
-        """
-        select
-            flow_id as flow_id,
-            stage as stage,
-            count(*) as count
-        from flowlite_instance_summary
-        where cockpit_status = 'Error'
-          and (:flowId is null or flow_id = :flowId)
-          and (:stagePattern is null or lower(stage) like :stagePattern)
-          and (:errorMessagePattern is null or lower(last_error_message) like :errorMessagePattern)
-        group by flow_id, stage
-        order by flow_id asc, stage asc
-        """,
-    )
-    fun findErrorGroups(
-        flowId: String?,
-        stagePattern: String?,
-        errorMessagePattern: String?,
-    ): List<FlowLiteErrorGroupRow>
 
     @Query(
         """
@@ -458,6 +431,8 @@ class SpringDataJdbcHistoryStore(
             id = null,
             flowId = entry.flowId,
             flowInstanceId = entry.flowInstanceId,
+            status = StageStatus.Pending.name,
+            cockpitStatus = "PendingEngine",
             updatedAt = entry.occurredAt,
         )).apply(entry, cockpitStatusResolver)
         summaryRepo.save(next)

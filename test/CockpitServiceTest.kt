@@ -3,12 +3,10 @@ package io.flowlite.test
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
 import io.flowlite.FlowLiteInstanceSummaryRepository
-import io.flowlite.FlowLiteInstanceSummaryRow
 import io.flowlite.HistoryEntryType
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
 import io.flowlite.toHistoryEntry
-import io.flowlite.cockpit.CockpitErrorGroupDto
 import io.flowlite.cockpit.CockpitInstanceBucket
 import io.flowlite.cockpit.CockpitStatus
 import io.flowlite.cockpit.CockpitService
@@ -31,7 +29,7 @@ class CockpitServiceTest : BehaviorSpec({
         context.close()
     }
 
-    given("listInstances and listErrorGroups") {
+    given("listInstances") {
         `when`("history rows contain active, error, completed and cancelled instances") {
             val flowA = "flow-a"
             val flowB = "flow-b"
@@ -76,30 +74,7 @@ class CockpitServiceTest : BehaviorSpec({
                 service.listInstances(flowId = flowA).map { it.flowInstanceId } shouldContainExactly listOf(aError2, aError1, aRunning)
             }
 
-            then("listErrorGroups groups by flow and stage") {
-                service.listErrorGroups() shouldContainExactly listOf(
-                    CockpitErrorGroupDto(
-                        flowId = flowA,
-                        stage = "Review",
-                        count = 2,
-                    ),
-                    CockpitErrorGroupDto(
-                        flowId = flowB,
-                        stage = "Investigate",
-                        count = 1,
-                    ),
-                )
-
-                service.listErrorGroups(flowId = flowA) shouldContainExactly listOf(
-                    CockpitErrorGroupDto(
-                        flowId = flowA,
-                        stage = "Review",
-                        count = 2,
-                    ),
-                )
-            }
-
-            then("listInstances and listErrorGroups apply backend filters") {
+            then("listInstances applies backend filters") {
                 service.listInstances(
                     flowId = flowA,
                     status = CockpitStatus.Error,
@@ -107,18 +82,6 @@ class CockpitServiceTest : BehaviorSpec({
                     errorMessage = "boom-2",
                     showIncompleteOnly = true,
                 ).map { it.flowInstanceId } shouldContainExactly listOf(aError2)
-
-                service.listErrorGroups(
-                    flowId = flowA,
-                    stageContains = "rev",
-                    errorMessage = "boom-1",
-                ) shouldContainExactly listOf(
-                    CockpitErrorGroupDto(
-                        flowId = flowA,
-                        stage = "Review",
-                        count = 1,
-                    ),
-                )
 
                 service.listInstances(searchTerm = bError.toString())
                     .map { it.flowInstanceId } shouldContainExactly listOf(bError)

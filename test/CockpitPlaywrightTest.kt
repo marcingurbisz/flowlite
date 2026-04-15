@@ -664,8 +664,11 @@ class CockpitPlaywrightTest : BehaviorSpec({
             val page = session.page
 
             navigateToCockpit(page)
+            page.navigate(cockpitUrl("tab=long-running&lrStatus=WaitingForEvent"))
+            page.goBack()
 
             page.getByTestId("flow-long-running-order-confirmation").click()
+            val longRunningStatusAfterShortcut = page.getByTestId("long-running-status-filter").inputValue()
             page.goBack()
             page.getByTestId("flow-incomplete-order-confirmation").click()
             page.goBack()
@@ -678,6 +681,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
             then("it supports long inactive, incomplete, stage and error jumps with bookmarkable URLs") {
                 verifyRecordedContext(session) { currentPage ->
+                    longRunningStatusAfterShortcut shouldBe "default"
                     assertThat(currentPage.getByTestId("errors-flow-filter")).hasValue(ORDER_CONFIRMATION_FLOW_ID)
                     assertThat(currentPage.getByTestId("errors-stage-filter")).hasValue(OrderConfirmationStage.InformingCustomer.name)
                     bookmarkUrl.shouldContain("tab=errors")

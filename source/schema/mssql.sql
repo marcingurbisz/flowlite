@@ -118,16 +118,6 @@ END;
 IF NOT EXISTS (
     SELECT 1
     FROM sys.indexes
-    WHERE name = 'idx_flowlite_instance_summary_updated'
-      AND object_id = OBJECT_ID('dbo.flowlite_instance_summary')
-)
-BEGIN
-    CREATE INDEX idx_flowlite_instance_summary_updated ON dbo.flowlite_instance_summary(flow_id, updated_at, flow_instance_id)
-END;
-
-IF NOT EXISTS (
-    SELECT 1
-    FROM sys.indexes
     WHERE name = 'idx_flowlite_instance_summary_status_stage'
       AND object_id = OBJECT_ID('dbo.flowlite_instance_summary')
 )
@@ -142,5 +132,5 @@ IF NOT EXISTS (
       AND object_id = OBJECT_ID('dbo.flowlite_instance_summary')
 )
 BEGIN
-    CREATE INDEX idx_flowlite_instance_summary_cockpit_status ON dbo.flowlite_instance_summary(flow_id, cockpit_status, updated_at, flow_instance_id)
+    CREATE INDEX idx_flowlite_instance_summary_cockpit_status ON dbo.flowlite_instance_summary(cockpit_status, updated_at, flow_id, flow_instance_id)
 END;

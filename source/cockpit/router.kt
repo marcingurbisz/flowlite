@@ -67,19 +67,6 @@ fun cockpitRouter(service: CockpitService) =
             )
         }
 
-        GET("/api/errors") { request ->
-            val flowId = request.param("flowId").orElse(null)
-            val stage = request.param("stage")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() && it != "all" }
-                .orElse(null)
-            val errorMessage = request.param("errorMessage")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .orElse(null)
-            ServerResponse.ok().body(service.listErrorGroups(flowId, stageContains = stage, errorMessage = errorMessage))
-        }
-
         GET("/api/instances/{flowId}/{flowInstanceId}") { request ->
             val flowId = request.pathVariable("flowId")
             val flowInstanceId = UUID.fromString(request.pathVariable("flowInstanceId"))

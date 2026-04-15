@@ -691,6 +691,7 @@ const FlowLiteCockpit = () => {
               setLoadingView('long-running');
               setActiveView('long-running');
               setLongRunningFlowFilter(flowId);
+              setLongRunningStatusFilter('default');
               setSelectedInstances(new Set());
             }}
             onOpenInstances={openInstancesView}

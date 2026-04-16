@@ -41,6 +41,13 @@ Related topic: I see setCockpitStatusResolver - this introduce kind of circular 
 > - Response: Separately, I still agree the setter-based resolver is the wrong shape. I would fix that by moving Cockpit status classification behind a dedicated flow-definition catalog/projector bean, not by collapsing the two status models.
 > - Validation: Re-checked current `Engine`, `StatePersister`, `HistoryEntry`, and summary projection call sites of `StageStatus` before answering this follow-up.
 
+## [DONE 2026-04-16.3] Self-review of loop changes
+> Agent:
+> - Reviewed the current loop changes for two risks: hiding the Render problem without fixing the cause, and over-answering the status-model discussion without checking the real blast radius.
+> - Result: the meaningful runtime fix was to stop unbounded showcase growth on Render and add endpoint timing logs, not to tune random engine constants blindly. For the status-model discussion, the main clarification was that the user-facing benefit is valid, but the engine impact is broader than the enum diff suggests because `StageStatus` is part of claim/retry/history/persistence contracts.
+> - Result: no additional `[FOR HUMAN REVIEW]` item came out of this self-review.
+> - Validation: `./gradlew test`
+
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?
 

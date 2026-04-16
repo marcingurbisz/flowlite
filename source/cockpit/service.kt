@@ -14,6 +14,7 @@ import io.flowlite.Stage
 import io.flowlite.StageDefinition
 import io.flowlite.StageStatus
 import io.flowlite.historyValueOf
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -73,6 +74,10 @@ class CockpitService(
     private val historyRepo: FlowLiteHistoryRepository,
     private val summaryRepo: FlowLiteInstanceSummaryRepository,
 ) {
+    private companion object {
+        private val log = KotlinLogging.logger {}
+    }
+
     private val flowMetadataById by lazy {
         engine.registeredFlows().mapValues { (_, flow) ->
             RegisteredFlowMetadata(
@@ -84,29 +89,41 @@ class CockpitService(
     }
 
     fun listFlows(longRunningThresholdSeconds: Long = 3600): List<CockpitFlowDto> {
+        val startedAt = System.nanoTime()
         val longRunningThreshold = Duration.ofSeconds(longRunningThresholdSeconds.coerceAtLeast(1))
         val updatedBefore = Instant.now().minus(longRunningThreshold)
-        val countsByFlow = summaryRepo.findFlowSummaryAggregates(updatedBefore)
-            .associateBy { it.flowId }
-        val stageBreakdownByFlow = summaryRepo.findIncompleteStageBreakdown()
-            .groupBy { it.flowId }
+        try {
+            val countsByFlow = summaryRepo.findFlowSummaryAggregates(updatedBefore)
+                .associateBy { it.flowId }
+            val stageBreakdownByFlow = summaryRepo.findIncompleteStageBreakdown()
+                .groupBy { it.flowId }
 
-        return flowMetadataById.keys.sorted().mapNotNull { flowId ->
-            val metadata = flowMetadataById[flowId] ?: return@mapNotNull null
-            val counts = countsByFlow[flowId]
-            val stageBreakdown = stageBreakdownByFlow[flowId].orEmpty().map { it.toDto() }
+            val result = flowMetadataById.keys.sorted().mapNotNull { flowId ->
+                val metadata = flowMetadataById[flowId] ?: return@mapNotNull null
+                val counts = countsByFlow[flowId]
+                val stageBreakdown = stageBreakdownByFlow[flowId].orEmpty().map { it.toDto() }
 
-            CockpitFlowDto(
-                flowId = flowId,
-                diagram = metadata.diagram,
-                stages = metadata.stages,
-                notCompletedCount = counts?.notCompletedCount ?: 0,
-                errorCount = counts?.errorCount ?: 0,
-                activeCount = counts?.activeCount ?: 0,
-                completedCount = counts?.completedCount ?: 0,
-                longRunningCount = counts?.longRunningCount ?: 0,
-                stageBreakdown = stageBreakdown,
-            )
+                CockpitFlowDto(
+                    flowId = flowId,
+                    diagram = metadata.diagram,
+                    stages = metadata.stages,
+                    notCompletedCount = counts?.notCompletedCount ?: 0,
+                    errorCount = counts?.errorCount ?: 0,
+                    activeCount = counts?.activeCount ?: 0,
+                    completedCount = counts?.completedCount ?: 0,
+                    longRunningCount = counts?.longRunningCount ?: 0,
+                    stageBreakdown = stageBreakdown,
+                )
+            }
+            log.info {
+                "cockpit listFlows thresholdSeconds=$longRunningThresholdSeconds returned=${result.size} durationMs=${elapsedMillis(startedAt)}"
+            }
+            return result
+        } catch (e: Exception) {
+            log.error(e) {
+                "cockpit listFlows failed thresholdSeconds=$longRunningThresholdSeconds durationMs=${elapsedMillis(startedAt)}"
+            }
+            throw e
         }
     }
 
@@ -121,6 +138,7 @@ class CockpitService(
         cockpitStatusFilter: String? = null,
         longInactiveThresholdSeconds: Long? = null,
     ): List<CockpitInstanceDto> {
+        val startedAt = System.nanoTime()
         val now = Instant.now()
         val longInactiveThreshold = longInactiveThresholdSeconds
             ?.coerceAtLeast(1)
@@ -132,38 +150,76 @@ class CockpitService(
         val normalizedCockpitStatusFilter = cockpitStatusFilter?.trim()?.takeIf { it.isNotEmpty() && it != "all" }
         val updatedBefore = longInactiveThreshold?.let { now.minus(it) }
 
-        return summaryRepo.findFilteredSummaries(
-            flowId = flowId,
-            bucket = bucket?.name,
-            status = status?.name,
-            searchPattern = normalizedSearchTerm?.let { "%$it%" },
-            searchFlowInstanceId = exactFlowInstanceId,
-            stage = normalizedStage,
-            errorMessagePattern = normalizedErrorMessage?.let { "%$it%" },
-            showIncompleteOnly = showIncompleteOnly,
-            cockpitStatusFilter = normalizedCockpitStatusFilter,
-            updatedBefore = updatedBefore,
-        ).map { row -> row.toDto() }
+        try {
+            val result = summaryRepo.findFilteredSummaries(
+                flowId = flowId,
+                bucket = bucket?.name,
+                status = status?.name,
+                searchPattern = normalizedSearchTerm?.let { "%$it%" },
+                searchFlowInstanceId = exactFlowInstanceId,
+                stage = normalizedStage,
+                errorMessagePattern = normalizedErrorMessage?.let { "%$it%" },
+                showIncompleteOnly = showIncompleteOnly,
+                cockpitStatusFilter = normalizedCockpitStatusFilter,
+                updatedBefore = updatedBefore,
+            ).map { row -> row.toDto() }
+            log.info {
+                "cockpit listInstances flowId=${flowId ?: "-"} bucket=${bucket?.name ?: "-"} status=${status?.name ?: "-"} search=${normalizedSearchTerm ?: "-"} stage=${normalizedStage ?: "-"} errorMessage=${normalizedErrorMessage ?: "-"} incompleteOnly=$showIncompleteOnly cockpitStatus=${normalizedCockpitStatusFilter ?: "-"} longInactiveThresholdSeconds=${longInactiveThresholdSeconds ?: "-"} returned=${result.size} durationMs=${elapsedMillis(startedAt)}"
+            }
+            return result
+        } catch (e: Exception) {
+            log.error(e) {
+                "cockpit listInstances failed flowId=${flowId ?: "-"} bucket=${bucket?.name ?: "-"} status=${status?.name ?: "-"} search=${normalizedSearchTerm ?: "-"} stage=${normalizedStage ?: "-"} errorMessage=${normalizedErrorMessage ?: "-"} incompleteOnly=$showIncompleteOnly cockpitStatus=${normalizedCockpitStatusFilter ?: "-"} longInactiveThresholdSeconds=${longInactiveThresholdSeconds ?: "-"} durationMs=${elapsedMillis(startedAt)}"
+            }
+            throw e
+        }
     }
 
     fun instance(flowId: String, flowInstanceId: UUID): CockpitInstanceDto? {
-        return summaryRepo.findSummary(flowId, flowInstanceId)
-            ?.toDto()
+        val startedAt = System.nanoTime()
+        try {
+            val result = summaryRepo.findSummary(flowId, flowInstanceId)
+                ?.toDto()
+            log.info {
+                "cockpit instance flowId=$flowId flowInstanceId=$flowInstanceId found=${result != null} durationMs=${elapsedMillis(startedAt)}"
+            }
+            return result
+        } catch (e: Exception) {
+            log.error(e) {
+                "cockpit instance failed flowId=$flowId flowInstanceId=$flowInstanceId durationMs=${elapsedMillis(startedAt)}"
+            }
+            throw e
+        }
     }
 
     fun timeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow> {
-        return historyRepo.findTimeline(flowId = flowId, flowInstanceId = flowInstanceId)
+        val startedAt = System.nanoTime()
+        try {
+            val result = historyRepo.findTimeline(flowId = flowId, flowInstanceId = flowInstanceId)
+            log.info {
+                "cockpit timeline flowId=$flowId flowInstanceId=$flowInstanceId returned=${result.size} durationMs=${elapsedMillis(startedAt)}"
+            }
+            return result
+        } catch (e: Exception) {
+            log.error(e) {
+                "cockpit timeline failed flowId=$flowId flowInstanceId=$flowInstanceId durationMs=${elapsedMillis(startedAt)}"
+            }
+            throw e
+        }
     }
 
     fun retry(flowId: String, flowInstanceId: UUID) {
+        log.info { "cockpit retry flowId=$flowId flowInstanceId=$flowInstanceId" }
         engine.retry(flowId, flowInstanceId)
     }
 
     fun cancel(flowId: String, flowInstanceId: UUID) {
+        log.info { "cockpit cancel flowId=$flowId flowInstanceId=$flowInstanceId" }
         engine.cancel(flowId, flowInstanceId)
     }
 
     fun changeStage(flowId: String, flowInstanceId: UUID, stage: String) {
+        log.info { "cockpit changeStage flowId=$flowId flowInstanceId=$flowInstanceId stage=$stage" }
         engine.changeStage(flowId, flowInstanceId, stage)
     }
 
@@ -185,6 +241,8 @@ class CockpitService(
             totalCount = totalCount,
             errorCount = errorCount,
         )
+
+    private fun elapsedMillis(startedAt: Long): Long = Duration.ofNanos(System.nanoTime() - startedAt).toMillis()
 
 }
 

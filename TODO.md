@@ -1,4 +1,4 @@
-## Stall on render at 6.5k instances
+## [DONE 2026-04-16.1] Stall on render at 6.5k instances
 See images ![alt text](image-1.png)
 ![alt text](image-2.png)
 ![alt text](image-3.png)
@@ -7,6 +7,17 @@ No logs since 4am. Render instance is small 512MB RAM.
 Any idea what happen?
 Web requests are working. Do we log anything when request is served?
 From the logs it seems that instance started to work again around 7:30 but then around 8am instance stopped responding and render killed it.
+
+> Agent: Picking this item in loop `2026-04-16.1` first because it is a production-style stability issue. Initial finding: the Render service is the servlet test app, and that app enables showcase mode automatically. In the current deployment shape it keeps seeding forever every 5 seconds, so the in-memory H2 dataset grows unbounded on a 512 MB instance.
+
+> Agent:
+> - Response: The most likely root cause is the deployment shape itself, not a single bad `/api` request. Render is running the servlet test app, the test app uses in-memory H2, and showcase repeat seeding was enabled. That means rows keep accumulating forever until the 512 MB free-tier instance hits memory or GC pressure. The screenshots fit that pattern: Cockpit still answered HTTP requests, but workflow progression had stopped for hours and then Render eventually killed the container.
+> - Response: No, before this loop we were not logging normal Cockpit request servicing. We had startup/shutdown logs plus engine/showcase logs, but nothing that told us `/api/flows` or `/api/instances` was served in `X ms` with `N` rows.
+> - Changes: Added Cockpit API timing logs for `listFlows`, `listInstances`, single-instance reads, and timeline reads, plus action logs for retry/cancel/change-stage operations.
+> - Changes: Bounded the public Render workload by setting `FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT=100` and `FLOWLITE_SHOWCASE_REPEAT_SEEDING_ENABLED=false` in `render.yaml`, so the hosted demo stops growing without bound.
+> - Validation: `./gradlew test`
+
+## [IN PROGRESS 2026-04-16.2] [REOPEN] Aligning CockpitStatus and StageStatus
 
 ## [REOPEN] Aligning CockpitStatus and StageStatus
 What do you think about using in StageStatus the same statuses as we have now in CockpitStatus, effectively removing the need to have separate CockpitStatus? Consider that we do not have yet any clients and we are in alpha phase. No need for backward compatibility.

@@ -6,3 +6,8 @@ services:
     autoDeploy: true
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/flows
+    envVars:
+      - key: FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT
+        value: "100"
+      - key: FLOWLITE_SHOWCASE_REPEAT_SEEDING_ENABLED
+        value: "false"

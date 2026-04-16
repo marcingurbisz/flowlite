@@ -1,4 +1,14 @@
-## [DONE 2026-04-15.1] Aligning CockpitStatus and StageStatus
+## Stall on render at 6.5k instances
+See images ![alt text](image-1.png)
+![alt text](image-2.png)
+![alt text](image-3.png)
+On render ![alt text](image-4.png)
+No logs since 4am. Render instance is small 512MB RAM.
+Any idea what happen?
+Web requests are working. Do we log anything when request is served?
+From the logs it seems that instance started to work again around 7:30 but then around 8am instance stopped responding and render killed it.
+
+## [REOPEN] Aligning CockpitStatus and StageStatus
 What do you think about using in StageStatus the same statuses as we have now in CockpitStatus, effectively removing the need to have separate CockpitStatus? Consider that we do not have yet any clients and we are in alpha phase. No need for backward compatibility.
 What are pros, cons and your recommendation.
 Related topic: I see setCockpitStatusResolver - this introduce kind of circular dependency between engine and history store, right? I do not like that.
@@ -12,91 +22,7 @@ Related topic: I see setCockpitStatusResolver - this introduce kind of circular 
 > - Response: So yes, `setCockpitStatusResolver(...)` is a circular-style hookup and I do not like the shape either, but I do not think collapsing the enums is the best fix for it. My recommendation is: keep separate engine and Cockpit statuses, and later remove the setter by introducing a dedicated flow-definition catalog/classifier bean or a Cockpit-owned projector instead of pushing that wiring through `SpringDataJdbcHistoryStore`.
 > - Validation: Re-checked current `Engine`, `StageStatus`, `SpringDataJdbcHistoryStore`, and Cockpit status-classification flow while answering this item.
 
-## [DONE 2026-04-15.1] Is /api/errors and listErrorGroups in use? Looks to me that we can remove it
-
-> Agent: Investigating this in loop `2026-04-15.1` as part of the same Cockpit batch.
-
-> Agent:
-> - Response: They were no longer used by the UI. The `Errors` tab already had the raw `/api/instances?bucket=error` rows it needed, and the browser-network check after the change confirmed the page now loads with only `/api/flows` and `/api/instances?bucket=error`.
-> - Changes: Removed backend `/api/errors`, `CockpitService.listErrorGroups(...)`, the unused summary aggregation query/data class behind it, and the corresponding backend tests.
-> - Validation: `./gradlew test`
-> - Validation: Browser-network inspection of `http://127.0.0.1:8080/cockpit?tab=errors` showed only `/api/flows?longRunningThresholdSeconds=3600` and `/api/instances?bucket=error`.
-
-## [DONE 2026-04-15.1] Index question
-create index if not exists idx_flowlite_instance_summary_updated on flowlite_instance_summary(flow_id, updated_at, flow_instance_id);
-create index if not exists idx_flowlite_instance_summary_status_stage on flowlite_instance_summary(flow_id, cockpit_status, stage, updated_at, flow_instance_id);
-create index if not exists idx_flowlite_instance_summary_cockpit_status on flowlite_instance_summary(flow_id, cockpit_status, updated_at, flow_instance_id);
-Are we always providing flow_id when we query cockpit_status or updated_at?
-
-> Agent: Reviewing the current Cockpit query shapes for this in loop `2026-04-15.1`.
-
-> Agent:
-> - Response: No. We do not always provide `flow_id` for the important `cockpit_status` / `updated_at` queries. Examples: global long-inactive requests, global error requests, and filtered instances searches can all run across all flows.
-> - Changes: Dropped `idx_flowlite_instance_summary_updated`, which did not match a current query shape, and changed `idx_flowlite_instance_summary_cockpit_status` to lead with `cockpit_status, updated_at` instead of `flow_id`. I kept `idx_flowlite_instance_summary_status_stage` flow-first because flow+stage drill-downs do use that shape.
-> - Validation: Re-checked current `findFilteredSummaries(...)`, `findFlowSummaryAggregates(...)`, and live Cockpit request patterns during the exploratory pass.
-
-## [DONE 2026-04-15.1] Default values in FlowLiteInstanceSummaryRow
-Why we have default values in:
-```
-@Table("FLOWLITE_INSTANCE_SUMMARY")
-data class FlowLiteInstanceSummaryRow(
-    val status: String = StageStatus.Pending.name,
-    val cockpitStatus: String = "PendingEngine",
-)
-```
-
-> Agent: Reviewing this together with the summary-row/index questions in loop `2026-04-15.1`.
-
-> Agent:
-> - Response: They were only there to seed a brand-new summary row before the first history entry was applied. That is implicit and weaker than necessary now that the columns are non-null.
-> - Changes: Removed the constructor defaults and made the initial summary-row creation pass `status = Pending` and `cockpitStatus = PendingEngine` explicitly at the append site.
-> - Validation: `./gradlew test`
-
-## [DONE 2026-04-15.1] Clicking on long inactive in Flow tab do not update status filter on Long Inactive tab
-... so when you changed it manually before you do not get "Running + pending engine"
-
-> Agent: Reproducing and fixing this in loop `2026-04-15.1`.
-
-> Agent:
-> - Changes: Reset `longRunningStatusFilter` back to `default` when the `Flows` tab shortcut opens the `Long Inactive` tab.
-> - Validation: Added Playwright coverage that first bookmarks a non-default long-inactive filter, then uses the flow shortcut and asserts the filter resets to `default`.
-> - Validation: `./gradlew test`
-
-## [DONE 2026-04-15.1] Local flowlite app process used for exploratory tests with 7k instances was consuming 25% cpu
-This was without any real use of the app. Background processing (e.g. tick scheduler) should not use that much I think. Please check that next time you run Exploratory.
-
-> Agent: Will include this explicitly in the requested exploratory pass for loop `2026-04-15.1`.
-
-> Agent:
-> - Findings: On the updated `runPerfTestApp` process with ~7k seeded instances, the Java process was still very hot during active background processing: sampled at about `1184%` CPU with `125` native threads. That was not an idle system, though; the showcase app was actively progressing thousands of instances, generating random delays/failures/events, and logging heavily the whole time.
-> - Response: So I do not read the earlier `25%` observation as evidence of idle scheduler overhead by itself. Under this showcase workload the app is busy by design. If we want a true background-idle measurement, we should run a quieter scenario with seeding finished, low/no action failure, and much less per-stage logging.
-
-
-## [DONE 2026-04-15.1] Many Pending engine inactive for a long time on render
-Right now 361 instances raging for few sec to ~ 30m 17s
-I wonder if this is because of too little worker threads or because ticks are lost. I think the first one because I see that these waiting ~30min are finally picked up.
-Please increase default value for workers from 40 to 60.
-
-> Agent: Investigating this and applying the requested worker-default change in loop `2026-04-15.1`.
-
-> Agent:
-> - Response: The current data still points much more toward worker saturation than lost ticks. On the updated perf app, repeated `Running` samples were `57`, `55`, `55`, which tracks closely with the new default of `60` worker threads. At the same time, `PendingEngine` long-inactive rows remained very large under the showcase load, which is consistent with backlog rather than dropped wakeups.
-> - Changes: Raised the default `SpringDataJdbcTickScheduler` worker count from `40` to `60`.
-> - Validation: `./gradlew test`
-> - Validation: Exploratory curl checks on the updated perf app showed `Running` about mid-to-high 50s, `PendingEngine` with `5662` rows above `1s`, and `5391` rows above `30m` while the system was still actively processing the same ~7k seeded workload.
-
-## [DONE 2026-04-15.1] Exploratory tests
-> Agent:
-> - Ran the updated local `runPerfTestApp --args='--flowlite.showcase.initial-seed-count=3500 --flowlite.showcase.repeat-seeding-enabled=false'` and checked live Cockpit APIs and browser request patterns.
-> - Findings: `Errors` now loads with only two API calls (`/api/flows`, `/api/instances?bucket=error`). `Instances` with no filters makes no API calls, and a filtered instance lookup makes only `/api/instances?...`.
-> - Findings: On the updated app, `/api/instances?bucket=active&cockpitStatus=Running&longInactiveThresholdSeconds=1` returned `58` rows in about `242ms`, `/api/instances?bucket=active&cockpitStatus=WaitingForEvent&longInactiveThresholdSeconds=1` returned `987` rows in about `404ms`, `/api/instances?bucket=active&cockpitStatus=PendingEngine&longInactiveThresholdSeconds=1` returned `5662` rows in about `232ms`, and `/api/instances?bucket=active&cockpitStatus=default&longInactiveThresholdSeconds=1` returned `5718` rows in about `192ms`.
-> - Findings: Repeated warm `/api/flows` timings for `longRunningThresholdSeconds=1` and `3600` were both around `45-60ms` in this run.
-
-## [DONE 2026-04-15.1] Self-review of loop changes
-> Agent:
-> - Reviewed the loop diff for accidental API leftovers, missing tests around the long-inactive shortcut, and unnecessary backend surface area.
-> - Result: removing `/api/errors` and its aggregation path was the main simplification opportunity, and I added coverage for the long-inactive shortcut reset after applying that fix. I did not identify a separate new issue that needs a `[FOR HUMAN REVIEW]` follow-up item from this loop.
-> - Validation: `./gradlew test`
+>> MG: Would it complicate engine code much? From my pov when looking at flow table and seeing WaitingForTimer instead Pending is a benefit.
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

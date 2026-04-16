@@ -17,9 +17,7 @@ From the logs it seems that instance started to work again around 7:30 but then 
 > - Changes: Bounded the public Render workload by setting `FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT=100` and `FLOWLITE_SHOWCASE_REPEAT_SEEDING_ENABLED=false` in `render.yaml`, so the hosted demo stops growing without bound.
 > - Validation: `./gradlew test`
 
-## [IN PROGRESS 2026-04-16.2] [REOPEN] Aligning CockpitStatus and StageStatus
-
-## [REOPEN] Aligning CockpitStatus and StageStatus
+## [DONE 2026-04-16.2] [REOPEN] Aligning CockpitStatus and StageStatus
 What do you think about using in StageStatus the same statuses as we have now in CockpitStatus, effectively removing the need to have separate CockpitStatus? Consider that we do not have yet any clients and we are in alpha phase. No need for backward compatibility.
 What are pros, cons and your recommendation.
 Related topic: I see setCockpitStatusResolver - this introduce kind of circular dependency between engine and history store, right? I do not like that.
@@ -34,6 +32,14 @@ Related topic: I see setCockpitStatusResolver - this introduce kind of circular 
 > - Validation: Re-checked current `Engine`, `StageStatus`, `SpringDataJdbcHistoryStore`, and Cockpit status-classification flow while answering this item.
 
 >> MG: Would it complicate engine code much? From my pov when looking at flow table and seeing WaitingForTimer instead Pending is a benefit.
+
+> Agent:
+> - Response: The benefit you point at is real. For observability, `WaitingForTimer` / `WaitingForEvent` / `PendingEngine` is more informative than a raw `Pending`, especially in Cockpit tables.
+> - Response: It would not be algorithmically hard, but it would be a fairly broad engine refactor. Today `StageStatus` is the small lifecycle primitive that drives claim/release (`Pending -> Running`), retry (`Error -> Pending`), cancellation, terminal completion, persisted history, compare-and-set persistence APIs, and a lot of tests. If we replace it with Cockpit-style statuses, then the engine no longer has a single generic claimable waiting status. We would need to either treat `WaitingForTimer`, `WaitingForEvent`, and `PendingEngine` as multiple claimable states everywhere or introduce another internal concept for claimability anyway.
+> - Response: In practice that means touching `Engine.processTick`, retry/cancel/manual-stage flows, `StatePersister.tryTransitionStageStatus(...)`, history entry semantics, the persisted `status` column contract, the summary projection, and the related test suite. So I would call it moderate-to-high blast radius, even if each individual change is understandable.
+> - Response: My recommendation stays the same: keep `StageStatus` as the engine lifecycle model, keep the richer waiting-state split for Cockpit/read models, and improve the UX by showing derived Cockpit status anywhere humans inspect runtime state. That gives you the better table semantics without teaching the engine core about timer-vs-event waiting reasons everywhere.
+> - Response: Separately, I still agree the setter-based resolver is the wrong shape. I would fix that by moving Cockpit status classification behind a dedicated flow-definition catalog/projector bean, not by collapsing the two status models.
+> - Validation: Re-checked current `Engine`, `StatePersister`, `HistoryEntry`, and summary projection call sites of `StageStatus` before answering this follow-up.
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

@@ -7,7 +7,7 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/flows
     envVars:
-      - key: FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT
-        value: "100"
-      - key: FLOWLITE_SHOWCASE_REPEAT_SEEDING_ENABLED
-        value: "false"
+      - key: FLOWLITE_DIAGNOSTICS_MEMORY_LOG_ENABLED
+        value: "true"
+      - key: FLOWLITE_DIAGNOSTICS_MEMORY_LOG_INTERVAL_SECONDS
+        value: "60"

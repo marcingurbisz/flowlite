@@ -1,8 +1,16 @@
-## Do not bound Render workload
+## [DONE 2026-05-07.1] Do not bound Render workload
 ... as I want to keep it to test the limits of the flowlite.
 * Please revert back previous seeding approach.
 * I would prefer to have some confirmation about memory. Maybe some periodic logs about memory usage?
 * Once we have memory limit confirmed what about switching h2 file?
+
+> Agent: Picking this item first in loop `2026-05-07.1`. Current local hypothesis: the Render cap should be reverted, and the missing piece is telemetry rather than throttling, so I am restoring the previous showcase behavior and adding periodic JVM memory diagnostics for the hosted test app.
+
+> Agent:
+> - Changes: Reverted the Render-specific seeding cap, so the hosted test app again uses the original showcase growth behavior.
+> - Changes: Added configurable periodic JVM memory diagnostics in the test app. On Render it is now enabled via environment variables and logs used/committed/max heap plus non-heap usage and thread count every 60 seconds.
+> - Response: I would keep the H2 file-store idea as a follow-up after we have enough memory samples. Right now the better next step is to confirm whether the failure pattern is heap pressure, non-heap/thread pressure, or something else. File-backed H2 changes durability and startup behavior, so it is better as a second step after the measurements.
+> - Validation: `./gradlew test`
 
 ## Logback instead "custom" logs in service.kt?
 Or maybe we do not need this logs at all? I'm not sure if I need these logs at all in this test app for now.

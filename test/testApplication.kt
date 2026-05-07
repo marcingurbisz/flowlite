@@ -16,6 +16,7 @@ import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.classifyCockpitStatus
 import io.flowlite.cockpit.cockpitRouter
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.lang.management.ManagementFactory
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -144,6 +145,14 @@ object Beans {
         }
 
         registerBean {
+            val environment = bean<Environment>()
+            PeriodicMemoryLogger(
+                enabled = environment.getProperty<Boolean>("flowlite.diagnostics.memory-log-enabled", false),
+                intervalSeconds = environment.getProperty<Long>("flowlite.diagnostics.memory-log-interval-seconds", 60L),
+            )
+        }
+
+        registerBean {
             CockpitService(
                 engine = bean<Engine>(),
                 mermaid = bean<io.flowlite.MermaidGenerator>(),
@@ -222,6 +231,54 @@ object ShowcaseActionBehavior {
 }
 
 private val showcaseLog = KotlinLogging.logger {}
+private val diagnosticsLog = KotlinLogging.logger {}
+
+internal class PeriodicMemoryLogger(
+    enabled: Boolean,
+    intervalSeconds: Long,
+) : AutoCloseable {
+    private val executor =
+        if (enabled) {
+            Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "flowlite-memory-diagnostics").apply { isDaemon = true }
+            }
+        } else {
+            null
+        }
+
+    init {
+        if (enabled) {
+            val periodSeconds = intervalSeconds.coerceAtLeast(5L)
+            logMemorySnapshot("startup")
+            executor?.scheduleAtFixedRate(
+                { logMemorySnapshot("periodic") },
+                periodSeconds,
+                periodSeconds,
+                TimeUnit.SECONDS,
+            )
+        }
+    }
+
+    private fun logMemorySnapshot(reason: String) {
+        val runtime = Runtime.getRuntime()
+        val totalBytes = runtime.totalMemory()
+        val freeBytes = runtime.freeMemory()
+        val usedBytes = totalBytes - freeBytes
+        val maxBytes = runtime.maxMemory()
+        val heapUsage = ManagementFactory.getMemoryMXBean().heapMemoryUsage
+        val nonHeapUsage = ManagementFactory.getMemoryMXBean().nonHeapMemoryUsage
+
+        diagnosticsLog.info {
+            "memory diagnostics reason=$reason usedMiB=${usedBytes.toMiB()} committedMiB=${totalBytes.toMiB()} maxMiB=${maxBytes.toMiB()} freeMiB=${freeBytes.toMiB()} heapUsedMiB=${heapUsage.used.toMiB()} heapCommittedMiB=${heapUsage.committed.toMiB()} nonHeapUsedMiB=${nonHeapUsage.used.toMiB()} threads=${Thread.getAllStackTraces().size}"
+        }
+    }
+
+    override fun close() {
+        executor?.shutdownNow()
+    }
+}
+
+private fun Long.toMiB(): Long = this / (1024 * 1024)
 
 internal class ShowcaseFlowSeeder(
     private val engine: Engine,

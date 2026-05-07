@@ -12,8 +12,17 @@
 > - Response: I would keep the H2 file-store idea as a follow-up after we have enough memory samples. Right now the better next step is to confirm whether the failure pattern is heap pressure, non-heap/thread pressure, or something else. File-backed H2 changes durability and startup behavior, so it is better as a second step after the measurements.
 > - Validation: `./gradlew test`
 
-## Logback instead "custom" logs in service.kt?
+## [DONE 2026-05-07.2] Logback instead "custom" logs in service.kt?
 Or maybe we do not need this logs at all? I'm not sure if I need these logs at all in this test app for now.
+
+> Agent: Picking this next in loop `2026-05-07.1`. My current read is that these service-layer timing logs are neither proper access logs nor essential app diagnostics, so the smallest correct change is to remove them entirely and keep the new memory telemetry from the previous item.
+
+> Agent:
+> - Response: I do not think these `CockpitService` logs should stay. They are ad hoc diagnostics in application code, not proper HTTP access logging and not durable enough to justify the noise.
+> - Response: If you later decide you want request logs, I would do that at servlet/filter/Tomcat level, not inside `service.kt`.
+> - Changes: Removed the custom timing/action logs from `CockpitService`.
+> - Validation: `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`
+> - Validation: A full `./gradlew test` run failed once on a flaky Playwright modal-dismissal assertion, but the targeted rerun of that spec passed after the logging cleanup.
 
 ## What about using playwright skill instead playwright mcp
 ... for ad-hoc/free testing?

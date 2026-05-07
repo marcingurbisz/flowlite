@@ -125,7 +125,7 @@ class EngineBehaviorTest : BehaviorSpec({
                     flowInstanceId = id,
                     state = EngineState(flag = false),
                     stage = EngineStage.Start,
-                    stageStatus = StageStatus.Pending,
+                    stageStatus = StageStatus.PendingEngine,
                 ),
             )
 
@@ -133,7 +133,7 @@ class EngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it leaves the instance untouched") {
-                engine.getStatus("claim-flow", id) shouldBe (EngineStage.Start to StageStatus.Pending)
+                engine.getStatus("claim-flow", id) shouldBe (EngineStage.Start to StageStatus.PendingEngine)
             }
         }
 
@@ -166,7 +166,7 @@ class EngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it releases the RUNNING claim and stays pending") {
-                engine.getStatus("wait-flow", id) shouldBe (EngineStage.Wait to StageStatus.Pending)
+                engine.getStatus("wait-flow", id) shouldBe (EngineStage.Wait to StageStatus.WaitingForEvent)
             }
         }
 
@@ -201,7 +201,7 @@ class EngineBehaviorTest : BehaviorSpec({
                     flowInstanceId = id,
                     state = EngineState(flag = false),
                     stage = EngineStage.Undefined,
-                    stageStatus = StageStatus.Pending,
+                    stageStatus = StageStatus.PendingEngine,
                 ),
             )
 
@@ -256,7 +256,7 @@ class EngineBehaviorTest : BehaviorSpec({
                     flowInstanceId = changeStageId,
                     state = EngineState(flag = false),
                     stage = EngineStage.Start,
-                    stageStatus = StageStatus.Pending,
+                    stageStatus = StageStatus.PendingEngine,
                 ),
             )
 
@@ -335,12 +335,12 @@ class EngineBehaviorTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it stays pending until the delayed tick becomes due") {
-                engine.getStatus("timer-flow", id) shouldBe (EngineStage.Wait to StageStatus.Pending)
+                engine.getStatus("timer-flow", id) shouldBe (EngineStage.Wait to StageStatus.WaitingForTimer)
 
                 tickScheduler.scheduleTick("timer-flow", id)
                 tickScheduler.drain()
 
-                engine.getStatus("timer-flow", id) shouldBe (EngineStage.Wait to StageStatus.Pending)
+                engine.getStatus("timer-flow", id) shouldBe (EngineStage.Wait to StageStatus.WaitingForTimer)
 
                 clock.advanceBy(Duration.ofMinutes(5))
                 tickScheduler.drain()

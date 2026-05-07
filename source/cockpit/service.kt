@@ -11,7 +11,6 @@ import io.flowlite.FlowLiteInstanceSummaryRepository
 import io.flowlite.FlowLiteInstanceSummaryRow
 import io.flowlite.MermaidGenerator
 import io.flowlite.Stage
-import io.flowlite.StageDefinition
 import io.flowlite.StageStatus
 import io.flowlite.historyValueOf
 import java.time.Duration
@@ -40,7 +39,7 @@ data class CockpitInstanceDto(
     val flowId: String,
     val flowInstanceId: UUID,
     val stage: String?,
-    val cockpitStatus: CockpitStatus,
+    val cockpitStatus: StageStatus,
     val lastUpdatedAt: Instant,
     val lastErrorMessage: String? = null,
 )
@@ -51,20 +50,11 @@ enum class CockpitInstanceBucket {
     Completed,
 }
 
-enum class CockpitStatus {
-    Running,
-    WaitingForTimer,
-    WaitingForEvent,
-    PendingEngine,
-    Error,
-    Completed,
-    Cancelled,
-}
+typealias CockpitStatus = StageStatus
 
 private data class RegisteredFlowMetadata(
     val diagram: String,
     val stages: List<String>,
-    val stageDefinitions: Map<String, StageDefinition<Any, Stage, Event>>,
 )
 
 class CockpitService(
@@ -78,7 +68,6 @@ class CockpitService(
             RegisteredFlowMetadata(
                 diagram = mermaid.generateDiagram(flow),
                 stages = flow.stages.keys.map { historyValueOf(it) },
-                stageDefinitions = flow.stages.entries.associate { (stage, definition) -> historyValueOf(stage) to definition },
             )
         }
     }
@@ -168,7 +157,7 @@ class CockpitService(
     }
 
     private fun FlowLiteInstanceSummaryRow.toDto(): CockpitInstanceDto {
-        val statusValue = runCatching { CockpitStatus.valueOf(cockpitStatus) }.getOrDefault(CockpitStatus.PendingEngine)
+        val statusValue = runCatching { StageStatus.valueOf(cockpitStatus) }.getOrDefault(StageStatus.PendingEngine)
         return CockpitInstanceDto(
             flowId = flowId,
             flowInstanceId = flowInstanceId,
@@ -186,26 +175,4 @@ class CockpitService(
             errorCount = errorCount,
         )
 
-}
-
-internal fun classifyCockpitStatus(
-    stageDefinitions: Map<String, StageDefinition<Any, Stage, Event>>?,
-    stage: String?,
-    status: StageStatus?,
-): CockpitStatus? {
-    return when (status) {
-        StageStatus.Running -> CockpitStatus.Running
-        StageStatus.Pending -> {
-            val definition = stage?.let { stageDefinitions?.get(it) }
-            when {
-                definition?.timer != null -> CockpitStatus.WaitingForTimer
-                definition?.eventHandlers?.isNotEmpty() == true -> CockpitStatus.WaitingForEvent
-                else -> CockpitStatus.PendingEngine
-            }
-        }
-        StageStatus.Error -> CockpitStatus.Error
-        StageStatus.Completed -> CockpitStatus.Completed
-        StageStatus.Cancelled -> CockpitStatus.Cancelled
-        null -> null
-    }
 }

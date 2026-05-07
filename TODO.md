@@ -40,8 +40,18 @@ What's the difference between these 2?
 > - Response: My recommendation: use MCP/browser tools by default here, use the `playwright` skill when you specifically want terminal-driven browser automation outside this integrated toolset, and use `playwright-interactive` only when you need persistent iterative UI debugging with explicit visual signoff discipline.
 > - Validation: Compared the published `SKILL.md` guidance for `playwright` and `playwright-interactive` and mapped it against the browser/MCP workflow available in this session.
 
-## Go for "Aligning CockpitStatus and StageStatus"
+## [DONE 2026-05-07.4] Go for "Aligning CockpitStatus and StageStatus"
 I've thought through our discussion and I have a feeling that this is a good architectural change. Go for it. We can always go back to "separated statuses" approach later if we found that this was a mistake.
+
+> Agent: Picking this next in loop `2026-05-07.1`. Local hypothesis: the smallest root-fix is to make `StageStatus` carry the richer waiting semantics directly (`WaitingForTimer`, `WaitingForEvent`, `PendingEngine`), then remove the Cockpit-side status resolver/projection logic rather than layering another mapper on top.
+
+> Agent:
+> - Changes: Replaced the old generic pending runtime state with explicit `StageStatus` waiting states and updated engine claim/release, retry, manual stage change, and history semantics to use them.
+> - Changes: Removed the `SpringDataJdbcHistoryStore.setCockpitStatusResolver(...)` hook and made Cockpit/read-model projection use the unified status values directly.
+> - Changes: Kept a Kotlin `typealias CockpitStatus = StageStatus` in the Cockpit slice so the codebase can converge without a noisy API rename, while the actual status model is now a single enum.
+> - Changes: Updated engine/Cockpit/domain tests and README documentation to reflect the new status semantics.
+> - Validation: `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`
+> - Validation: `./gradlew test`
 
 ## [DONE 2026-04-16.1] Stall on render at 6.5k instances
 No logs since 4am. Render instance is small 512MB RAM.

@@ -13,7 +13,6 @@ import io.flowlite.SpringDataJdbcTickScheduler
 import io.flowlite.historyValueOf
 import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
-import io.flowlite.cockpit.classifyCockpitStatus
 import io.flowlite.cockpit.cockpitRouter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.lang.management.ManagementFactory
@@ -121,13 +120,6 @@ object Beans {
             ).also { engine ->
                 engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)
                 engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(onboardingActions), onboardingPersister)
-                historyStore.setCockpitStatusResolver { flowId, stage, status ->
-                    val stageDefinitions = engine.registeredFlows()[flowId]
-                        ?.stages
-                        ?.entries
-                        ?.associate { entry -> historyValueOf(entry.key) to entry.value }
-                    classifyCockpitStatus(stageDefinitions, stage, status)?.name
-                }
             }
         }
 
@@ -445,7 +437,7 @@ internal class ShowcaseFlowSeeder(
                 return
             }
 
-            if (currentStage == pending.waitingStage && currentStatus == StageStatus.Pending) {
+            if (currentStage == pending.waitingStage && currentStatus == StageStatus.WaitingForEvent) {
                 matchedWaitingStage = true
                 val delayMs = nextEventDelayMs()
                 if (delayMs > 0L) {
@@ -459,7 +451,7 @@ internal class ShowcaseFlowSeeder(
                     .getOrElse { return }
                 val refreshedStage = stageKey(refreshedStatus.first)
                 val refreshedStageStatus = refreshedStatus.second
-                if (refreshedStage != pending.waitingStage || refreshedStageStatus != StageStatus.Pending) {
+                if (refreshedStage != pending.waitingStage || refreshedStageStatus != StageStatus.WaitingForEvent) {
                     return
                 }
 

@@ -45,8 +45,8 @@ class CockpitServiceTest : BehaviorSpec({
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
                 listOf(
-                    historyRow("2026-03-04T08:00:00Z", flowA, aRunning, HistoryEntryType.Started, stage = "Init", toStatus = StageStatus.Pending),
-                    historyRow("2026-03-04T08:01:00Z", flowA, aRunning, HistoryEntryType.StatusChanged, stage = "Init", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
+                    historyRow("2026-03-04T08:00:00Z", flowA, aRunning, HistoryEntryType.Started, stage = "Init", toStatus = StageStatus.PendingEngine),
+                    historyRow("2026-03-04T08:01:00Z", flowA, aRunning, HistoryEntryType.StatusChanged, stage = "Init", fromStatus = StageStatus.PendingEngine, toStatus = StageStatus.Running),
                     historyRow("2026-03-04T08:02:00Z", flowA, aRunning, HistoryEntryType.StageChanged, fromStage = "Init", toStage = "Review"),
                     historyRow("2026-03-04T08:03:00Z", flowA, aError1, HistoryEntryType.Error, stage = "Review", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-1"),
                     historyRow("2026-03-04T08:04:00Z", flowA, aError2, HistoryEntryType.Error, stage = "Review", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom-2"),
@@ -104,13 +104,13 @@ class CockpitServiceTest : BehaviorSpec({
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
                 listOf(
-                    historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
-                    historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.WaitingForEvent, toStatus = StageStatus.Running),
+                    historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.WaitingForEvent),
                     historyRow("2026-03-04T09:01:00Z", ORDER_CONFIRMATION_FLOW_ID, orderError, HistoryEntryType.Error, stage = "InformingCustomer", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "order-failed"),
                     historyRow("2026-03-04T09:02:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingCompleted, HistoryEntryType.StatusChanged, stage = "CompleteOnboarding", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed),
-                    historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending),
-                    historyRow("2026-03-04T07:30:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingPendingEngine, HistoryEntryType.Started, stage = "GenerateOnboardingDocuments", toStatus = StageStatus.Pending),
-                    historyRow("2026-03-04T09:03:00Z", "unknown-flow", unknownFlow, HistoryEntryType.StatusChanged, stage = "X", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
+                    historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.WaitingForTimer),
+                    historyRow("2026-03-04T07:30:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingPendingEngine, HistoryEntryType.Started, stage = "GenerateOnboardingDocuments", toStatus = StageStatus.PendingEngine),
+                    historyRow("2026-03-04T09:03:00Z", "unknown-flow", unknownFlow, HistoryEntryType.StatusChanged, stage = "X", fromStatus = StageStatus.PendingEngine, toStatus = StageStatus.Running),
                 ).forEach { historyStore.append(it.toHistoryEntry()) }
 
                 val flows = service.listFlows(longRunningThresholdSeconds = 3600)
@@ -162,9 +162,9 @@ class CockpitServiceTest : BehaviorSpec({
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
                 listOf(
-                    historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
-                    historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending),
-                    historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.WaitingForEvent, toStatus = StageStatus.Running),
+                    historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.WaitingForEvent),
+                    historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.WaitingForTimer),
                 ).forEach { historyStore.append(it.toHistoryEntry()) }
 
                 val instances = service.listInstances().associateBy { it.flowInstanceId }
@@ -181,10 +181,10 @@ class CockpitServiceTest : BehaviorSpec({
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
                 listOf(
-                    historyRow(now.minus(Duration.ofMinutes(30)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.Pending, toStatus = StageStatus.Running),
-                    historyRow(now.minus(Duration.ofHours(2)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.Pending),
-                    historyRow(now.minus(Duration.ofMinutes(90)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.Pending),
-                    historyRow(now.minus(Duration.ofMinutes(95)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingPendingEngine, HistoryEntryType.Started, stage = "GenerateOnboardingDocuments", toStatus = StageStatus.Pending),
+                    historyRow(now.minus(Duration.ofMinutes(30)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.WaitingForEvent, toStatus = StageStatus.Running),
+                    historyRow(now.minus(Duration.ofHours(2)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.WaitingForEvent),
+                    historyRow(now.minus(Duration.ofMinutes(90)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.WaitingForTimer),
+                    historyRow(now.minus(Duration.ofMinutes(95)).toString(), EMPLOYEE_ONBOARDING_FLOW_ID, onboardingPendingEngine, HistoryEntryType.Started, stage = "GenerateOnboardingDocuments", toStatus = StageStatus.PendingEngine),
                 ).forEach { historyStore.append(it.toHistoryEntry()) }
 
                 service.listInstances(
@@ -211,7 +211,7 @@ class CockpitServiceTest : BehaviorSpec({
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
                 listOf(
-                    historyRow("2026-03-04T10:00:00Z", flowId, id, HistoryEntryType.Started, stage = "InitializingConfirmation", toStatus = StageStatus.Pending),
+                    historyRow("2026-03-04T10:00:00Z", flowId, id, HistoryEntryType.Started, stage = "InitializingConfirmation", toStatus = StageStatus.PendingEngine),
                     historyRow("2026-03-04T10:01:00Z", flowId, id, HistoryEntryType.EventAppended, event = OrderConfirmationEvent.Confirmed.name),
                 ).forEach { historyStore.append(it.toHistoryEntry()) }
 

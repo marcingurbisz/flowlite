@@ -397,13 +397,6 @@ class SpringDataJdbcHistoryStore(
     private val repo: FlowLiteHistoryRepository,
     private val summaryRepo: FlowLiteInstanceSummaryRepository,
 ) : HistoryStore {
-    @Volatile
-    private var cockpitStatusResolver: ((flowId: String, stage: String?, status: StageStatus?) -> String?)? = null
-
-    fun setCockpitStatusResolver(resolver: (flowId: String, stage: String?, status: StageStatus?) -> String?) {
-        cockpitStatusResolver = resolver
-    }
-
     override fun append(entry: HistoryEntry) {
         repo.save(
             FlowLiteHistoryRow(
@@ -431,10 +424,10 @@ class SpringDataJdbcHistoryStore(
             id = null,
             flowId = entry.flowId,
             flowInstanceId = entry.flowInstanceId,
-            status = StageStatus.Pending.name,
-            cockpitStatus = "PendingEngine",
+            status = StageStatus.PendingEngine.name,
+            cockpitStatus = StageStatus.PendingEngine.name,
             updatedAt = entry.occurredAt,
-        )).apply(entry, cockpitStatusResolver)
+        )).apply(entry)
         summaryRepo.save(next)
     }
 }
@@ -443,7 +436,6 @@ private fun HistoryEntry.affectsSummary(): Boolean = type != HistoryEntryType.Ev
 
 private fun FlowLiteInstanceSummaryRow.apply(
     entry: HistoryEntry,
-    cockpitStatusResolver: ((flowId: String, stage: String?, status: StageStatus?) -> String?)?,
 ): FlowLiteInstanceSummaryRow {
     val nextStage = when (entry.type) {
         HistoryEntryType.Started,
@@ -472,7 +464,7 @@ private fun FlowLiteInstanceSummaryRow.apply(
     }
 
     val nextStatusValue = runCatching { StageStatus.valueOf(nextStatus) }.getOrNull()
-    val nextCockpitStatus = cockpitStatusResolver?.invoke(entry.flowId, nextStage, nextStatusValue) ?: cockpitStatus
+    val nextCockpitStatus = nextStatusValue?.name ?: cockpitStatus
 
     val nextErrorMessage = when {
         entry.type == HistoryEntryType.Error -> entry.errorMessage

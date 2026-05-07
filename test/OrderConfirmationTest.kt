@@ -74,7 +74,7 @@ class OrderConfirmationTest : BehaviorSpec({
             then("it waits for confirmation event") {
                 awaitStatus(
                     fetch = { engine.getStatus(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId) },
-                    expected = WaitingForConfirmation to StageStatus.Pending,
+                    expected = WaitingForConfirmation to StageStatus.WaitingForEvent,
                 )
             }
 
@@ -111,7 +111,7 @@ class OrderConfirmationTest : BehaviorSpec({
                     flowInstanceId = flowInstanceId,
                     state = prePersisted,
                     stage = InitializingConfirmation,
-                    stageStatus = StageStatus.Pending,
+                    stageStatus = StageStatus.PendingEngine,
                 ),
             )
 

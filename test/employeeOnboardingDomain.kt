@@ -86,7 +86,7 @@ data class EmployeeOnboarding(
     @Version
     val version: Long = 0,
     val stage: EmployeeStage,
-    val stageStatus: StageStatus = StageStatus.Pending,
+    val stageStatus: StageStatus = StageStatus.PendingEngine,
     val isOnboardingAutomated: Boolean = false,
     val needsTrainingProgram: Boolean = false,
     val isEngineeringRole: Boolean = false,

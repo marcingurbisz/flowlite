@@ -23,7 +23,7 @@ FlowLite at a glance:
 - **Type-safe DSL** for stages, events, conditions, and transitions
 - **Mermaid diagrams from code** (no separate model to maintain)
 - **Mailbox event semantics** via a pluggable `EventStore`
-- **Tick-based runtime** with a single-flight claim (`PENDING -> RUNNING`)
+- **Tick-based runtime** with a single-flight claim (`WaitingFor*`/`PendingEngine` -> `Running`)
 - **Retries** via `retry(...)`
 - **Cockpit** [prototype](https://claude.ai/public/artifacts/b4d9ad11-6ee4-44ba-ac22-c879e9af2e17) (run locally: `./gradlew runTestApp`)
 
@@ -77,10 +77,13 @@ stateDiagram-v2
 - **Timer stage**: `timer(...)` declares a delay/business-time step whose callback calculates the wake-up timestamp for the next engine attempt.
 - **Flow**: Immutable definition produced by `flow { ... }` and held in-memory.
 - **StageStatus**: Lifecycle state of the single active stage:
-    - `Pending` – Active stage awaiting action execution or matching event.
-    - `Running` – Flow instance is currently being progressed by the engine. Remains `Running` during the whole processing loop and is released back to `Pending` when the instance needs to wait for an event.
-    - `Completed` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage with `Pending` rather than persisting completion of the previous stage.
+    - `PendingEngine` – Active stage is ready for engine work and can be claimed immediately.
+    - `WaitingForEvent` – Active stage is blocked on a matching event.
+    - `WaitingForTimer` – Active stage is blocked until a scheduled wake-up becomes due.
+    - `Running` – Flow instance is currently being progressed by the engine. Remains `Running` during the whole processing loop and is released back to a waiting status when the instance needs to stop and wait.
+    - `Completed` – Only used for terminal stages. When a non-terminal stage finishes, the engine advances the pointer to the next stage and keeps processing rather than persisting completion of the previous stage.
     - `Error` – Action failed; requires manual retry.
+    - `Cancelled` – Instance was manually cancelled.
 - **Tick**: An internal “work item / wake-up signal” that tells the engine “try to make progress for (flowId, flowInstanceId) now”.
     - A tick carries no business payload;
     - Ticks are emitted on `startInstance`, `sendEvent`, `retry`, and delayed timer scheduling.
@@ -88,7 +91,7 @@ stateDiagram-v2
 - Single-token model: only one active stage at any moment (no parallelism within one flow).
 - Code-first definitions → diagrams are generated from code.
 - Mermaid diagram semantics: rectangle = stage (+ optional action); choice node = condition; `[*]` = terminal.
-- Error handling: any exception marks stage `Error`; `retry` resets it back to `Pending` and restarts from that stage.
+- Error handling: any exception marks stage `Error`; `retry` resets it back to the appropriate waiting status for the current stage and restarts from that stage.
 - Migration: If the flow changes, migrations of existing instances are the responsibility of the application that uses FlowLite. No flow versioning nor migration support is planned in FlowLite.
 
 ### Stage Transitions
@@ -377,12 +380,12 @@ See [Contracts](#contracts) for the persistence/scheduler interfaces.
     - Load flow instance state (stage + status) via `StatePersister`.
     - If status `Error` → stop (await retry).
     - If status `Running` → another worker currently owns the instance; stop (tick delivered while the instance is already being processed).
-    - If status `Pending`: atomically claim the instance by transitioning `Pending -> Running` (optimistic CAS in persistence).
+    - If status is claimable (`PendingEngine`, `WaitingForEvent`, or `WaitingForTimer`): atomically claim the instance by transitioning it to `Running` (optimistic CAS in persistence).
     - While `Running`, the engine will keep advancing through automatic transitions and actions.
-        - If the current stage is a timer stage and the wake-up is still in the future: schedule a delayed Tick for that stage, release the claim by setting status back to `Pending`, and stop.
+        - If the current stage is a timer stage and the wake-up is still in the future: schedule a delayed Tick for that stage, release the claim by setting status back to `WaitingForTimer`, and stop.
         - If the current stage is a timer stage and the wake-up is due: continue from that stage immediately and advance to the next stage (or mark `Completed` if the timer stage is terminal).
-        - If the current stage waits for events and no matching event exists: release the claim by setting status back to `Pending`, enqueue a Tick, and stop.
-            - Why enqueue: an event may arrive while the instance is `Running` and its Tick can be delivered and ignored; enqueueing after releasing to `Pending` ensures the event store is re-checked.
+        - If the current stage waits for events and no matching event exists: release the claim by setting status back to `WaitingForEvent`, enqueue a Tick, and stop.
+            - Why enqueue: an event may arrive while the instance is `Running` and its Tick can be delivered and ignored; enqueueing after releasing to `WaitingForEvent` ensures the event store is re-checked.
         - If the current stage consumes an event: advance to the next stage and continue (staying `Running`).
         - If the current stage executes an action: run it and advance to the next stage and continue (staying `Running`), or mark `Completed` if terminal.
         - On failure: set `Error` (best-effort) and stop.
@@ -396,7 +399,7 @@ FlowLite does not start or manage transactions internally (to remain persistence
 Practical guidance (DB-backed implementations):
 - `startInstance`: persist the flow instance and enqueue a tick in the same transaction (or via an outbox) to avoid “flow instance created but never scheduled”.
 - `sendEvent`: append the pending event and enqueue a tick in the same transaction (or via an outbox) to avoid “event stored but never scheduled”.
-- `retry`: update `stage_status` to `Pending` and enqueue a tick in the same transaction (or via an outbox).
+- `retry`: update `stage_status` to the stage's waiting status and enqueue a tick in the same transaction (or via an outbox).
 - Tick handling (`processTick`): wrapping it into transaction is not recommended since this will create a big transaction that span over all transition and actions between start and first stage with event handler or terminal state.
 
 ### Persistence Approach
@@ -431,7 +434,7 @@ FlowLite depends on three required application-provided interfaces, one optional
 - `save(instanceData)` → create or update; beside updated engine fields instanceData may contain domain modifications produced by actions (see action persistence guidance below); returns refreshed data on success.
     - Should be best-effort in the presence of concurrency (optimistic locking): retry and/or merge engine-owned fields (`stage`, `stage_status`) with a freshly loaded domain snapshot to avoid lost updates.
 - `tryTransitionStageStatus(flowInstanceId, expectedStage, expectedStatus, newStatus)` → atomic compare-and-set transition of `stage_status` (guarded by both `stage` and `stage_status`). Returns true only if the expected values matched and the update was applied.
-    - Used by the engine to claim single-flight processing (`PENDING -> RUNNING`).
+    - Used by the engine to claim single-flight processing from a claimable waiting status into `Running`.
     - Implementation options include:
         - Atomic CAS update (e.g. SQL `UPDATE ... WHERE id AND stage AND stage_status`).
         - `load` + check + `save` guarded by optimistic locking (`@Version`) and handling optimistic lock failures.
@@ -466,7 +469,7 @@ Concurrency scenarios (cheat sheet):
 
 | Scenario                                                        | Can it happen? | If unmitigated, what can go wrong?                                                           | Recommended mitigation                                                                                                        |
 |-----------------------------------------------------------------|--------------:|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| Two ticks processed concurrently for same instance              | No (if correctly implemented) | Double action execution; double stage advance; inconsistent state                            | Use an atomic `PENDING -> RUNNING` claim using CAS (`tryTransitionStageStatus(...)`) in persistence                           |
+| Two ticks processed concurrently for same instance              | No (if correctly implemented) | Double action execution; double stage advance; inconsistent state                            | Use an atomic claim from a waiting status into `Running` using CAS (`tryTransitionStageStatus(...)`) in persistence           |
 | Duplicate `sendEvent` for same instance + event type            | Yes (retries, double-click, at least once external events) | Extra pending event rows; with FlowLite’s flow-definition validation (event used in only one waited stage), duplicates are typically harmless but may accumulate | Optionally add dedup/idempotency to `EventStore` if you care about storage growth                                             |
 | External writer updates the same row while engine is processing |                                   Yes (GUI, notifications) | Potential lost updates; optimistic lock conflicts                                            | Options in case of JDBC persistence: 1) use optimistic locking (with merge or retries) 2) move engine state to separate table |
 

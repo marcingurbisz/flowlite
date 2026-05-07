@@ -57,7 +57,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
         then("it starts at waiting for onboarding agreement") {
             awaitStatus(
                 fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
-                expected = WaitingForOnboardingAgreementSigned to StageStatus.Pending,
+                expected = WaitingForOnboardingAgreementSigned to StageStatus.WaitingForEvent,
             )
         }
 
@@ -69,7 +69,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                 awaitStatus(
                     timeout = Duration.ofSeconds(5),
                     fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, flowInstanceId) },
-                    expected = Delay5Min to StageStatus.Pending,
+                        expected = Delay5Min to StageStatus.WaitingForTimer,
                 )
             }
 
@@ -121,7 +121,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                 EmployeeOnboarding(
                     id = id,
                     stage = CreateEmployeeProfile,
-                    stageStatus = StageStatus.Pending,
+                    stageStatus = StageStatus.PendingEngine,
                     isOnboardingAutomated = true,
                     needsTrainingProgram = false,
                     isNotManualPath = true,
@@ -147,7 +147,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                         awaitStatus(
                             timeout = Duration.ofSeconds(5),
                             fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                            expected = Delay5Min to StageStatus.Pending,
+                            expected = Delay5Min to StageStatus.WaitingForTimer,
                         )
                     }
 
@@ -156,7 +156,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                         awaitStatus(
                             timeout = Duration.ofSeconds(5),
                             fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                            expected = DelayAfterHRUpdate to StageStatus.Pending,
+                            expected = DelayAfterHRUpdate to StageStatus.WaitingForTimer,
                         )
 
                         clock.advanceBy(Duration.ofMinutes(5))
@@ -203,7 +203,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                 EmployeeOnboarding(
                     id = id,
                     stage = CreateEmployeeProfile,
-                    stageStatus = StageStatus.Pending,
+                    stageStatus = StageStatus.PendingEngine,
                     isOnboardingAutomated = true,
                     needsTrainingProgram = false,
                     isNotManualPath = true,
@@ -229,7 +229,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                         awaitStatus(
                             timeout = Duration.ofSeconds(5),
                             fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                            expected = Delay5Min to StageStatus.Pending,
+                            expected = Delay5Min to StageStatus.WaitingForTimer,
                         )
                     }
 
@@ -238,7 +238,7 @@ class EmployeeOnboardingFlowTest : BehaviorSpec({
                         awaitStatus(
                             timeout = Duration.ofSeconds(5),
                             fetch = { engine.getStatus(EMPLOYEE_ONBOARDING_FLOW_ID, id) },
-                            expected = DelayAfterHRUpdate to StageStatus.Pending,
+                            expected = DelayAfterHRUpdate to StageStatus.WaitingForTimer,
                         )
 
                         clock.advanceBy(Duration.ofMinutes(5))

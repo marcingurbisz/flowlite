@@ -8,11 +8,19 @@ import java.util.UUID
  * Runtime status of a single active stage for a flow instance.
  */
 enum class StageStatus {
-    Pending,
     Running,
+    WaitingForTimer,
+    WaitingForEvent,
+    PendingEngine,
+    Error,
     Completed, // used only for terminal stages
     Cancelled, // used when an instance is manually canceled
-    Error,
+    ;
+
+    companion object {
+        @Deprecated("Use WaitingForTimer, WaitingForEvent, or PendingEngine instead")
+        val Pending: StageStatus = PendingEngine
+    }
 }
 
 /**
@@ -53,7 +61,7 @@ interface StatePersister<T : Any> {
      * Implementations must ensure the update is applied only if both `expectedStage` and `expectedStageStatus` match
      * the current persisted values. Returns `true` if the transition was applied, otherwise `false`.
      *
-     * This is used by the engine primarily to claim single-flight processing (`PENDING -> RUNNING`).
+    * This is used by the engine primarily to claim single-flight processing (`WaitingFor*`/`PendingEngine` -> `Running`).
      */
     fun tryTransitionStageStatus(
         flowInstanceId: UUID,
@@ -201,7 +209,7 @@ sealed class HistoryEntry(
         override val occurredAt: Instant = Instant.now(),
         override val stage: String? = null,
         override val fromStatus: StageStatus? = StageStatus.Error,
-        override val toStatus: StageStatus? = StageStatus.Pending,
+        override val toStatus: StageStatus? = StageStatus.PendingEngine,
     ) : HistoryEntry(
         flowId = flowId,
         flowInstanceId = flowInstanceId,
@@ -356,7 +364,7 @@ internal fun HistoryStore.recordRetried(flowId: String, data: InstanceData<Any>)
             flowInstanceId = data.flowInstanceId,
             stage = historyValueOf(data.stage),
             fromStatus = StageStatus.Error,
-            toStatus = StageStatus.Pending,
+            toStatus = data.stageStatus,
         ),
     )
 }

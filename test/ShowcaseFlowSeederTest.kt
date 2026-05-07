@@ -58,7 +58,7 @@ class ShowcaseFlowSeederTest : BehaviorSpec({
                 orderRepo.findAll().any { order ->
                     order.orderNumber.startsWith("SHOW-") &&
                         order.stage == OrderConfirmationStage.WaitingForConfirmation &&
-                        order.stageStatus == StageStatus.Pending
+                        order.stageStatus == StageStatus.WaitingForEvent
                 }
             }
             val reachedCompletedState = waitUntil(timeoutMs = 7_000L) {

@@ -42,7 +42,7 @@ data class OrderConfirmation(
     @Version
     val version: Long = 0,
     val stage: OrderConfirmationStage,
-    val stageStatus: StageStatus = StageStatus.Pending,
+    val stageStatus: StageStatus = StageStatus.PendingEngine,
     val orderNumber: String,
     val confirmationType: ConfirmationType,
     val customerName: String,

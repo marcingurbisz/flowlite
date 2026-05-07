@@ -82,11 +82,11 @@ class EngineHistoryTest : BehaviorSpec({
             tickScheduler.drain()
 
             then("it records releasing RUNNING back to PENDING") {
-                engine.getStatus("hist-wait", id) shouldBe (HistWaitStage.Wait to StageStatus.Pending)
+                engine.getStatus("hist-wait", id) shouldBe (HistWaitStage.Wait to StageStatus.WaitingForEvent)
                 history.entries.any {
                     it.type == HistoryEntryType.StatusChanged &&
                         it.fromStatus == StageStatus.Running &&
-                        it.toStatus == StageStatus.Pending
+                        it.toStatus == StageStatus.WaitingForEvent
                 } shouldBe true
             }
         }
@@ -124,15 +124,15 @@ class EngineHistoryTest : BehaviorSpec({
                     it.type == HistoryEntryType.Retried &&
                         it.stage == HistAutoStage.Start.name &&
                         it.fromStatus == StageStatus.Error &&
-                        it.toStatus == StageStatus.Pending
+                        it.toStatus == StageStatus.PendingEngine
                 } shouldBe true
 
                 history.entries.any {
                     it.type == HistoryEntryType.ManualStageChanged &&
                         it.fromStage == HistAutoStage.Start.name &&
                         it.toStage == HistAutoStage.Done.name &&
-                        it.fromStatus == StageStatus.Pending &&
-                        it.toStatus == StageStatus.Pending
+                        it.fromStatus == StageStatus.PendingEngine &&
+                        it.toStatus == StageStatus.PendingEngine
                 } shouldBe true
             }
         }

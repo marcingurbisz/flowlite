@@ -1,5 +1,6 @@
 package io.flowlite.cockpit
 
+import io.flowlite.StageStatus
 import java.util.UUID
 import org.springframework.http.HttpStatus
 import org.springframework.web.servlet.function.ServerResponse
@@ -27,7 +28,7 @@ fun cockpitRouter(service: CockpitService) =
             val status = request.param("status")
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
-                .map { CockpitStatus.valueOf(it) }
+                .map { StageStatus.valueOf(it) }
                 .orElse(null)
             val searchTerm = request.param("q").orElse(null)
             val stage = request.param("stage")

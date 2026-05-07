@@ -12,7 +12,7 @@ private enum class ErrorFlowStage : Stage { Failing, Done }
 
 private data class ErrorFlowState(
     val stage: ErrorFlowStage,
-    val stageStatus: StageStatus = StageStatus.Pending,
+    val stageStatus: StageStatus = StageStatus.PendingEngine,
     val attempts: Int = 0,
 )
 

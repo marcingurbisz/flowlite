@@ -24,11 +24,21 @@ Or maybe we do not need this logs at all? I'm not sure if I need these logs at a
 > - Validation: `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`
 > - Validation: A full `./gradlew test` run failed once on a flaky Playwright modal-dismissal assertion, but the targeted rerun of that spec passed after the logging cleanup.
 
-## What about using playwright skill instead playwright mcp
+## [DONE 2026-05-07.3] What about using playwright skill instead playwright mcp
 ... for ad-hoc/free testing?
 * https://github.com/openai/skills/tree/main/skills/.curated/playwright
 * https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive
 What's the difference between these 2?
+
+> Agent: Picking this next in loop `2026-05-07.1`. My local hypothesis is that these two skills solve different layers of the same problem: one is a CLI automation wrapper, the other is a persistent interactive debugging workflow.
+
+> Agent:
+> - Response: `playwright` is the simpler CLI-first skill. It is built around `playwright-cli`, snapshots, element refs, and short terminal-driven automation loops. Good fit for ad hoc browser actions, scraping, quick reproduction steps, and lightweight UI flow debugging.
+> - Response: `playwright-interactive` is for a longer-lived debugging session. It assumes a persistent `js_repl` Playwright session, keeps browser/page handles alive across iterations, and requires a more disciplined QA loop: functional checks, separate visual QA, viewport-fit checks, screenshots, and explicit signoff.
+> - Response: So the difference is not just API style. It is operating model. `playwright` is command-oriented and stateless-ish between steps. `playwright-interactive` is session-oriented and optimized for repeated code-edit -> reload/relaunch -> recheck cycles.
+> - Response: Relative to the Playwright MCP/browser tools we have here: MCP is better integrated in this environment. It lets me navigate/click/type/read snapshots directly without bootstrapping an external CLI wrapper or a `js_repl` session, so for this workspace I would keep preferring MCP for ad hoc testing.
+> - Response: My recommendation: use MCP/browser tools by default here, use the `playwright` skill when you specifically want terminal-driven browser automation outside this integrated toolset, and use `playwright-interactive` only when you need persistent iterative UI debugging with explicit visual signoff discipline.
+> - Validation: Compared the published `SKILL.md` guidance for `playwright` and `playwright-interactive` and mapped it against the browser/MCP workflow available in this session.
 
 ## Go for "Aligning CockpitStatus and StageStatus"
 I've thought through our discussion and I have a feeling that this is a good architectural change. Go for it. We can always go back to "separated statuses" approach later if we found that this was a mistake.

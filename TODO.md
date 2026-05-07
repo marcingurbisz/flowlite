@@ -1,8 +1,22 @@
+## Do not bound Render workload
+... as I want to keep it to test the limits of the flowlite.
+* Please revert back previous seeding approach.
+* I would prefer to have some confirmation about memory. Maybe some periodic logs about memory usage?
+* Once we have memory limit confirmed what about switching h2 file?
+
+## Logback instead "custom" logs in service.kt?
+Or maybe we do not need this logs at all? I'm not sure if I need these logs at all in this test app for now.
+
+## What about using playwright skill instead playwright mcp
+... for ad-hoc/free testing?
+* https://github.com/openai/skills/tree/main/skills/.curated/playwright
+* https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive
+What's the difference between these 2?
+
+## Go for "Aligning CockpitStatus and StageStatus"
+I've thought through our discussion and I have a feeling that this is a good architectural change. Go for it. We can always go back to "separated statuses" approach later if we found that this was a mistake.
+
 ## [DONE 2026-04-16.1] Stall on render at 6.5k instances
-See images ![alt text](image-1.png)
-![alt text](image-2.png)
-![alt text](image-3.png)
-On render ![alt text](image-4.png)
 No logs since 4am. Render instance is small 512MB RAM.
 Any idea what happen?
 Web requests are working. Do we log anything when request is served?
@@ -17,7 +31,7 @@ From the logs it seems that instance started to work again around 7:30 but then 
 > - Changes: Bounded the public Render workload by setting `FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT=100` and `FLOWLITE_SHOWCASE_REPEAT_SEEDING_ENABLED=false` in `render.yaml`, so the hosted demo stops growing without bound.
 > - Validation: `./gradlew test`
 
-## [DONE 2026-04-16.2] [REOPEN] Aligning CockpitStatus and StageStatus
+## [DONE 2026-04-16.2] Aligning CockpitStatus and StageStatus
 What do you think about using in StageStatus the same statuses as we have now in CockpitStatus, effectively removing the need to have separate CockpitStatus? Consider that we do not have yet any clients and we are in alpha phase. No need for backward compatibility.
 What are pros, cons and your recommendation.
 Related topic: I see setCockpitStatusResolver - this introduce kind of circular dependency between engine and history store, right? I do not like that.
@@ -41,13 +55,6 @@ Related topic: I see setCockpitStatusResolver - this introduce kind of circular 
 > - Response: Separately, I still agree the setter-based resolver is the wrong shape. I would fix that by moving Cockpit status classification behind a dedicated flow-definition catalog/projector bean, not by collapsing the two status models.
 > - Validation: Re-checked current `Engine`, `StatePersister`, `HistoryEntry`, and summary projection call sites of `StageStatus` before answering this follow-up.
 
-## [DONE 2026-04-16.3] Self-review of loop changes
-> Agent:
-> - Reviewed the current loop changes for two risks: hiding the Render problem without fixing the cause, and over-answering the status-model discussion without checking the real blast radius.
-> - Result: the meaningful runtime fix was to stop unbounded showcase growth on Render and add endpoint timing logs, not to tune random engine constants blindly. For the status-model discussion, the main clarification was that the user-facing benefit is valid, but the engine impact is broader than the enum diff suggests because `StageStatus` is part of claim/retry/history/persistence contracts.
-> - Result: no additional `[FOR HUMAN REVIEW]` item came out of this self-review.
-> - Validation: `./gradlew test`
-
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?
 
@@ -69,9 +76,6 @@ Moving cockpit-ui/src under source/cockpit. Pros and cons?
 > Developer tooling: TS config, Vite config, IDE excludes, and cache ignores would all need to be retargeted so TypeScript artifacts do not pollute the JVM `source/` tree.
 > So it is feasible, but it is a real Gradle/Vite/source-set reshaping task, not just a folder move.
 
-## [FOR HUMAN] review for improvements
-* Research: How Peter and Simon are handling that (prompts, workflows)
-
 ## [FOR HUMAN] Review git changes
 * Review perf(engine): raise tick worker default 3/25/26, 9:13 AM marcingurbisz
 * loop starting from 75abfec728b2184501ae4ebae0c83c07f1e0ba23
@@ -85,7 +89,6 @@ Moving cockpit-ui/src under source/cockpit. Pros and cons?
 * Concept for "Auto-retry" and "User retriable"
 * Long Inactive tab
   * Default filter should be "Running and Pending scheduler"
-* Think about making CockpitStatus and engine Status the same
 * Consider virtual scrolling for the `Instances` tab.
   > Agent:
   > Considered but intentionally not implemented in this batch. After the gated `Instances` tab and backend-filtered heavy views, virtual scrolling is no longer the first bottleneck. I still recommend it as a later follow-up if filtered result sets themselves become large in production.

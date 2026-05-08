@@ -200,7 +200,6 @@ class Engine(
             StageStatus.WaitingForTimer,
             StageStatus.WaitingForEvent,
             StageStatus.PendingEngine,
-            StageStatus.Pending,
             -> {
                 val claimed = persister.tryTransitionStageStatus(
                     flowInstanceId = tick.flowInstanceId,

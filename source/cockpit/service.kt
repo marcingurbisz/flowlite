@@ -50,8 +50,6 @@ enum class CockpitInstanceBucket {
     Completed,
 }
 
-typealias CockpitStatus = StageStatus
-
 private data class RegisteredFlowMetadata(
     val diagram: String,
     val stages: List<String>,
@@ -102,7 +100,7 @@ class CockpitService(
     fun listInstances(
         flowId: String? = null,
         bucket: CockpitInstanceBucket? = null,
-        status: CockpitStatus? = null,
+        status: StageStatus? = null,
         searchTerm: String? = null,
         stage: String? = null,
         errorMessage: String? = null,

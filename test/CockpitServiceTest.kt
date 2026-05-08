@@ -8,7 +8,6 @@ import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
 import io.flowlite.toHistoryEntry
 import io.flowlite.cockpit.CockpitInstanceBucket
-import io.flowlite.cockpit.CockpitStatus
 import io.flowlite.cockpit.CockpitService
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -77,7 +76,7 @@ class CockpitServiceTest : BehaviorSpec({
             then("listInstances applies backend filters") {
                 service.listInstances(
                     flowId = flowA,
-                    status = CockpitStatus.Error,
+                    status = StageStatus.Error,
                     stage = "Review",
                     errorMessage = "boom-2",
                     showIncompleteOnly = true,
@@ -169,9 +168,9 @@ class CockpitServiceTest : BehaviorSpec({
 
                 val instances = service.listInstances().associateBy { it.flowInstanceId }
 
-                instances[orderActive]?.cockpitStatus shouldBe CockpitStatus.Running
-                instances[orderWaitingForEvent]?.cockpitStatus shouldBe CockpitStatus.WaitingForEvent
-                instances[onboardingWaitingForTimer]?.cockpitStatus shouldBe CockpitStatus.WaitingForTimer
+                instances[orderActive]?.cockpitStatus shouldBe StageStatus.Running
+                instances[orderWaitingForEvent]?.cockpitStatus shouldBe StageStatus.WaitingForEvent
+                instances[onboardingWaitingForTimer]?.cockpitStatus shouldBe StageStatus.WaitingForTimer
             }
 
             then("it applies backend long inactive cockpit status filters") {
@@ -195,7 +194,7 @@ class CockpitServiceTest : BehaviorSpec({
 
                 service.listInstances(
                     bucket = CockpitInstanceBucket.Active,
-                    cockpitStatusFilter = CockpitStatus.WaitingForEvent.name,
+                    cockpitStatusFilter = StageStatus.WaitingForEvent.name,
                     longInactiveThresholdSeconds = 1800,
                 ).map { it.flowInstanceId } shouldContainExactly listOf(orderWaitingForEvent)
             }

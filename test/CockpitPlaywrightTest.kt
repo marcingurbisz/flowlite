@@ -318,7 +318,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
         saveOrderInstance(
             id = fixtureIds.orderPendingId,
             stage = OrderConfirmationStage.WaitingForConfirmation,
-            status = StageStatus.Pending,
+            status = StageStatus.WaitingForEvent,
             orderNumber = "ORD-PENDING",
         )
         appendHistory(
@@ -328,7 +328,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.orderPendingId,
                 type = HistoryEntryType.Started,
                 stage = OrderConfirmationStage.WaitingForConfirmation.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.WaitingForEvent,
             ),
         )
 
@@ -345,7 +345,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.orderLongRunningId,
                 type = HistoryEntryType.Started,
                 stage = OrderConfirmationStage.WaitingForConfirmation.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.WaitingForEvent,
             ),
         )
         appendHistory(
@@ -355,7 +355,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.orderLongRunningId,
                 type = HistoryEntryType.StatusChanged,
                 stage = OrderConfirmationStage.WaitingForConfirmation.name,
-                fromStatus = StageStatus.Pending,
+                fromStatus = StageStatus.WaitingForEvent,
                 toStatus = StageStatus.Running,
             ),
         )
@@ -373,7 +373,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.orderErrorRetryId,
                 type = HistoryEntryType.Started,
                 stage = OrderConfirmationStage.InformingCustomer.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.PendingEngine,
             ),
         )
         appendHistory(
@@ -405,7 +405,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.orderErrorChangeStageId,
                 type = HistoryEntryType.Started,
                 stage = OrderConfirmationStage.InformingCustomer.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.PendingEngine,
             ),
         )
         appendHistory(
@@ -435,7 +435,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.employeeLongRunningId,
                 type = HistoryEntryType.Started,
                 stage = EmployeeStage.UpdateHRSystem.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.PendingEngine,
             ),
         )
         appendHistory(
@@ -445,7 +445,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.employeeLongRunningId,
                 type = HistoryEntryType.StatusChanged,
                 stage = EmployeeStage.UpdateHRSystem.name,
-                fromStatus = StageStatus.Pending,
+                fromStatus = StageStatus.PendingEngine,
                 toStatus = StageStatus.Running,
             ),
         )
@@ -453,7 +453,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
         saveEmployeeInstance(
             id = fixtureIds.employeePendingId,
             stage = EmployeeStage.WaitingForOnboardingAgreementSigned,
-            status = StageStatus.Pending,
+            status = StageStatus.WaitingForEvent,
         )
         appendHistory(
             historyRow(
@@ -462,14 +462,14 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.employeePendingId,
                 type = HistoryEntryType.Started,
                 stage = EmployeeStage.WaitingForOnboardingAgreementSigned.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.WaitingForEvent,
             ),
         )
 
         saveEmployeeInstance(
             id = fixtureIds.employeeTimerPendingId,
             stage = EmployeeStage.DelayAfterHRUpdate,
-            status = StageStatus.Pending,
+            status = StageStatus.WaitingForTimer,
         )
         appendHistory(
             historyRow(
@@ -478,7 +478,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.employeeTimerPendingId,
                 type = HistoryEntryType.Started,
                 stage = EmployeeStage.DelayAfterHRUpdate.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.WaitingForTimer,
             ),
         )
 
@@ -494,7 +494,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.employeeErrorCancelId,
                 type = HistoryEntryType.Started,
                 stage = EmployeeStage.UpdateHRSystem.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.PendingEngine,
             ),
         )
         appendHistory(
@@ -524,7 +524,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.employeeCompletedId,
                 type = HistoryEntryType.Started,
                 stage = EmployeeStage.CompleteOnboarding.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.PendingEngine,
             ),
         )
         appendHistory(
@@ -552,7 +552,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 flowInstanceId = fixtureIds.employeeCancelledId,
                 type = HistoryEntryType.Started,
                 stage = EmployeeStage.WaitingForManualApproval.name,
-                toStatus = StageStatus.Pending,
+                toStatus = StageStatus.WaitingForEvent,
             ),
         )
         appendHistory(

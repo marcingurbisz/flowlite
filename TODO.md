@@ -10,9 +10,16 @@ Do you still agree with what you wrote in "[DONE 2026-04-16.2] Aligning CockpitS
 > - Response: So my updated position is: the old recommendation was reasonable before implementation, but after implementation and validation I would keep the unified model and iterate on it instead of going back to separate `CockpitStatus` and `StageStatus`.
 > - Validation: Re-checked the post-`f353837c` engine, summary projection, Cockpit service, and tests before answering.
 
-## Feedback to f353837c
+## [DONE 2026-05-08.2] Feedback to f353837c
 * typealias CockpitStatus = StageStatus - remove it and use StageStatus instead
 * Remove StageStatus.Pending
+
+> Agent: Picking this next in loop `2026-05-08.1` because it is a direct cleanup follow-up to `f353837c`.
+
+> Agent:
+> - Changes: Removed the Kotlin `typealias CockpitStatus = StageStatus` and switched the Cockpit service/tests to use `StageStatus` directly.
+> - Changes: Removed `StageStatus.Pending` entirely and replaced the remaining usages with concrete states like `WaitingForEvent`, `WaitingForTimer`, and `PendingEngine`.
+> - Validation: `./gradlew test`
 
 ## Can wy simplify FlowLiteInstanceSummaryRow.apply()?
 This big whens do not look nice and I wonder if we can have better design here.

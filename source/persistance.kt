@@ -15,12 +15,6 @@ enum class StageStatus {
     Error,
     Completed, // used only for terminal stages
     Cancelled, // used when an instance is manually canceled
-    ;
-
-    companion object {
-        @Deprecated("Use WaitingForTimer, WaitingForEvent, or PendingEngine instead")
-        val Pending: StageStatus = PendingEngine
-    }
 }
 
 /**

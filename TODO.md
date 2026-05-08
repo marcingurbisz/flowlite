@@ -1,6 +1,14 @@
-## How to you assess "Aligning CockpitStatus and StageStatus" now
+## [DONE 2026-05-08.1] How to you assess "Aligning CockpitStatus and StageStatus" now
 ... once you did it in f353837c. Do you still think it's better to have these 2 statuses separate?
 Do you still agree with what you wrote in "[DONE 2026-04-16.2] Aligning CockpitStatus and StageStatus" ?
+
+> Agent: Picking this item first in loop `2026-05-08.1` because it is the design checkpoint for the changes already landed in `f353837c`.
+
+> Agent:
+> - Response: After doing the refactor, I no longer think keeping the two statuses separate would be better for this codebase as it exists today. The unified model removed the awkward resolver hook, removed duplicated semantics in the read model, and made the persisted/runtime state more honest for Cockpit.
+> - Response: I still agree with the core warning from `2026-04-16.2`: the merge does increase engine blast radius and it does make engine code stage-definition-aware in a way it was not before. That warning was correct. What changed is that we now know the refactor is still tractable and the resulting design is simpler overall than the previous resolver-based split.
+> - Response: So my updated position is: the old recommendation was reasonable before implementation, but after implementation and validation I would keep the unified model and iterate on it instead of going back to separate `CockpitStatus` and `StageStatus`.
+> - Validation: Re-checked the post-`f353837c` engine, summary projection, Cockpit service, and tests before answering.
 
 ## Feedback to f353837c
 * typealias CockpitStatus = StageStatus - remove it and use StageStatus instead

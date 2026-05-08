@@ -434,40 +434,34 @@ class SpringDataJdbcHistoryStore(
 
 private fun HistoryEntry.affectsSummary(): Boolean = type != HistoryEntryType.EventAppended
 
+private data class SummaryProjectionUpdate(
+    val stage: String? = null,
+    val status: StageStatus? = null,
+)
+
+private fun HistoryEntry.toSummaryProjectionUpdate() = when (this) {
+    is HistoryEntry.Started -> SummaryProjectionUpdate(stage = stage, status = toStatus)
+    is HistoryEntry.StatusChanged -> SummaryProjectionUpdate(stage = stage, status = toStatus)
+    is HistoryEntry.Retried -> SummaryProjectionUpdate(stage = stage, status = toStatus)
+    is HistoryEntry.Cancelled -> SummaryProjectionUpdate(stage = stage, status = toStatus)
+    is HistoryEntry.Error -> SummaryProjectionUpdate(stage = stage, status = toStatus)
+    is HistoryEntry.StageChanged -> SummaryProjectionUpdate(stage = toStage)
+    is HistoryEntry.ManualStageChanged -> SummaryProjectionUpdate(stage = toStage, status = toStatus)
+    is HistoryEntry.EventAppended -> SummaryProjectionUpdate()
+}
+
+private fun String.toStageStatusOrNull() = runCatching { StageStatus.valueOf(this) }.getOrNull()
+
 private fun FlowLiteInstanceSummaryRow.apply(
     entry: HistoryEntry,
 ): FlowLiteInstanceSummaryRow {
-    val nextStage = when (entry.type) {
-        HistoryEntryType.Started,
-        HistoryEntryType.StatusChanged,
-        HistoryEntryType.Retried,
-        HistoryEntryType.Cancelled,
-        HistoryEntryType.Error,
-        -> entry.stage ?: stage
-        HistoryEntryType.StageChanged,
-        HistoryEntryType.ManualStageChanged,
-        -> entry.toStage ?: stage
-        HistoryEntryType.EventAppended -> stage
-    }
-
-    val nextStatus = when (entry.type) {
-        HistoryEntryType.Started,
-        HistoryEntryType.StatusChanged,
-        HistoryEntryType.Retried,
-        HistoryEntryType.Cancelled,
-        HistoryEntryType.Error,
-        HistoryEntryType.ManualStageChanged,
-        -> entry.toStatus?.name ?: status
-        HistoryEntryType.StageChanged,
-        HistoryEntryType.EventAppended,
-        -> status
-    }
-
-    val nextStatusValue = runCatching { StageStatus.valueOf(nextStatus) }.getOrNull()
-    val nextCockpitStatus = nextStatusValue?.name ?: cockpitStatus
+    val update = entry.toSummaryProjectionUpdate()
+    val nextStage = update.stage ?: stage
+    val nextStatus = update.status?.name ?: status
+    val nextCockpitStatus = nextStatus.toStageStatusOrNull()?.name ?: cockpitStatus
 
     val nextErrorMessage = when {
-        entry.type == HistoryEntryType.Error -> entry.errorMessage
+        entry is HistoryEntry.Error -> entry.errorMessage
         nextStatus == StageStatus.Error.name -> lastErrorMessage
         else -> null
     }

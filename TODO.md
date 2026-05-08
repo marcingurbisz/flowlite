@@ -21,8 +21,15 @@ Do you still agree with what you wrote in "[DONE 2026-04-16.2] Aligning CockpitS
 > - Changes: Removed `StageStatus.Pending` entirely and replaced the remaining usages with concrete states like `WaitingForEvent`, `WaitingForTimer`, and `PendingEngine`.
 > - Validation: `./gradlew test`
 
-## Can wy simplify FlowLiteInstanceSummaryRow.apply()?
+## [DONE 2026-05-08.3] Can wy simplify FlowLiteInstanceSummaryRow.apply()?
 This big whens do not look nice and I wonder if we can have better design here.
+
+> Agent: Picking this after the status cleanup because it is a local refactor in the same persistence/projection slice.
+
+> Agent:
+> - Changes: Replaced the multiple `when` blocks inside `FlowLiteInstanceSummaryRow.apply()` with a single `HistoryEntry -> SummaryProjectionUpdate` mapping.
+> - Changes: Kept the existing projection semantics for stage transitions, status transitions, Cockpit status mirroring, and error-message retention/clearing.
+> - Validation: `./gradlew test`
 
 ## I do not see diagnostic logs on render
 Are you sure that FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT is available to spring boot?

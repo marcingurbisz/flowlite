@@ -239,13 +239,17 @@ internal class PeriodicMemoryLogger(
         }
 
     init {
+        val effectiveIntervalSeconds = intervalSeconds.coerceAtLeast(5L)
+        diagnosticsLog.info {
+            "memory diagnostics config enabled=$enabled requestedIntervalSeconds=$intervalSeconds effectiveIntervalSeconds=$effectiveIntervalSeconds"
+        }
+
         if (enabled) {
-            val periodSeconds = intervalSeconds.coerceAtLeast(5L)
             logMemorySnapshot("startup")
             executor?.scheduleAtFixedRate(
                 { logMemorySnapshot("periodic") },
-                periodSeconds,
-                periodSeconds,
+                effectiveIntervalSeconds,
+                effectiveIntervalSeconds,
                 TimeUnit.SECONDS,
             )
         }
@@ -320,6 +324,10 @@ internal class ShowcaseFlowSeeder(
             maxDelayMs = maxActionDelayMs,
             failureRate = actionFailureRate,
         )
+
+        showcaseLog.info {
+            "showcase seeder config enabled=$enabled initialSeedCount=$initialSeedCount repeatSeedingEnabled=$repeatSeedingEnabled maxActionDelayMs=$maxActionDelayMs actionFailureRate=$actionFailureRate maxEventDelayMs=$maxEventDelayMs"
+        }
 
         if (enabled) {
             seedBatch(initialSeedCount.coerceAtLeast(0))

@@ -31,8 +31,17 @@ This big whens do not look nice and I wonder if we can have better design here.
 > - Changes: Kept the existing projection semantics for stage transitions, status transitions, Cockpit status mirroring, and error-message retention/clearing.
 > - Validation: `./gradlew test`
 
-## I do not see diagnostic logs on render
+## [DONE 2026-05-08.4] I do not see diagnostic logs on render
 Are you sure that FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT is available to spring boot?
+
+> Agent: Picking this last in loop `2026-05-08.1` because it is a small observability/debugging follow-up and the code path was already identified.
+
+> Agent:
+> - Response: Yes, Spring Boot can bind env vars like `FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT` to `flowlite.showcase.initial-seed-count` through relaxed binding.
+> - Response: The current Render config does not define `FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT` at all, so Render cannot pass that value to Spring Boot right now.
+> - Response: The more likely problem behind the missing diagnostics logs was observability, not binding. `PeriodicMemoryLogger` only logged snapshots, so there was no explicit startup line showing which config values were resolved.
+> - Changes: Added startup/config logs for both `PeriodicMemoryLogger` and `ShowcaseFlowSeeder` so Render logs now show the resolved `enabled` and interval/seed settings on boot.
+> - Validation: `./gradlew test`
 
 ## [DONE 2026-04-16.2] Aligning CockpitStatus and StageStatus
 What do you think about using in StageStatus the same statuses as we have now in CockpitStatus, effectively removing the need to have separate CockpitStatus? Consider that we do not have yet any clients and we are in alpha phase. No need for backward compatibility.

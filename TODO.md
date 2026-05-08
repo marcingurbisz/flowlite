@@ -1,72 +1,16 @@
-## [DONE 2026-05-07.1] Do not bound Render workload
-... as I want to keep it to test the limits of the flowlite.
-* Please revert back previous seeding approach.
-* I would prefer to have some confirmation about memory. Maybe some periodic logs about memory usage?
-* Once we have memory limit confirmed what about switching h2 file?
+## How to you assess "Aligning CockpitStatus and StageStatus" now
+... once you did it in f353837c. Do you still think it's better to have these 2 statuses separate?
+Do you still agree with what you wrote in "[DONE 2026-04-16.2] Aligning CockpitStatus and StageStatus" ?
 
-> Agent: Picking this item first in loop `2026-05-07.1`. Current local hypothesis: the Render cap should be reverted, and the missing piece is telemetry rather than throttling, so I am restoring the previous showcase behavior and adding periodic JVM memory diagnostics for the hosted test app.
+## Feedback to f353837c
+* typealias CockpitStatus = StageStatus - remove it and use StageStatus instead
+* Remove StageStatus.Pending
 
-> Agent:
-> - Changes: Reverted the Render-specific seeding cap, so the hosted test app again uses the original showcase growth behavior.
-> - Changes: Added configurable periodic JVM memory diagnostics in the test app. On Render it is now enabled via environment variables and logs used/committed/max heap plus non-heap usage and thread count every 60 seconds.
-> - Response: I would keep the H2 file-store idea as a follow-up after we have enough memory samples. Right now the better next step is to confirm whether the failure pattern is heap pressure, non-heap/thread pressure, or something else. File-backed H2 changes durability and startup behavior, so it is better as a second step after the measurements.
-> - Validation: `./gradlew test`
+## Can wy simplify FlowLiteInstanceSummaryRow.apply()?
+This big whens do not look nice and I wonder if we can have better design here.
 
-## [DONE 2026-05-07.2] Logback instead "custom" logs in service.kt?
-Or maybe we do not need this logs at all? I'm not sure if I need these logs at all in this test app for now.
-
-> Agent: Picking this next in loop `2026-05-07.1`. My current read is that these service-layer timing logs are neither proper access logs nor essential app diagnostics, so the smallest correct change is to remove them entirely and keep the new memory telemetry from the previous item.
-
-> Agent:
-> - Response: I do not think these `CockpitService` logs should stay. They are ad hoc diagnostics in application code, not proper HTTP access logging and not durable enough to justify the noise.
-> - Response: If you later decide you want request logs, I would do that at servlet/filter/Tomcat level, not inside `service.kt`.
-> - Changes: Removed the custom timing/action logs from `CockpitService`.
-> - Validation: `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`
-> - Validation: A full `./gradlew test` run failed once on a flaky Playwright modal-dismissal assertion, but the targeted rerun of that spec passed after the logging cleanup.
-
-## [DONE 2026-05-07.3] What about using playwright skill instead playwright mcp
-... for ad-hoc/free testing?
-* https://github.com/openai/skills/tree/main/skills/.curated/playwright
-* https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive
-What's the difference between these 2?
-
-> Agent: Picking this next in loop `2026-05-07.1`. My local hypothesis is that these two skills solve different layers of the same problem: one is a CLI automation wrapper, the other is a persistent interactive debugging workflow.
-
-> Agent:
-> - Response: `playwright` is the simpler CLI-first skill. It is built around `playwright-cli`, snapshots, element refs, and short terminal-driven automation loops. Good fit for ad hoc browser actions, scraping, quick reproduction steps, and lightweight UI flow debugging.
-> - Response: `playwright-interactive` is for a longer-lived debugging session. It assumes a persistent `js_repl` Playwright session, keeps browser/page handles alive across iterations, and requires a more disciplined QA loop: functional checks, separate visual QA, viewport-fit checks, screenshots, and explicit signoff.
-> - Response: So the difference is not just API style. It is operating model. `playwright` is command-oriented and stateless-ish between steps. `playwright-interactive` is session-oriented and optimized for repeated code-edit -> reload/relaunch -> recheck cycles.
-> - Response: Relative to the Playwright MCP/browser tools we have here: MCP is better integrated in this environment. It lets me navigate/click/type/read snapshots directly without bootstrapping an external CLI wrapper or a `js_repl` session, so for this workspace I would keep preferring MCP for ad hoc testing.
-> - Response: My recommendation: use MCP/browser tools by default here, use the `playwright` skill when you specifically want terminal-driven browser automation outside this integrated toolset, and use `playwright-interactive` only when you need persistent iterative UI debugging with explicit visual signoff discipline.
-> - Validation: Compared the published `SKILL.md` guidance for `playwright` and `playwright-interactive` and mapped it against the browser/MCP workflow available in this session.
-
-## [DONE 2026-05-07.4] Go for "Aligning CockpitStatus and StageStatus"
-I've thought through our discussion and I have a feeling that this is a good architectural change. Go for it. We can always go back to "separated statuses" approach later if we found that this was a mistake.
-
-> Agent: Picking this next in loop `2026-05-07.1`. Local hypothesis: the smallest root-fix is to make `StageStatus` carry the richer waiting semantics directly (`WaitingForTimer`, `WaitingForEvent`, `PendingEngine`), then remove the Cockpit-side status resolver/projection logic rather than layering another mapper on top.
-
-> Agent:
-> - Changes: Replaced the old generic pending runtime state with explicit `StageStatus` waiting states and updated engine claim/release, retry, manual stage change, and history semantics to use them.
-> - Changes: Removed the `SpringDataJdbcHistoryStore.setCockpitStatusResolver(...)` hook and made Cockpit/read-model projection use the unified status values directly.
-> - Changes: Kept a Kotlin `typealias CockpitStatus = StageStatus` in the Cockpit slice so the codebase can converge without a noisy API rename, while the actual status model is now a single enum.
-> - Changes: Updated engine/Cockpit/domain tests and README documentation to reflect the new status semantics.
-> - Validation: `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`
-> - Validation: `./gradlew test`
-
-## [DONE 2026-04-16.1] Stall on render at 6.5k instances
-No logs since 4am. Render instance is small 512MB RAM.
-Any idea what happen?
-Web requests are working. Do we log anything when request is served?
-From the logs it seems that instance started to work again around 7:30 but then around 8am instance stopped responding and render killed it.
-
-> Agent: Picking this item in loop `2026-04-16.1` first because it is a production-style stability issue. Initial finding: the Render service is the servlet test app, and that app enables showcase mode automatically. In the current deployment shape it keeps seeding forever every 5 seconds, so the in-memory H2 dataset grows unbounded on a 512 MB instance.
-
-> Agent:
-> - Response: The most likely root cause is the deployment shape itself, not a single bad `/api` request. Render is running the servlet test app, the test app uses in-memory H2, and showcase repeat seeding was enabled. That means rows keep accumulating forever until the 512 MB free-tier instance hits memory or GC pressure. The screenshots fit that pattern: Cockpit still answered HTTP requests, but workflow progression had stopped for hours and then Render eventually killed the container.
-> - Response: No, before this loop we were not logging normal Cockpit request servicing. We had startup/shutdown logs plus engine/showcase logs, but nothing that told us `/api/flows` or `/api/instances` was served in `X ms` with `N` rows.
-> - Changes: Added Cockpit API timing logs for `listFlows`, `listInstances`, single-instance reads, and timeline reads, plus action logs for retry/cancel/change-stage operations.
-> - Changes: Bounded the public Render workload by setting `FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT=100` and `FLOWLITE_SHOWCASE_REPEAT_SEEDING_ENABLED=false` in `render.yaml`, so the hosted demo stops growing without bound.
-> - Validation: `./gradlew test`
+## I do not see diagnostic logs on render
+Are you sure that FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT is available to spring boot?
 
 ## [DONE 2026-04-16.2] Aligning CockpitStatus and StageStatus
 What do you think about using in StageStatus the same statuses as we have now in CockpitStatus, effectively removing the need to have separate CockpitStatus? Consider that we do not have yet any clients and we are in alpha phase. No need for backward compatibility.

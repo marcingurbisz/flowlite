@@ -1,71 +1,9 @@
-## [DONE 2026-05-08.1] How to you assess "Aligning CockpitStatus and StageStatus" now
-... once you did it in f353837c. Do you still think it's better to have these 2 statuses separate?
-Do you still agree with what you wrote in "[DONE 2026-04-16.2] Aligning CockpitStatus and StageStatus" ?
+## On render I have now this log
+memory diagnostics config enabled=false requestedIntervalSeconds=60 effectiveIntervalSeconds=60
 
-> Agent: Picking this item first in loop `2026-05-08.1` because it is the design checkpoint for the changes already landed in `f353837c`.
-
-> Agent:
-> - Response: After doing the refactor, I no longer think keeping the two statuses separate would be better for this codebase as it exists today. The unified model removed the awkward resolver hook, removed duplicated semantics in the read model, and made the persisted/runtime state more honest for Cockpit.
-> - Response: I still agree with the core warning from `2026-04-16.2`: the merge does increase engine blast radius and it does make engine code stage-definition-aware in a way it was not before. That warning was correct. What changed is that we now know the refactor is still tractable and the resulting design is simpler overall than the previous resolver-based split.
-> - Response: So my updated position is: the old recommendation was reasonable before implementation, but after implementation and validation I would keep the unified model and iterate on it instead of going back to separate `CockpitStatus` and `StageStatus`.
-> - Validation: Re-checked the post-`f353837c` engine, summary projection, Cockpit service, and tests before answering.
-
-## [DONE 2026-05-08.2] Feedback to f353837c
-* typealias CockpitStatus = StageStatus - remove it and use StageStatus instead
-* Remove StageStatus.Pending
-
-> Agent: Picking this next in loop `2026-05-08.1` because it is a direct cleanup follow-up to `f353837c`.
-
-> Agent:
-> - Changes: Removed the Kotlin `typealias CockpitStatus = StageStatus` and switched the Cockpit service/tests to use `StageStatus` directly.
-> - Changes: Removed `StageStatus.Pending` entirely and replaced the remaining usages with concrete states like `WaitingForEvent`, `WaitingForTimer`, and `PendingEngine`.
-> - Validation: `./gradlew test`
-
-## [DONE 2026-05-08.3] Can wy simplify FlowLiteInstanceSummaryRow.apply()?
-This big whens do not look nice and I wonder if we can have better design here.
-
-> Agent: Picking this after the status cleanup because it is a local refactor in the same persistence/projection slice.
-
-> Agent:
-> - Changes: Replaced the multiple `when` blocks inside `FlowLiteInstanceSummaryRow.apply()` with a single `HistoryEntry -> SummaryProjectionUpdate` mapping.
-> - Changes: Kept the existing projection semantics for stage transitions, status transitions, Cockpit status mirroring, and error-message retention/clearing.
-> - Validation: `./gradlew test`
-
-## [DONE 2026-05-08.4] I do not see diagnostic logs on render
-Are you sure that FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT is available to spring boot?
-
-> Agent: Picking this last in loop `2026-05-08.1` because it is a small observability/debugging follow-up and the code path was already identified.
-
-> Agent:
-> - Response: Yes, Spring Boot can bind env vars like `FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT` to `flowlite.showcase.initial-seed-count` through relaxed binding.
-> - Response: The current Render config does not define `FLOWLITE_SHOWCASE_INITIAL_SEED_COUNT` at all, so Render cannot pass that value to Spring Boot right now.
-> - Response: The more likely problem behind the missing diagnostics logs was observability, not binding. `PeriodicMemoryLogger` only logged snapshots, so there was no explicit startup line showing which config values were resolved.
-> - Changes: Added startup/config logs for both `PeriodicMemoryLogger` and `ShowcaseFlowSeeder` so Render logs now show the resolved `enabled` and interval/seed settings on boot.
-> - Validation: `./gradlew test`
-
-## [DONE 2026-04-16.2] Aligning CockpitStatus and StageStatus
-What do you think about using in StageStatus the same statuses as we have now in CockpitStatus, effectively removing the need to have separate CockpitStatus? Consider that we do not have yet any clients and we are in alpha phase. No need for backward compatibility.
-What are pros, cons and your recommendation.
-Related topic: I see setCockpitStatusResolver - this introduce kind of circular dependency between engine and history store, right? I do not like that.
-
-> Agent: Picking this item in loop `2026-04-15.1` together with the linked Cockpit follow-ups below, because the status-model design, summary projection, long-inactive behavior, and worker defaults are all part of the same Cockpit/runtime batch.
-
-> Agent:
-> - Response: I would still keep `StageStatus` and `CockpitStatus` separate. `StageStatus` is the engine control model (`Pending`, `Running`, `Error`, `Completed`, `Cancelled`) and is used directly in claim/retry/cancel/manual-stage transitions. `CockpitStatus` is an observability/read-model split of the non-running branch of that state machine.
-> - Response: The main upside of merging them would be one enum, one persisted status column, no `cockpit_status` projection, and no resolver hook between engine bootstrap and summary updates.
-> - Response: The main downside is that engine semantics would become stage-definition-aware at the core runtime layer. `WaitingForTimer`, `WaitingForEvent`, and `PendingEngine` are not just extra labels; they require the engine to know whether a stage is timer-driven or event-driven whenever it sets or compares status. That would spread flow-definition knowledge into claim/release logic, retry paths, status history, persistence contracts, and tests.
-> - Response: So yes, `setCockpitStatusResolver(...)` is a circular-style hookup and I do not like the shape either, but I do not think collapsing the enums is the best fix for it. My recommendation is: keep separate engine and Cockpit statuses, and later remove the setter by introducing a dedicated flow-definition catalog/classifier bean or a Cockpit-owned projector instead of pushing that wiring through `SpringDataJdbcHistoryStore`.
-> - Validation: Re-checked current `Engine`, `StageStatus`, `SpringDataJdbcHistoryStore`, and Cockpit status-classification flow while answering this item.
-
->> MG: Would it complicate engine code much? From my pov when looking at flow table and seeing WaitingForTimer instead Pending is a benefit.
-
-> Agent:
-> - Response: The benefit you point at is real. For observability, `WaitingForTimer` / `WaitingForEvent` / `PendingEngine` is more informative than a raw `Pending`, especially in Cockpit tables.
-> - Response: It would not be algorithmically hard, but it would be a fairly broad engine refactor. Today `StageStatus` is the small lifecycle primitive that drives claim/release (`Pending -> Running`), retry (`Error -> Pending`), cancellation, terminal completion, persisted history, compare-and-set persistence APIs, and a lot of tests. If we replace it with Cockpit-style statuses, then the engine no longer has a single generic claimable waiting status. We would need to either treat `WaitingForTimer`, `WaitingForEvent`, and `PendingEngine` as multiple claimable states everywhere or introduce another internal concept for claimability anyway.
-> - Response: In practice that means touching `Engine.processTick`, retry/cancel/manual-stage flows, `StatePersister.tryTransitionStageStatus(...)`, history entry semantics, the persisted `status` column contract, the summary projection, and the related test suite. So I would call it moderate-to-high blast radius, even if each individual change is understandable.
-> - Response: My recommendation stays the same: keep `StageStatus` as the engine lifecycle model, keep the richer waiting-state split for Cockpit/read models, and improve the UX by showing derived Cockpit status anywhere humans inspect runtime state. That gives you the better table semantics without teaching the engine core about timer-vs-event waiting reasons everywhere.
-> - Response: Separately, I still agree the setter-based resolver is the wrong shape. I would fix that by moving Cockpit status classification behind a dedicated flow-definition catalog/projector bean, not by collapsing the two status models.
-> - Validation: Re-checked current `Engine`, `StatePersister`, `HistoryEntry`, and summary projection call sites of `StageStatus` before answering this follow-up.
+## Concept for "Auto-retry" and "User retriable"
+Review [AutoRetryConcept.md](docs/AutoRetryConcept.md). Try to find week points and how to address them. Improve what is worth improving (including wording).
+What would be the MVP implementation?
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?
@@ -98,7 +36,6 @@ Moving cockpit-ui/src under source/cockpit. Pros and cons?
 
 ## [ON HOLD] Topics on hold for now
 * Check sonar findings and decide if they should be fixed
-* Concept for "Auto-retry" and "User retriable"
 * Long Inactive tab
   * Default filter should be "Running and Pending scheduler"
 * Consider virtual scrolling for the `Instances` tab.

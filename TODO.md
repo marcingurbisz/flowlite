@@ -7,9 +7,17 @@ memory diagnostics config enabled=false requestedIntervalSeconds=60 effectiveInt
 > - Changes: Extended the startup diagnostics log to also print `rawEnabledEnv` and `rawIntervalEnv`, so the next Render boot will show whether those env vars are actually present in the process.
 > - Validation: `./gradlew test`
 
-## Concept for "Auto-retry" and "User retriable"
+## [DONE 2026-05-10.2] Concept for "Auto-retry" and "User retriable"
 Review [AutoRetryConcept.md](docs/AutoRetryConcept.md). Try to find week points and how to address them. Improve what is worth improving (including wording).
 What would be the MVP implementation?
+
+> Agent:
+> - Response: The main weak points in the earlier draft were: outdated status terminology (`Pending`), unclear "user" actor semantics, too much duplication with existing delayed tick support, and no clear MVP boundary.
+> - Response: I rewrote the concept around the current engine model: keep one `Error`, keep retry policy separate from execution state, reuse delayed ticks, and avoid rethrowing after an accepted auto-retry plan.
+> - Response: Recommended terminology is `external-retry` instead of `user-retriable`, because the retry actor may be an end user, an operator, or an application-owned endpoint.
+> - Response: Recommended MVP is intentionally smaller than the full concept: implement only `AutoRetry` plus the existing Cockpit retry fallback. Defer application-owned external retry to a second phase.
+> - Changes: Rewrote `docs/AutoRetryConcept.md` with review findings, clarified target model, and added a concrete MVP implementation path.
+> - Validation: Re-read the updated document for consistency with current `StageStatus`, `retry(...)`, and delayed tick behavior.
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

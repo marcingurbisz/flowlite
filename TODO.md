@@ -1,23 +1,11 @@
-## [DONE 2026-05-10.1] On render I have now this log
-memory diagnostics config enabled=false requestedIntervalSeconds=60 effectiveIntervalSeconds=60
+## On render I have now this log
+memory diagnostics config enabled=false requestedIntervalSeconds=60 effectiveIntervalSeconds=60 rawEnabledEnv=null rawIntervalEnv=null
 
-> Agent:
-> - Response: Local verification with `FLOWLITE_DIAGNOSTICS_MEMORY_LOG_ENABLED=true FLOWLITE_DIAGNOSTICS_MEMORY_LOG_INTERVAL_SECONDS=60 ./gradlew runTestApp` shows `enabled=true`, so Spring Boot env binding works in this app.
-> - Response: The Render log with `enabled=false` therefore points to deployment/runtime config, not to the property lookup code. In practice that means the running Render service likely does not currently have `FLOWLITE_DIAGNOSTICS_MEMORY_LOG_ENABLED=true` in its process environment even if `render.yaml` contains it.
-> - Changes: Extended the startup diagnostics log to also print `rawEnabledEnv` and `rawIntervalEnv`, so the next Render boot will show whether those env vars are actually present in the process.
-> - Validation: `./gradlew test`
-
-## [DONE 2026-05-10.2] Concept for "Auto-retry" and "User retriable"
-Review [AutoRetryConcept.md](docs/AutoRetryConcept.md). Try to find week points and how to address them. Improve what is worth improving (including wording).
-What would be the MVP implementation?
-
-> Agent:
-> - Response: The main weak points in the earlier draft were: outdated status terminology (`Pending`), unclear "user" actor semantics, too much duplication with existing delayed tick support, and no clear MVP boundary.
-> - Response: I rewrote the concept around the current engine model: keep one `Error`, keep retry policy separate from execution state, reuse delayed ticks, and avoid rethrowing after an accepted auto-retry plan.
-> - Response: Recommended terminology is `external-retry` instead of `user-retriable`, because the retry actor may be an end user, an operator, or an application-owned endpoint.
-> - Response: Recommended MVP is intentionally smaller than the full concept: implement only `AutoRetry` plus the existing Cockpit retry fallback. Defer application-owned external retry to a second phase.
-> - Changes: Rewrote `docs/AutoRetryConcept.md` with review findings, clarified target model, and added a concrete MVP implementation path.
-> - Validation: Re-read the updated document for consistency with current `StageStatus`, `retry(...)`, and delayed tick behavior.
+## Concept for "Auto-retry" and "User retriable"
+Added few inline remarks to [AutoRetryConcept.md](docs/AutoRetryConcept.md). Please think about them.
+Please implement MVP including "external-retry" too, but without any changes in our test app to trigger external retries.
+Cover it with tests including playwright.
+Please give me screenshots showing how this looks like in cockpit.
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

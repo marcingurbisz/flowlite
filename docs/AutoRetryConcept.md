@@ -10,63 +10,21 @@ Introduce a retry model that distinguishes between:
 Cockpit retry remains the universal fallback. The extra question is whether a failure also gets automatic retry behavior and/or an application-owned retry path.
 
 ## Terminology
-
-The earlier phrase "user-retriable" is too vague. The actor might be:
-- an end user in a product UI,
-- an internal operator in an application-specific admin UI,
-- another application endpoint that becomes available only after some business fix.
-
-For the concept itself, `external-retry` is the clearer term:
+- 
 - `external-retry` means retry initiated outside FlowLite Cockpit through application-owned UI/API,
 - `cockpit-retry` means retry initiated directly from Cockpit,
 - `auto-retry` means retry scheduled by the engine itself.
 
-## What Needed Tightening
-
-The previous draft had the right direction but needed a few corrections.
-
-### 1. It used an outdated status model
-
-FlowLite no longer has a generic `Pending` status. The current engine state model is:
-- `PendingEngine`
-- `WaitingForEvent`
-- `WaitingForTimer`
-- `Running`
-- `Error`
-- `Completed`
-- `Cancelled`
-
-The retry concept should build on that model instead of reintroducing older state names.
-
-### 2. It mixed execution state with recovery policy
-
-Retryability is not the same thing as execution state.
-
-`StageStatus` should keep describing where the engine is operationally. Retry policy should describe what to do after a failure. Those are related, but they are not the same dimension.
-
-### 3. It treated scheduler support as missing
-
-FlowLite already supports delayed work through scheduled ticks and `WaitingForTimer`. Auto-retry should reuse that mechanism instead of inventing another scheduling concept.
-
-### 4. It did not define a realistic MVP boundary
-
-The previous version described a fairly complete target model, but it did not separate:
-- what is required to get value quickly,
-- what should wait for a later iteration.
-
-That matters here because FlowLite already has manual retry through Cockpit. The smallest valuable step is therefore auto-retry, not the whole final feature set.
-
-### 5. It risked duplicating too much error data
-
-History already stores detailed error information, including stack trace. A retry-specific store should keep only the current retry state needed by engine logic and Cockpit summary. It should not become a second history table.
+The "external-retry" actor might be:
+- an end user in a product UI,
+- an internal operator in an application-specific admin UI,
+- another application endpoint that becomes available only after some business fix.
 
 ## Recommendation
 
 Keep the design hybrid:
 - FlowLite core owns retry mechanics.
 - Applications own retry policy.
-
-That split still looks correct after reviewing the current engine code.
 
 Why mechanics belong in core:
 - delayed retry scheduling is an engine concern,
@@ -80,8 +38,6 @@ Why policy belongs in the application:
 - only the application knows whether retrying is safe for a particular exception and stage.
 
 ## Keep One `Error`
-
-Yes, even from scratch I would still keep a single `Error` status.
 
 Reason:
 - `Error` says the engine failed to progress the current stage.
@@ -97,7 +53,7 @@ So the recommended model is:
 Examples in Cockpit:
 - `Error / auto retry at 12:05 UTC`
 - `Error / external retry allowed`
-- `Error / cockpit only`
+- `Error`
 
 ## Target Model
 
@@ -141,12 +97,8 @@ enum class ExhaustedAutoRetryPolicy {
 }
 ```
 
-This is clearer than `Fatal` for the current FlowLite model.
-
-Why:
-- FlowLite already allows Cockpit retry for any failed instance.
-- So a failure is rarely truly "fatal" in the sense of "cannot ever be retried".
-- The meaningful distinction is whether recovery is automatic, externally initiated, or only available from Cockpit.
+> MG: I'd like to be able to show on cockpit GUI two badges next to error status - ExternallyRetriable/ExternalRetryAllowed and AutoRetry.
+> MG: Should we have two retry methods in engine? One for cockpit and one for clients so we can distinguish between these 2 retries in history?
 
 ### 3. Persist retry metadata in an engine-owned store
 
@@ -189,6 +141,8 @@ If a failure is classified as `AutoRetry`, the engine should:
 - finish the current tick cleanly without rethrowing the exception.
 
 Otherwise the scheduler layer will log the same transient failure as a hard tick failure even though the engine deliberately accepted it and scheduled recovery.
+
+> MG: Here I'm not sure. Isn't it better to have all failures in log even if they will be auto-retried?
 
 ## Recommended MVP
 

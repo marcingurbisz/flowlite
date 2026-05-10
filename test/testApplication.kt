@@ -141,6 +141,8 @@ object Beans {
             PeriodicMemoryLogger(
                 enabled = environment.getProperty<Boolean>("flowlite.diagnostics.memory-log-enabled", false),
                 intervalSeconds = environment.getProperty<Long>("flowlite.diagnostics.memory-log-interval-seconds", 60L),
+                rawEnabledEnv = System.getenv("FLOWLITE_DIAGNOSTICS_MEMORY_LOG_ENABLED"),
+                rawIntervalEnv = System.getenv("FLOWLITE_DIAGNOSTICS_MEMORY_LOG_INTERVAL_SECONDS"),
             )
         }
 
@@ -228,6 +230,8 @@ private val diagnosticsLog = KotlinLogging.logger {}
 internal class PeriodicMemoryLogger(
     enabled: Boolean,
     intervalSeconds: Long,
+    private val rawEnabledEnv: String? = null,
+    private val rawIntervalEnv: String? = null,
 ) : AutoCloseable {
     private val executor =
         if (enabled) {
@@ -241,7 +245,7 @@ internal class PeriodicMemoryLogger(
     init {
         val effectiveIntervalSeconds = intervalSeconds.coerceAtLeast(5L)
         diagnosticsLog.info {
-            "memory diagnostics config enabled=$enabled requestedIntervalSeconds=$intervalSeconds effectiveIntervalSeconds=$effectiveIntervalSeconds"
+            "memory diagnostics config enabled=$enabled requestedIntervalSeconds=$intervalSeconds effectiveIntervalSeconds=$effectiveIntervalSeconds rawEnabledEnv=$rawEnabledEnv rawIntervalEnv=$rawIntervalEnv"
         }
 
         if (enabled) {

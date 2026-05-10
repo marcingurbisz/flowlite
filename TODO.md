@@ -1,5 +1,11 @@
-## On render I have now this log
+## [DONE 2026-05-10.1] On render I have now this log
 memory diagnostics config enabled=false requestedIntervalSeconds=60 effectiveIntervalSeconds=60
+
+> Agent:
+> - Response: Local verification with `FLOWLITE_DIAGNOSTICS_MEMORY_LOG_ENABLED=true FLOWLITE_DIAGNOSTICS_MEMORY_LOG_INTERVAL_SECONDS=60 ./gradlew runTestApp` shows `enabled=true`, so Spring Boot env binding works in this app.
+> - Response: The Render log with `enabled=false` therefore points to deployment/runtime config, not to the property lookup code. In practice that means the running Render service likely does not currently have `FLOWLITE_DIAGNOSTICS_MEMORY_LOG_ENABLED=true` in its process environment even if `render.yaml` contains it.
+> - Changes: Extended the startup diagnostics log to also print `rawEnabledEnv` and `rawIntervalEnv`, so the next Render boot will show whether those env vars are actually present in the process.
+> - Validation: `./gradlew test`
 
 ## Concept for "Auto-retry" and "User retriable"
 Review [AutoRetryConcept.md](docs/AutoRetryConcept.md). Try to find week points and how to address them. Improve what is worth improving (including wording).

@@ -32,7 +32,12 @@ create table if not exists flowlite_history (
     event varchar(256),
     error_type varchar(512),
     error_message varchar(4000),
-    error_stack_trace clob
+    error_stack_trace clob,
+    retry_trigger varchar(32),
+    failed_attempt_count int,
+    auto_retry_max_attempts int,
+    next_auto_retry_at timestamp,
+    external_retry_allowed boolean
 );
 
 create index if not exists idx_flowlite_history_instance on flowlite_history(flow_id, flow_instance_id, occurred_at);
@@ -50,7 +55,21 @@ create table if not exists flowlite_instance_summary (
     updated_at timestamp not null
 );
 
+create table if not exists flowlite_retry_state (
+    flow_instance_id uuid not null primary key,
+    flow_id varchar(128) not null,
+    stage varchar(128) not null,
+    failed_attempt_count int not null,
+    external_retry_allowed boolean not null,
+    auto_retry_max_attempts int,
+    next_auto_retry_at timestamp,
+    last_error_type varchar(512),
+    last_error_message varchar(4000),
+    updated_at timestamp not null
+);
+
 create unique index if not exists idx_flowlite_instance_summary_key on flowlite_instance_summary(flow_id, flow_instance_id);
 create index if not exists idx_flowlite_instance_summary_instance on flowlite_instance_summary(flow_instance_id);
 create index if not exists idx_flowlite_instance_summary_status_stage on flowlite_instance_summary(flow_id, cockpit_status, stage, updated_at, flow_instance_id);
 create index if not exists idx_flowlite_instance_summary_cockpit_status on flowlite_instance_summary(cockpit_status, updated_at, flow_id, flow_instance_id);
+create index if not exists idx_flowlite_retry_state_flow on flowlite_retry_state(flow_id, updated_at, flow_instance_id);

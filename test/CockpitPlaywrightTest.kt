@@ -9,9 +9,12 @@ import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
 import io.flowlite.FlowLiteInstanceSummaryRepository
+import io.flowlite.FlowLiteRetryStateRepository
+import io.flowlite.FlowLiteRetryStateRow
 import io.flowlite.FlowLiteTickRepository
 import io.flowlite.HistoryEntryType
 import io.flowlite.PendingEventRepository
+import io.flowlite.RetryTrigger
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
 import io.flowlite.toHistoryEntry
@@ -73,6 +76,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
     lateinit var historyRepo: FlowLiteHistoryRepository
     lateinit var historyStore: SpringDataJdbcHistoryStore
     lateinit var summaryRepo: FlowLiteInstanceSummaryRepository
+    lateinit var retryStateRepo: FlowLiteRetryStateRepository
     lateinit var tickRepo: FlowLiteTickRepository
     lateinit var pendingEventRepo: PendingEventRepository
     lateinit var orderRepo: OrderConfirmationRepository
@@ -92,6 +96,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
         historyRepo = context.getBean()
         historyStore = context.getBean()
         summaryRepo = context.getBean()
+        retryStateRepo = context.getBean()
         tickRepo = context.getBean()
         pendingEventRepo = context.getBean()
         orderRepo = context.getBean()
@@ -239,6 +244,11 @@ class CockpitPlaywrightTest : BehaviorSpec({
         errorType: String? = null,
         errorMessage: String? = null,
         errorStackTrace: String? = null,
+        retryTrigger: RetryTrigger? = null,
+        failedAttemptCount: Int? = null,
+        autoRetryMaxAttempts: Int? = null,
+        nextAutoRetryAt: Instant? = null,
+        externalRetryAllowed: Boolean? = null,
     ) = FlowLiteHistoryRow(
         occurredAt = occurredAt,
         flowId = flowId,
@@ -253,15 +263,49 @@ class CockpitPlaywrightTest : BehaviorSpec({
         errorType = errorType,
         errorMessage = errorMessage,
         errorStackTrace = errorStackTrace,
+        retryTrigger = retryTrigger?.name,
+        failedAttemptCount = failedAttemptCount,
+        autoRetryMaxAttempts = autoRetryMaxAttempts,
+        nextAutoRetryAt = nextAutoRetryAt,
+        externalRetryAllowed = externalRetryAllowed,
     )
 
     fun resetCockpitData() {
         tickRepo.deleteAll()
         pendingEventRepo.deleteAll()
+        retryStateRepo.deleteAll()
         summaryRepo.deleteAll()
         historyRepo.deleteAll()
         orderRepo.deleteAll()
         employeeRepo.deleteAll()
+    }
+
+    fun saveRetryState(
+        flowId: String,
+        flowInstanceId: UUID,
+        stage: String,
+        failedAttemptCount: Int,
+        externalRetryAllowed: Boolean,
+        autoRetryMaxAttempts: Int? = null,
+        nextAutoRetryAt: Instant? = null,
+        lastErrorType: String? = null,
+        lastErrorMessage: String? = null,
+        updatedAt: Instant,
+    ) {
+        retryStateRepo.save(
+            FlowLiteRetryStateRow(
+                flowInstanceId = flowInstanceId,
+                flowId = flowId,
+                stage = stage,
+                failedAttemptCount = failedAttemptCount,
+                externalRetryAllowed = externalRetryAllowed,
+                autoRetryMaxAttempts = autoRetryMaxAttempts,
+                nextAutoRetryAt = nextAutoRetryAt,
+                lastErrorType = lastErrorType,
+                lastErrorMessage = lastErrorMessage,
+                updatedAt = updatedAt,
+            ),
+        )
     }
 
     fun saveOrderInstance(
@@ -311,9 +355,18 @@ class CockpitPlaywrightTest : BehaviorSpec({
         historyStore.append(row.toHistoryEntry())
     }
 
+    fun saveScreenshot(page: Page, fileName: String) {
+        page.screenshot(
+            Page.ScreenshotOptions()
+                .setPath(screenshotDir.resolve(fileName))
+                .setFullPage(true),
+        )
+    }
+
     fun seedRichFixture(): CockpitFixture {
         resetCockpitData()
         val now = Instant.now()
+        val autoRetryAt = now.plus(Duration.ofMinutes(3))
 
         saveOrderInstance(
             id = fixtureIds.orderPendingId,
@@ -388,7 +441,23 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 errorType = IllegalStateException::class.qualifiedName,
                 errorMessage = "notification retry needed",
                 errorStackTrace = "java.lang.IllegalStateException: notification retry needed\n\tat io.flowlite.test.Notify.retry(Notify.kt:42)",
+                failedAttemptCount = 2,
+                autoRetryMaxAttempts = 4,
+                nextAutoRetryAt = autoRetryAt,
+                externalRetryAllowed = true,
             ),
+        )
+        saveRetryState(
+            flowId = ORDER_CONFIRMATION_FLOW_ID,
+            flowInstanceId = fixtureIds.orderErrorRetryId,
+            stage = OrderConfirmationStage.InformingCustomer.name,
+            failedAttemptCount = 2,
+            externalRetryAllowed = true,
+            autoRetryMaxAttempts = 4,
+            nextAutoRetryAt = autoRetryAt,
+            lastErrorType = IllegalStateException::class.qualifiedName,
+            lastErrorMessage = "notification retry needed",
+            updatedAt = now.minus(Duration.ofMinutes(15)),
         )
 
         saveOrderInstance(
@@ -410,6 +479,34 @@ class CockpitPlaywrightTest : BehaviorSpec({
         )
         appendHistory(
             historyRow(
+                occurredAt = now.minus(Duration.ofMinutes(25)),
+                flowId = ORDER_CONFIRMATION_FLOW_ID,
+                flowInstanceId = fixtureIds.orderErrorChangeStageId,
+                type = HistoryEntryType.Error,
+                stage = OrderConfirmationStage.InformingCustomer.name,
+                fromStatus = StageStatus.Running,
+                toStatus = StageStatus.Error,
+                errorType = IllegalArgumentException::class.qualifiedName,
+                errorMessage = "previous external fix required",
+                errorStackTrace = "java.lang.IllegalArgumentException: previous external fix required\n\tat io.flowlite.test.Notify.stage(Notify.kt:61)",
+                failedAttemptCount = 1,
+                externalRetryAllowed = true,
+            ),
+        )
+        appendHistory(
+            historyRow(
+                occurredAt = now.minus(Duration.ofMinutes(20)),
+                flowId = ORDER_CONFIRMATION_FLOW_ID,
+                flowInstanceId = fixtureIds.orderErrorChangeStageId,
+                type = HistoryEntryType.Retried,
+                stage = OrderConfirmationStage.InformingCustomer.name,
+                fromStatus = StageStatus.Error,
+                toStatus = StageStatus.PendingEngine,
+                retryTrigger = RetryTrigger.External,
+            ),
+        )
+        appendHistory(
+            historyRow(
                 occurredAt = now.minus(Duration.ofMinutes(14)),
                 flowId = ORDER_CONFIRMATION_FLOW_ID,
                 flowInstanceId = fixtureIds.orderErrorChangeStageId,
@@ -420,7 +517,19 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 errorType = IllegalArgumentException::class.qualifiedName,
                 errorMessage = "manual notification staging required",
                 errorStackTrace = "java.lang.IllegalArgumentException: manual notification staging required\n\tat io.flowlite.test.Notify.stage(Notify.kt:71)",
+                failedAttemptCount = 2,
+                externalRetryAllowed = true,
             ),
+        )
+        saveRetryState(
+            flowId = ORDER_CONFIRMATION_FLOW_ID,
+            flowInstanceId = fixtureIds.orderErrorChangeStageId,
+            stage = OrderConfirmationStage.InformingCustomer.name,
+            failedAttemptCount = 2,
+            externalRetryAllowed = true,
+            lastErrorType = IllegalArgumentException::class.qualifiedName,
+            lastErrorMessage = "manual notification staging required",
+            updatedAt = now.minus(Duration.ofMinutes(14)),
         )
 
         saveEmployeeInstance(
@@ -629,6 +738,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             bookmarkedUrl = page.url()
             page.navigate(bookmarkedUrl)
             assertThat(page.getByTestId("instance-details-modal")).isVisible()
+            page.getByTestId("instance-details-modal").click()
             page.keyboard().press("Escape")
             assertThat(page.getByTestId("instance-details-modal")).hasCount(0)
 
@@ -741,6 +851,38 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     instanceErrorStackTrace.shouldContain("notification retry needed")
                     historyErrorStackTrace.shouldContain("Notify.retry")
                     assertThat(currentPage.getByTestId("instance-details-modal")).hasCount(0)
+                }
+            }
+        }
+
+        `when`("viewing retry metadata in the cockpit") {
+            val fixture = seedRichFixture()
+            val session = openRecordedContext("it-renders-retry-badges-and-history")
+            val page = session.page
+            var retryHistoryDetails = ""
+
+            navigateToCockpit(page, "tab=instances")
+
+            page.getByTestId("instances-search").fill(fixture.orderErrorRetryId.toString())
+            assertThat(page.getByTestId("instance-status-${fixture.orderErrorRetryId}")).containsText("External retry allowed")
+            assertThat(page.getByTestId("instance-status-${fixture.orderErrorRetryId}")).containsText("Auto retry")
+            saveScreenshot(page, "cockpit-retry-badges-list.png")
+
+            instanceRow(page, fixture.orderErrorRetryId).click()
+            assertThat(page.getByTestId("instance-error-attempt-count")).containsText("2")
+            assertThat(page.getByTestId("instance-next-auto-retry")).isVisible()
+            saveScreenshot(page, "cockpit-retry-badges-details.png")
+            page.getByTestId("instance-details-close").click()
+
+            page.getByTestId("instances-search").fill(fixture.orderErrorChangeStageId.toString())
+            instanceRow(page, fixture.orderErrorChangeStageId).click()
+            retryHistoryDetails = page.getByTestId("instance-history-details-2").textContent() ?: ""
+
+            then("it renders retry badges, retry details, and retry history triggers") {
+                verifyRecordedContext(session) { currentPage ->
+                    retryHistoryDetails.shouldContain("trigger=External")
+                    assertThat(currentPage.getByTestId("instance-details-status")).containsText("External retry allowed")
+                    assertThat(currentPage.getByTestId("instance-details-status")).not().containsText("Auto retry")
                 }
             }
         }

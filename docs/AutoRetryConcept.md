@@ -2,64 +2,33 @@
 
 ## Goal
 
-Introduce a retry model that distinguishes between:
-1. failures that FlowLite should retry automatically,
-2. failures that an application-specific actor may retry outside Cockpit,
-3. failures that should stay as plain `Error` and only be recoverable from Cockpit.
+Keep one runtime `Error` status while making recovery intent explicit and visible.
 
-Cockpit retry remains the universal fallback. The extra question is whether a failure also gets automatic retry behavior and/or an application-owned retry path.
+The implemented model distinguishes three retry triggers:
+- `auto-retry` scheduled by the engine,
+- `external-retry` initiated outside Cockpit by application-owned code,
+- `cockpit-retry` initiated directly from Cockpit.
 
-## Terminology
-- 
-- `external-retry` means retry initiated outside FlowLite Cockpit through application-owned UI/API,
-- `cockpit-retry` means retry initiated directly from Cockpit,
-- `auto-retry` means retry scheduled by the engine itself.
+These are recovery triggers, not separate stage statuses.
 
-The "external-retry" actor might be:
-- an end user in a product UI,
-- an internal operator in an application-specific admin UI,
-- another application endpoint that becomes available only after some business fix.
+## Core decision
 
-## Recommendation
+We keep one `Error`.
 
-Keep the design hybrid:
-- FlowLite core owns retry mechanics.
-- Applications own retry policy.
+`Error` answers whether the engine failed to progress the current stage.
+Retry metadata answers how recovery may happen:
+- whether external retry is allowed,
+- whether auto retry is active,
+- how many attempts already failed,
+- which actor or mechanism triggered a retry.
 
-Why mechanics belong in core:
-- delayed retry scheduling is an engine concern,
-- attempt counting is an engine concern,
-- visibility in Cockpit is an engine/read-model concern,
-- transition back from `Error` to a runnable waiting status is an engine concern.
+That separation turned out to be enough for both runtime behavior and Cockpit visibility, without inflating `StageStatus`.
 
-Why policy belongs in the application:
-- only the application knows whether a failure is transient,
-- only the application knows whether a failure can be fixed externally,
-- only the application knows whether retrying is safe for a particular exception and stage.
+## What was implemented
 
-## Keep One `Error`
+### Failure classification stays application-owned
 
-Reason:
-- `Error` says the engine failed to progress the current stage.
-- Auto-retry vs external-retry vs cockpit-only retry says how recovery may happen.
-
-Those are different concerns. If we turn them into different stage statuses, the state machine becomes noisier and leaks recovery policy into places that should only care about execution lifecycle.
-
-So the recommended model is:
-- keep one `Error`,
-- store retry metadata separately,
-- let Cockpit render richer labels from the metadata.
-
-Examples in Cockpit:
-- `Error / auto retry at 12:05 UTC`
-- `Error / external retry allowed`
-- `Error`
-
-## Target Model
-
-### 1. Introduce a failure classification hook
-
-The engine should not hardcode which exceptions are transient.
+Flows can now register an optional `FailureClassifier<T>`.
 
 ```kotlin
 interface FailureClassifier<T : Any> {
@@ -69,154 +38,100 @@ interface FailureClassifier<T : Any> {
         state: T,
         error: Exception,
         failedAttemptCount: Int,
-    ): FailureDirective
+    ): FailureHandling
 }
+
+data class FailureHandling(
+    val autoRetry: AutoRetryPlan? = null,
+    val externalRetryAllowed: Boolean = false,
+)
 ```
 
-`failedAttemptCount` should mean attempts for the current failing stage since the last successful progress, not total lifetime retries across the whole instance.
+This keeps retry policy in the application while leaving retry mechanics in FlowLite.
 
-### 2. Use directives that describe recovery policy, not engine state
+### Engine-owned retry metadata
 
-```kotlin
-sealed interface FailureDirective {
-    data class AutoRetry(
-        val delay: Duration,
-        val maxAttempts: Int,
-        val backoff: BackoffStrategy = BackoffStrategy.fixed(delay),
-        val onExhausted: ExhaustedAutoRetryPolicy = ExhaustedAutoRetryPolicy.CockpitOnly,
-    ) : FailureDirective
+Retry metadata is stored outside application domain tables.
 
-    data object ExternalRetry : FailureDirective
+Current retry metadata includes:
+- failing stage,
+- failed attempt count,
+- `externalRetryAllowed`,
+- optional `autoRetryMaxAttempts`,
+- optional `nextAutoRetryAt`,
+- last error type/message.
 
-    data object CockpitOnly : FailureDirective
-}
+This metadata is persisted in a dedicated retry-state store and also copied into `HistoryEntry.Error`, so Cockpit can explain the current error state from history.
 
-enum class ExhaustedAutoRetryPolicy {
-    ExternalRetry,
-    CockpitOnly,
-}
-```
+### Auto retry reuses delayed ticks
 
-> MG: I'd like to be able to show on cockpit GUI two badges next to error status - ExternallyRetriable/ExternalRetryAllowed and AutoRetry.
-> MG: Should we have two retry methods in engine? One for cockpit and one for clients so we can distinguish between these 2 retries in history?
+No new scheduler abstraction was introduced.
 
-### 3. Persist retry metadata in an engine-owned store
+Auto retry works by:
+- keeping the instance in `Error`,
+- persisting retry metadata,
+- scheduling a delayed auto-retry tick,
+- converting that tick back into the normal retry path when due.
 
-Do not force every application persistence model to grow retry columns.
+This keeps the runtime model small and reuses existing engine machinery.
 
-Recommended engine-owned state per `(flowId, flowInstanceId)`:
-- `attempt_count`
-- `next_retry_at`
-- `last_failed_at`
-- `retry_mode` (`AUTO_RETRY`, `EXTERNAL_RETRY`, `COCKPIT_ONLY`)
-- `max_attempts`
-- `last_error_type`
+### Separate retry methods were worth it
 
-Notes:
-- `last_error_message` can live here if Cockpit needs cheap access.
-- full stack traces should stay in history, not be duplicated here.
-- this state should be reset when the instance successfully progresses beyond the failed stage.
+Yes, the engine now has two explicit retry entry points:
+- `retry(flowId, flowInstanceId)` for Cockpit retry,
+- `externalRetry(flowId, flowInstanceId)` for application-owned retry.
 
-### 4. Reuse the existing delayed tick mechanism
+That gives truthful history through `RetryTrigger`:
+- `Auto`
+- `External`
+- `Cockpit`
 
-No new scheduler abstraction is needed.
+So the answer to the inline question is yes: separate retry methods are useful because they preserve retry provenance in history without adding new statuses.
 
-For auto-retry:
-- keep the instance in `Error`,
-- persist retry metadata with `next_retry_at`,
-- schedule a delayed tick for that instant,
-- when the delayed tick fires, transition through the same runtime path as manual `retry(...)`.
+### Auto-retried failures still stay in logs
 
-This aligns with FlowLite as it exists today.
+The engine still logs the original exception with `log.error(ex)` before persisting retry metadata and scheduling auto retry.
 
-### 5. Avoid rethrowing once the engine has accepted an auto-retry plan
+So the answer to the logging remark is also yes: failures remain visible in logs even when recovery is accepted and scheduled.
 
-This is an important operational detail.
+## Cockpit UX
 
-Today, a stage exception is persisted as `Error`, recorded in history, and then rethrown. That is fine for plain failure handling, but it is noisy for accepted auto-retry.
+The implemented Cockpit surface shows the two requested badges next to errored instances:
+- `External retry allowed`
+- `Auto retry`
 
-If a failure is classified as `AutoRetry`, the engine should:
-- persist the failure and retry plan,
-- schedule the delayed retry,
-- finish the current tick cleanly without rethrowing the exception.
+Where shown:
+- Instances table
+- Instance details modal
 
-Otherwise the scheduler layer will log the same transient failure as a hard tick failure even though the engine deliberately accepted it and scheduled recovery.
+The instance details modal also shows:
+- failed attempt count,
+- next auto retry timestamp,
+- retry-aware history details.
 
-> MG: Here I'm not sure. Isn't it better to have all failures in log even if they will be auto-retried?
+History now distinguishes retry sources, for example `trigger=External`.
 
-## Recommended MVP
+## MVP scope
 
-The MVP should be intentionally smaller than the full target model.
+The MVP now includes:
+- auto retry,
+- external retry support in the engine,
+- Cockpit retry as the universal fallback,
+- Cockpit visibility for retry metadata.
 
-### Scope
+The MVP still does not include:
+- new test-app UI/API affordances for external retry,
+- Cockpit filters dedicated to retry modes,
+- authorization semantics for application-owned retry callers.
 
-Implement only:
-- `AutoRetry`
-- existing Cockpit retry fallback
+That matches the requested scope: external retry exists in the engine and history model, but the test app was not changed to expose new external-retry triggers.
 
-Do not implement yet:
-- external/application-owned retry endpoints,
-- special Cockpit filters for retry modes,
-- a broad matrix of retry policies.
+## Definition of done
 
-### Why this is the right MVP
-
-FlowLite already has Cockpit retry. That means the first missing capability is automatic retry of transient failures.
-
-Adding external-retry in the same batch would require:
-- additional public API design,
-- authorization and actor semantics in the client application,
-- more Cockpit/read-model language,
-- more questions than value for the first increment.
-
-### MVP implementation steps
-
-1. Add an optional `FailureClassifier` registration per flow.
-2. Add a small engine-owned retry metadata store/table.
-3. In the action/timer failure path, classify the exception.
-4. If directive is `AutoRetry` and attempts remain:
-   - persist `Error`,
-   - persist retry metadata,
-   - schedule delayed tick,
-   - do not rethrow.
-5. If attempts are exhausted or there is no classifier:
-   - keep the current `Error` behavior,
-   - leave recovery to existing Cockpit retry.
-6. Extend Cockpit summary/details to show:
-   - current retry attempt count,
-   - next retry time when scheduled,
-   - whether auto-retry is still active.
-7. Reset retry metadata after successful progress from the failed stage.
-
-### MVP behavior example
-
-Example policy:
-- `SocketTimeoutException` in stage `SendContractForSigning` -> auto retry up to 3 times with exponential backoff,
-- anything else -> plain `Error` recoverable from Cockpit.
-
-From a user perspective:
-- transient failures recover automatically,
-- exhausted transient failures end as normal `Error`,
-- operators can still use Cockpit retry exactly as today.
-
-## Later Extension: External Retry
-
-After MVP, FlowLite can add explicit `ExternalRetry` support.
-
-That phase would mean:
-- classifier may mark a failure as externally retriable,
-- retry metadata exposes that fact to Cockpit/API,
-- client applications may build their own retry UI/API on top,
-- Cockpit still keeps manual retry as the universal escape hatch.
-
-This later phase should be designed only after the MVP proves that the engine-owned retry metadata and auto-retry flow feel right operationally.
-
-## Definition of Done for the MVP
-
-- transient failures can be auto-retried with backoff,
-- failed auto-retries stop after configured attempt limit,
-- exhausted retries remain visible as normal `Error`,
-- Cockpit retry still works for exhausted or non-auto-retriable failures,
-- retry metadata is stored outside application domain tables,
-- Cockpit can show whether an error is waiting for automatic retry and when it will happen,
-- history continues to explain the original error and later retry actions.
+- transient failures can schedule auto retry with backoff,
+- auto-retried failures keep a visible error history entry and stay logged,
+- external retry can be triggered separately from Cockpit retry,
+- history distinguishes `Auto`, `External`, and `Cockpit` retries,
+- Cockpit shows retry badges and retry details for errored instances,
+- retry metadata lives outside application domain tables,
+- tests cover engine behavior, Cockpit service projection, and Playwright UI rendering.

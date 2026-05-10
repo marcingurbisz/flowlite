@@ -8,10 +8,12 @@ class Engine(
     private val eventStore: EventStore,
     private val tickScheduler: TickScheduler,
     private val historyStore: HistoryStore = NoopHistoryStore,
+    private val retryStateStore: RetryStateStore = NoopRetryStateStore,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     private companion object {
         private val log = KotlinLogging.logger {}
+        private const val AUTO_RETRY_TICK_PREFIX = "__auto_retry__:"
     }
 
     init {
@@ -20,16 +22,19 @@ class Engine(
 
     private val flows = mutableMapOf<String, Flow<Any, Stage, Event>>()
     private val persisters = mutableMapOf<String, StatePersister<Any>>()
+    private val failureClassifiers = mutableMapOf<String, FailureClassifier<Any>?>()
 
     @Suppress("UNCHECKED_CAST")
     fun <T : Any, S, E : Event> registerFlow(
         flowId: String,
         flow: Flow<T, S, E>,
         statePersister: StatePersister<T>,
+        failureClassifier: FailureClassifier<T>? = null,
     ) where S : Enum<S>, S : Stage {
         log.info { "registerFlow(flowId=$flowId)" }
         flows[flowId] = flow as Flow<Any, Stage, Event>
         persisters[flowId] = statePersister as StatePersister<Any>
+        failureClassifiers[flowId] = failureClassifier as FailureClassifier<Any>?
     }
 
     fun registeredFlows(): Map<String, Flow<Any, Stage, Event>> = flows.toMap()
@@ -75,16 +80,37 @@ class Engine(
     }
 
     fun retry(flowId: String, flowInstanceId: UUID) {
+        retry(flowId, flowInstanceId, trigger = RetryTrigger.Cockpit)
+    }
+
+    fun externalRetry(flowId: String, flowInstanceId: UUID) {
+        retry(flowId, flowInstanceId, trigger = RetryTrigger.External)
+    }
+
+    private fun retry(flowId: String, flowInstanceId: UUID, trigger: RetryTrigger) {
         val persister = requireNotNull(persisters[flowId]) { "Persister for flow '$flowId' not registered" }
         val current = persister.load(flowInstanceId)
-        log.info { "retry(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
+        log.info { "$trigger retry(flowId=$flowId, flowInstanceId=$flowInstanceId) currentStatus=${current.stageStatus} currentStage=${current.stage}" }
         if (current.stageStatus != StageStatus.Error) {
             error("Cannot retry $flowId/$flowInstanceId because status is ${current.stageStatus}")
+        }
+        val currentRetryState = retryStateStore.find(flowInstanceId)
+        if (trigger == RetryTrigger.External && currentRetryState?.externalRetryAllowed != true) {
+            error("Cannot externally retry $flowId/$flowInstanceId because external retry is not allowed")
         }
         val flow = requireNotNull(flows[flowId]) { "Flow '$flowId' not registered" }
         val reset = current.copy(stageStatus = waitingStatus(flow, current.stage))
         val saved = persister.save(reset)
-        historyStore.recordRetried(flowId, saved)
+        currentRetryState?.let { retryState ->
+            retryStateStore.save(
+                retryState.copy(
+                    autoRetryMaxAttempts = null,
+                    nextAutoRetryAt = null,
+                    updatedAt = clock.instant(),
+                ),
+            )
+        }
+        historyStore.recordRetried(flowId, saved, trigger)
         enqueueTick(flowId, flowInstanceId)
     }
 
@@ -170,9 +196,16 @@ class Engine(
         val loaded = persister.load(tick.flowInstanceId)
         if (tick.targetStage != null) {
             val currentStage = historyValueOf(loaded.stage)
-            if (currentStage != tick.targetStage) {
+            val expectedStage = decodeTickTargetStage(tick.targetStage)
+            if (currentStage != expectedStage) {
                 log.info {
                     "Ignoring stale timer tick for ${tick.flowId}/${tick.flowInstanceId}: currentStage=$currentStage targetStage=${tick.targetStage}"
+                }
+                return
+            }
+            if (isAutoRetryTick(tick.targetStage) && loaded.stageStatus != StageStatus.Error) {
+                log.info {
+                    "Ignoring stale auto retry tick for ${tick.flowId}/${tick.flowInstanceId}: currentStatus=${loaded.stageStatus} targetStage=${tick.targetStage}"
                 }
                 return
             }
@@ -180,6 +213,9 @@ class Engine(
 
         when (loaded.stageStatus) {
             StageStatus.Error -> {
+                if (isAutoRetryTick(tick.targetStage) && tryAutoRetry(tick.flowId, flow, persister, loaded)) {
+                    return
+                }
                 log.info { "Tick when ${tick.flowId}/${tick.flowInstanceId} is in ERROR at stage ${loaded.stage}; awaiting retry" }
                 return
             }
@@ -247,6 +283,7 @@ class Engine(
                     when {
                         isDueTimerTick -> Unit
                         existingTick != null -> {
+                            clearRetryState(flowInstanceId)
                             persister.save(data.copy(stageStatus = StageStatus.WaitingForTimer))
                             historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.WaitingForTimer)
                             log.debug { "Timer stage ${data.stage} already has wake-up at ${existingTick.notBefore} ($flowId/$flowInstanceId)" }
@@ -261,6 +298,7 @@ class Engine(
                                     notBefore = wakeUpAt,
                                     targetStage = stageKey,
                                 )
+                                clearRetryState(flowInstanceId)
                                 persister.save(data.copy(stageStatus = StageStatus.WaitingForTimer))
                                 historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.WaitingForTimer)
                                 log.debug { "Timer stage ${data.stage} scheduled wake-up at $wakeUpAt ($flowId/$flowInstanceId)" }
@@ -270,6 +308,7 @@ class Engine(
                     }
 
                     if (def.isTerminal()) {
+                        clearRetryState(flowInstanceId)
                         persister.save(data.copy(stageStatus = StageStatus.Completed))
                         historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Completed)
                         log.info { "Timer stage ${def.stage} completed after wake-up ($flowId/$flowInstanceId)" }
@@ -286,6 +325,7 @@ class Engine(
 
                     val from = data.stage
                     val before = data
+                    clearRetryState(flowInstanceId)
                     data = persister.save(data.copy(stage = nextStage))
                     historyStore.recordStageChanged(flowId, before, from = from, to = nextStage)
                     log.debug { "Timer advanced $from -> $nextStage ($flowId/$flowInstanceId)" }
@@ -295,11 +335,13 @@ class Engine(
                 if (def.eventHandlers.isNotEmpty()) {
                     val next = tryConsumeEventAndAdvance(flowId, def, data, persister, flowInstanceId)
                     if (next != null) {
+                        clearRetryState(flowInstanceId)
                         log.debug { "Event consumed for ${data.stage}; advancing" }
                         data = next
                         continue
                     }
                     // No matching event; release the RUNNING claim.
+                    clearRetryState(flowInstanceId)
                     persister.save(data.copy(stageStatus = StageStatus.WaitingForEvent))
                     historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.WaitingForEvent)
                     // If an event arrived while we were RUNNING, its tick might have been delivered and ignored.
@@ -315,6 +357,7 @@ class Engine(
                     val newState = result ?: data.state
 
                     if (def.isTerminal()) {
+                        clearRetryState(flowInstanceId)
                         persister.save(data.copy(state = newState, stageStatus = StageStatus.Completed))
                         historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Completed)
                         log.info { "Stage ${def.stage} completed after action ($flowId/$flowInstanceId)" }
@@ -331,6 +374,7 @@ class Engine(
 
                     val from = data.stage
                     val before = data
+                    clearRetryState(flowInstanceId)
                     data = persister.save(data.copy(state = newState, stage = nextStage))
                     historyStore.recordStageChanged(flowId, before, from = from, to = nextStage)
                     log.debug { "Action advanced $from -> $nextStage ($flowId/$flowInstanceId)" }
@@ -342,6 +386,7 @@ class Engine(
                     val target = resolveConditionInitialStage(cond, data.state)
                         ?: error("Condition did not resolve to a stage from ${data.stage}")
                     val before = data
+                    clearRetryState(flowInstanceId)
                     data = persister.save(data.copy(stage = target))
                     historyStore.recordStageChanged(flowId, before, from = from, to = target)
                     log.debug { "Condition transition $from -> $target ($flowId/$flowInstanceId)" }
@@ -351,6 +396,7 @@ class Engine(
                 def.nextStage?.let { ns ->
                     val from = data.stage
                     val before = data
+                    clearRetryState(flowInstanceId)
                     data = persister.save(data.copy(stage = ns))
                     historyStore.recordStageChanged(flowId, before, from = from, to = ns)
                     log.debug { "Automatic transition $from -> $ns ($flowId/$flowInstanceId)" }
@@ -358,6 +404,7 @@ class Engine(
                 }
 
                 if (def.isTerminal()) {
+                    clearRetryState(flowInstanceId)
                     persister.save(data.copy(stageStatus = StageStatus.Completed))
                     historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Completed)
                     log.info { "Stage ${data.stage} marked COMPLETED ($flowId/$flowInstanceId)" }
@@ -366,13 +413,90 @@ class Engine(
 
                 error("Stage ${data.stage} has no transitions but is not terminal")
             } catch (ex: Exception) {
+                val retryState = buildRetryState(flowId, data, ex)
                 log.error(ex) { "Failure in $flowId/$flowInstanceId at stage ${data.stage}" }
                 persister.save(data.copy(stageStatus = StageStatus.Error))
-                historyStore.recordError(flowId, data, ex)
+                retryStateStore.save(retryState)
+                historyStore.recordError(flowId, data, ex, retryState)
+                retryState.nextAutoRetryAt?.let { nextAutoRetryAt ->
+                    enqueueTick(
+                        flowId = flowId,
+                        flowInstanceId = flowInstanceId,
+                        notBefore = nextAutoRetryAt,
+                        targetStage = autoRetryTickTarget(data.stage),
+                    )
+                    return
+                }
                 throw ex
             }
         }
     }
+
+    private fun clearRetryState(flowInstanceId: UUID) {
+        retryStateStore.delete(flowInstanceId)
+    }
+
+    private fun buildRetryState(flowId: String, data: InstanceData<Any>, error: Exception): RetryState {
+        val stageName = historyValueOf(data.stage)
+        val previous = retryStateStore.find(data.flowInstanceId)
+        val failedAttemptCount = if (previous?.stage == stageName) previous.failedAttemptCount + 1 else 1
+        val handling = failureClassifiers[flowId]?.classify(
+            context = ActionContext(flowId = flowId, flowInstanceId = data.flowInstanceId, now = clock.instant()),
+            stage = data.stage,
+            state = data.state,
+            error = error,
+            failedAttemptCount = failedAttemptCount,
+        ) ?: FailureHandling()
+        val nextAutoRetryAt = handling.autoRetry
+            ?.takeIf { (failedAttemptCount - 1) < it.maxAttempts }
+            ?.nextDelay(failedAttemptCount)
+            ?.let(clock.instant()::plus)
+
+        return RetryState(
+            flowId = flowId,
+            flowInstanceId = data.flowInstanceId,
+            stage = stageName,
+            failedAttemptCount = failedAttemptCount,
+            externalRetryAllowed = handling.externalRetryAllowed,
+            autoRetryMaxAttempts = handling.autoRetry?.maxAttempts,
+            nextAutoRetryAt = nextAutoRetryAt,
+            lastErrorType = error::class.qualifiedName ?: error::class.java.name,
+            lastErrorMessage = error.message ?: error.toString(),
+            updatedAt = clock.instant(),
+        )
+    }
+
+    private fun tryAutoRetry(
+        flowId: String,
+        flow: Flow<Any, Stage, Event>,
+        persister: StatePersister<Any>,
+        loaded: InstanceData<Any>,
+    ): Boolean {
+        val retryState = retryStateStore.find(loaded.flowInstanceId) ?: return false
+        val nextAutoRetryAt = retryState.nextAutoRetryAt ?: return false
+        if (nextAutoRetryAt.isAfter(clock.instant())) return false
+
+        val reset = loaded.copy(stageStatus = waitingStatus(flow, loaded.stage))
+        val saved = persister.save(reset)
+        retryStateStore.save(
+            retryState.copy(
+                autoRetryMaxAttempts = null,
+                nextAutoRetryAt = null,
+                updatedAt = clock.instant(),
+            ),
+        )
+        historyStore.recordRetried(flowId, saved, RetryTrigger.Auto)
+        enqueueTick(flowId, loaded.flowInstanceId)
+        return true
+    }
+
+    private fun autoRetryTickTarget(stage: Stage): String = AUTO_RETRY_TICK_PREFIX + historyValueOf(stage)
+
+    private fun decodeTickTargetStage(targetStage: String): String =
+        if (targetStage.startsWith(AUTO_RETRY_TICK_PREFIX)) targetStage.removePrefix(AUTO_RETRY_TICK_PREFIX) else targetStage
+
+    private fun isAutoRetryTick(targetStage: String?): Boolean =
+        targetStage?.startsWith(AUTO_RETRY_TICK_PREFIX) == true
 
     private fun tryConsumeEventAndAdvance(
         flowId: String,

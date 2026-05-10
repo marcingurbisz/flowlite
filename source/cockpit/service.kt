@@ -9,7 +9,10 @@ import io.flowlite.FlowLiteFlowStageBreakdownRow
 import io.flowlite.FlowLiteFlowSummaryAggregateRow
 import io.flowlite.FlowLiteInstanceSummaryRepository
 import io.flowlite.FlowLiteInstanceSummaryRow
+import io.flowlite.HistoryEntryType
 import io.flowlite.MermaidGenerator
+import io.flowlite.RetryState
+import io.flowlite.RetryStateStore
 import io.flowlite.Stage
 import io.flowlite.StageStatus
 import io.flowlite.historyValueOf
@@ -42,6 +45,15 @@ data class CockpitInstanceDto(
     val cockpitStatus: StageStatus,
     val lastUpdatedAt: Instant,
     val lastErrorMessage: String? = null,
+    val retryInfo: CockpitRetryInfoDto? = null,
+)
+
+data class CockpitRetryInfoDto(
+    val externalRetryAllowed: Boolean,
+    val autoRetryActive: Boolean,
+    val failedAttemptCount: Int,
+    val autoRetryMaxAttempts: Int? = null,
+    val nextAutoRetryAt: Instant? = null,
 )
 
 enum class CockpitInstanceBucket {
@@ -60,6 +72,7 @@ class CockpitService(
     private val mermaid: MermaidGenerator,
     private val historyRepo: FlowLiteHistoryRepository,
     private val summaryRepo: FlowLiteInstanceSummaryRepository,
+    private val retryStateStore: RetryStateStore,
 ) {
     private val flowMetadataById by lazy {
         engine.registeredFlows().mapValues { (_, flow) ->
@@ -119,7 +132,7 @@ class CockpitService(
         val normalizedCockpitStatusFilter = cockpitStatusFilter?.trim()?.takeIf { it.isNotEmpty() && it != "all" }
         val updatedBefore = longInactiveThreshold?.let { now.minus(it) }
 
-        return summaryRepo.findFilteredSummaries(
+        val rows = summaryRepo.findFilteredSummaries(
             flowId = flowId,
             bucket = bucket?.name,
             status = status?.name,
@@ -130,12 +143,20 @@ class CockpitService(
             showIncompleteOnly = showIncompleteOnly,
             cockpitStatusFilter = normalizedCockpitStatusFilter,
             updatedBefore = updatedBefore,
-        ).map { row -> row.toDto() }
+        )
+        val batchRetryStatesByInstanceId = retryStateStore.findAll(rows.map { it.flowInstanceId })
+            .associateBy { it.flowInstanceId }
+        val retryStatesByInstanceId = if (rows.isNotEmpty() && batchRetryStatesByInstanceId.isEmpty()) {
+            rows.associate { row -> row.flowInstanceId to retryStateStore.find(row.flowInstanceId) }
+        } else {
+            batchRetryStatesByInstanceId
+        }
+        return rows.map { row -> row.toDto(retryStatesByInstanceId[row.flowInstanceId]) }
     }
 
     fun instance(flowId: String, flowInstanceId: UUID): CockpitInstanceDto? {
         return summaryRepo.findSummary(flowId, flowInstanceId)
-            ?.toDto()
+            ?.toDto(retryStateStore.find(flowInstanceId))
     }
 
     fun timeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow> {
@@ -154,8 +175,29 @@ class CockpitService(
         engine.changeStage(flowId, flowInstanceId, stage)
     }
 
-    private fun FlowLiteInstanceSummaryRow.toDto(): CockpitInstanceDto {
+    private fun FlowLiteInstanceSummaryRow.toDto(retryState: RetryState?): CockpitInstanceDto {
         val statusValue = runCatching { StageStatus.valueOf(cockpitStatus) }.getOrDefault(StageStatus.PendingEngine)
+        val retryInfo = when {
+            statusValue != StageStatus.Error -> null
+            retryState != null -> CockpitRetryInfoDto(
+                externalRetryAllowed = retryState.externalRetryAllowed,
+                autoRetryActive = retryState.autoRetryActive,
+                failedAttemptCount = retryState.failedAttemptCount,
+                autoRetryMaxAttempts = retryState.autoRetryMaxAttempts,
+                nextAutoRetryAt = retryState.nextAutoRetryAt,
+            )
+            else -> historyRepo.findTimeline(flowId, flowInstanceId)
+                .lastOrNull { it.type == HistoryEntryType.Error }
+                ?.let { historyRow ->
+                    CockpitRetryInfoDto(
+                        externalRetryAllowed = historyRow.externalRetryAllowed == true,
+                        autoRetryActive = historyRow.autoRetryMaxAttempts != null && historyRow.nextAutoRetryAt != null,
+                        failedAttemptCount = historyRow.failedAttemptCount ?: 0,
+                        autoRetryMaxAttempts = historyRow.autoRetryMaxAttempts,
+                        nextAutoRetryAt = historyRow.nextAutoRetryAt,
+                    )
+                }
+        }
         return CockpitInstanceDto(
             flowId = flowId,
             flowInstanceId = flowInstanceId,
@@ -163,6 +205,7 @@ class CockpitService(
             cockpitStatus = statusValue,
             lastUpdatedAt = updatedAt,
             lastErrorMessage = lastErrorMessage,
+            retryInfo = retryInfo,
         )
     }
 

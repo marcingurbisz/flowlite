@@ -81,11 +81,17 @@ export const historyDetailsLabel = (event: HistoryEntryDto) => {
     case 'EventAppended':
       return event.event ? `event=${event.event}` : '—';
     case 'StatusChanged':
-    case 'Retried':
     case 'Cancelled':
       return event.fromStatus || event.toStatus
         ? `status: ${event.fromStatus ?? '—'} → ${event.toStatus ?? '—'}`
         : '—';
+    case 'Retried':
+      return [
+        event.fromStatus || event.toStatus
+          ? `status: ${event.fromStatus ?? '—'} → ${event.toStatus ?? '—'}`
+          : null,
+        event.retryTrigger ? `trigger=${event.retryTrigger}` : null,
+      ].filter(Boolean).join(' • ') || '—';
     case 'StageChanged':
       return [
         event.fromStage || event.toStage ? `${event.fromStage ?? '—'} → ${event.toStage ?? '—'}` : null,
@@ -100,6 +106,9 @@ export const historyDetailsLabel = (event: HistoryEntryDto) => {
       return [
         event.fromStatus || event.toStatus ? `status: ${event.fromStatus ?? '—'} → ${event.toStatus ?? '—'}` : null,
         event.errorMessage ? `error=${event.errorMessage}` : null,
+        event.failedAttemptCount ? `failedAttempt=${event.failedAttemptCount}` : null,
+        event.externalRetryAllowed ? 'external retry allowed' : null,
+        event.nextAutoRetryAt ? `nextAutoRetryAt=${event.nextAutoRetryAt}` : null,
       ].filter(Boolean).join(' • ') || '—';
   }
 };

@@ -265,6 +265,25 @@ data class FlowLiteHistoryRow(
     val errorType: String? = null,
     val errorMessage: String? = null,
     val errorStackTrace: String? = null,
+    val retryTrigger: String? = null,
+    val failedAttemptCount: Int? = null,
+    val autoRetryMaxAttempts: Int? = null,
+    val nextAutoRetryAt: Instant? = null,
+    val externalRetryAllowed: Boolean? = null,
+)
+
+@Table("FLOWLITE_RETRY_STATE")
+data class FlowLiteRetryStateRow(
+    @Id val flowInstanceId: UUID,
+    val flowId: String,
+    val stage: String,
+    val failedAttemptCount: Int,
+    val externalRetryAllowed: Boolean,
+    val autoRetryMaxAttempts: Int? = null,
+    val nextAutoRetryAt: Instant? = null,
+    val lastErrorType: String? = null,
+    val lastErrorMessage: String? = null,
+    val updatedAt: Instant,
 )
 
 @Table("FLOWLITE_INSTANCE_SUMMARY")
@@ -305,6 +324,10 @@ interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
         """,
     )
     fun findTimeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow>
+}
+
+interface FlowLiteRetryStateRepository : CrudRepository<FlowLiteRetryStateRow, UUID> {
+    fun findAllByFlowInstanceIdIn(flowInstanceIds: Collection<UUID>): List<FlowLiteRetryStateRow>
 }
 
 interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSummaryRow, UUID> {
@@ -414,6 +437,11 @@ class SpringDataJdbcHistoryStore(
                 errorType = entry.errorType,
                 errorMessage = entry.errorMessage,
                 errorStackTrace = entry.errorStackTrace,
+                retryTrigger = entry.retryTrigger?.name,
+                failedAttemptCount = entry.failedAttemptCount,
+                autoRetryMaxAttempts = entry.autoRetryMaxAttempts,
+                nextAutoRetryAt = entry.nextAutoRetryAt,
+                externalRetryAllowed = entry.externalRetryAllowed,
             ),
         )
 
@@ -429,6 +457,27 @@ class SpringDataJdbcHistoryStore(
             updatedAt = entry.occurredAt,
         )).apply(entry)
         summaryRepo.save(next)
+    }
+}
+
+class SpringDataJdbcRetryStateStore(
+    private val repo: FlowLiteRetryStateRepository,
+) : RetryStateStore {
+    override fun save(state: RetryState): RetryState {
+        repo.save(state.toRow())
+        return state
+    }
+
+    override fun find(flowInstanceId: UUID): RetryState? =
+        repo.findById(flowInstanceId).orElse(null)?.toRetryState()
+
+    override fun findAll(flowInstanceIds: Collection<UUID>): List<RetryState> {
+        if (flowInstanceIds.isEmpty()) return emptyList()
+        return repo.findAllById(flowInstanceIds).map { it.toRetryState() }
+    }
+
+    override fun delete(flowInstanceId: UUID) {
+        repo.deleteById(flowInstanceId)
     }
 }
 
@@ -513,6 +562,7 @@ fun FlowLiteHistoryRow.toHistoryEntry() =
             stage = stage,
             fromStatus = fromStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
             toStatus = toStatus?.let { runCatching { StageStatus.valueOf(it) }.getOrNull() },
+            retryTrigger = retryTrigger?.let { runCatching { RetryTrigger.valueOf(it) }.getOrNull() },
         )
         HistoryEntryType.ManualStageChanged -> HistoryEntry.ManualStageChanged(
             flowId = flowId,
@@ -541,5 +591,37 @@ fun FlowLiteHistoryRow.toHistoryEntry() =
             errorType = errorType,
             errorMessage = errorMessage,
             errorStackTrace = errorStackTrace,
+            failedAttemptCount = failedAttemptCount,
+            autoRetryMaxAttempts = autoRetryMaxAttempts,
+            nextAutoRetryAt = nextAutoRetryAt,
+            externalRetryAllowed = externalRetryAllowed,
         )
     }
+
+private fun RetryState.toRow() =
+    FlowLiteRetryStateRow(
+        flowInstanceId = flowInstanceId,
+        flowId = flowId,
+        stage = stage,
+        failedAttemptCount = failedAttemptCount,
+        externalRetryAllowed = externalRetryAllowed,
+        autoRetryMaxAttempts = autoRetryMaxAttempts,
+        nextAutoRetryAt = nextAutoRetryAt,
+        lastErrorType = lastErrorType,
+        lastErrorMessage = lastErrorMessage,
+        updatedAt = updatedAt,
+    )
+
+private fun FlowLiteRetryStateRow.toRetryState() =
+    RetryState(
+        flowId = flowId,
+        flowInstanceId = flowInstanceId,
+        stage = stage,
+        failedAttemptCount = failedAttemptCount,
+        externalRetryAllowed = externalRetryAllowed,
+        autoRetryMaxAttempts = autoRetryMaxAttempts,
+        nextAutoRetryAt = nextAutoRetryAt,
+        lastErrorType = lastErrorType,
+        lastErrorMessage = lastErrorMessage,
+        updatedAt = updatedAt,
+    )

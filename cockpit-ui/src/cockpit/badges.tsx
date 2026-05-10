@@ -1,5 +1,5 @@
-import { AlertCircle, CheckCircle, Clock, Play, X } from 'lucide-react';
-import type { CockpitStatus } from './types';
+import { AlertCircle, CheckCircle, Clock, Play, RotateCcw, X } from 'lucide-react';
+import type { CockpitStatus, RetryInfoDto } from './types';
 
 const statusConfig: Record<CockpitStatus, { bg: string; text: string; label: string }> = {
   Running: { bg: 'bg-blue-500/20', text: 'text-blue-400', label: 'Running' },
@@ -23,5 +23,25 @@ export const StatusBadge = ({ status }: { status: CockpitStatus }) => {
       {status === 'Running' && <Play size={12} />}
       {style.label}
     </span>
+  );
+};
+
+export const RetryInfoBadges = ({ retryInfo }: { retryInfo: RetryInfoDto | null }) => {
+  if (!retryInfo) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 mt-2">
+      {retryInfo.externalRetryAllowed && (
+        <span className="px-2 py-1 rounded text-[11px] font-mono bg-sky-500/15 text-sky-300 border border-sky-500/30">
+          External retry allowed
+        </span>
+      )}
+      {retryInfo.autoRetryActive && (
+        <span className="px-2 py-1 rounded text-[11px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30 inline-flex items-center gap-1">
+          <RotateCcw size={11} />
+          Auto retry
+        </span>
+      )}
+    </div>
   );
 };

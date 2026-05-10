@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { ChevronRight, Database, RefreshCw, Search, X } from 'lucide-react';
-import { StatusBadge } from '../badges';
+import { RetryInfoBadges, StatusBadge } from '../badges';
 import type { StatusFilter, UiInstance } from '../types';
 import { formatDateTime } from '../utils';
 
@@ -186,7 +186,12 @@ export const InstancesView = ({
                 </td>
                 <td data-testid="instance-flow-id" className="px-4 py-3 font-mono text-xs text-zinc-300">{instance.flowId}</td>
                 <td data-testid={`instance-stage-${instance.id}`} className="px-4 py-3 font-mono text-xs text-zinc-400">{instance.stage || '—'}</td>
-                <td data-testid={`instance-status-${instance.id}`} className="px-4 py-3"><StatusBadge status={instance.cockpitStatus} /></td>
+                <td data-testid={`instance-status-${instance.id}`} className="px-4 py-3">
+                  <div>
+                    <StatusBadge status={instance.cockpitStatus} />
+                    {instance.cockpitStatus === 'Error' && <RetryInfoBadges retryInfo={instance.retryInfo} />}
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-xs text-zinc-500">{formatDateTime(instance.updatedAt)}</td>
               </tr>
             ))}

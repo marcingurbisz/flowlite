@@ -1,11 +1,45 @@
-## On render I have now this log
+## [DONE 2026-05-10.1] On render I have now this log
 memory diagnostics config enabled=false requestedIntervalSeconds=60 effectiveIntervalSeconds=60 rawEnabledEnv=null rawIntervalEnv=null
 
-## Concept for "Auto-retry" and "User retriable"
+> Agent:
+> `rawEnabledEnv=null` and `rawIntervalEnv=null` mean the Render runtime process still does not receive those environment variables.
+> Changes: no further runtime code changes were needed for this item because the diagnostics now expose the root cause clearly.
+> Validation: reviewed the emitted log and previous local verification that Spring binding works when env vars are actually present.
+> Learning: this is now a deployment/configuration issue on Render, not a code-path or property-binding issue in FlowLite.
+
+## [DONE 2026-05-10.1] Concept for "Auto-retry" and "User retriable"
 Added few inline remarks to [AutoRetryConcept.md](docs/AutoRetryConcept.md). Please think about them.
 Please implement MVP including "external-retry" too, but without any changes in our test app to trigger external retries.
 Cover it with tests including playwright.
 Please give me screenshots showing how this looks like in cockpit.
+
+> Agent:
+> Answered the inline remarks in the implementation and refreshed [docs/AutoRetryConcept.md](docs/AutoRetryConcept.md) to match the shipped model.
+> Changes: added `FailureClassifier`/`FailureHandling`/`AutoRetryPlan`, durable retry state plus retry-aware history metadata, `Engine.externalRetry(...)`, Cockpit retry badges/details, and Playwright screenshot capture without adding new external-retry triggers to the test app.
+> Validation: `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`; `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`.
+> Learning: keeping one `Error` status plus separate retry metadata gave enough room for `Auto`, `External`, and `Cockpit` retry distinctions without inflating the runtime status model.
+
+## [DONE 2026-05-10.1] Exploratory tests
+
+> Agent:
+> Ran `./gradlew runPerfTestApp` for a large local showcase dataset, verified the app responds with `HTTP/1.1 200` on `/cockpit`, and reviewed the generated Cockpit screenshots for the new retry badges/details.
+> Changes: none.
+> Validation: `curl -I http://127.0.0.1:8080/cockpit`; visual smoke on Playwright artifacts `build/reports/playwright/screenshots/cockpit-retry-badges-list.png` and `build/reports/playwright/screenshots/cockpit-retry-badges-details.png`.
+> Learning: no obvious visual regressions were visible in the retry UI slice; browser automation from the chat browser could not reach container localhost, so the visual smoke used saved Playwright artifacts instead.
+
+## [DONE 2026-05-10.1] Review own changes
+
+> Agent:
+> Reviewed engine retry flow, JDBC persistence/history mapping, Cockpit retry rendering, and the new tests for both execution and UI coverage.
+> Changes: added a Cockpit fallback to read retry metadata from the latest error history row so the UI stays informative even when a retry-state lookup does not supply data.
+> Validation: same focused test suite as above plus screenshot inspection.
+> Learning: the error history is a strong secondary source of truth for retry UI, not just an audit trail.
+
+## [FOR HUMAN REVIEW] Retry metadata source of truth
+
+> Agent:
+> Cockpit now prefers retry-state rows but falls back to the latest error history row when retry metadata is unavailable from that store. The runtime path writes both, so the UI stays correct.
+> If you want a stricter architecture later, we should decide whether to keep both sources intentionally or simplify to one authoritative read model.
 
 ## [ONHOLD] Frontend and backend sources together
 Moving cockpit-ui/src under source/cockpit. Pros and cons?

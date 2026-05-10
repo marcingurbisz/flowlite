@@ -9,7 +9,9 @@ import io.flowlite.PendingEventRepository
 import io.flowlite.StageStatus
 import io.flowlite.SpringDataJdbcEventStore
 import io.flowlite.SpringDataJdbcHistoryStore
+import io.flowlite.SpringDataJdbcRetryStateStore
 import io.flowlite.SpringDataJdbcTickScheduler
+import io.flowlite.RetryStateStore
 import io.flowlite.historyValueOf
 import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
@@ -86,6 +88,10 @@ object Beans {
             SpringDataJdbcHistoryStore(bean<FlowLiteHistoryRepository>(), bean<FlowLiteInstanceSummaryRepository>())
         }
 
+        registerBean<RetryStateStore> {
+            SpringDataJdbcRetryStateStore(bean())
+        }
+
         registerBean {
             SpringDataOrderConfirmationPersister(bean<OrderConfirmationRepository>())
         }
@@ -116,6 +122,7 @@ object Beans {
                 eventStore = eventStore,
                 tickScheduler = tickScheduler,
                 historyStore = historyStore,
+                retryStateStore = bean(),
                 clock = bean<AdjustableClock>(),
             ).also { engine ->
                 engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)
@@ -152,6 +159,7 @@ object Beans {
                 mermaid = bean<io.flowlite.MermaidGenerator>(),
                 historyRepo = bean<FlowLiteHistoryRepository>(),
                 summaryRepo = bean<FlowLiteInstanceSummaryRepository>(),
+                retryStateStore = bean(),
             )
         }
 

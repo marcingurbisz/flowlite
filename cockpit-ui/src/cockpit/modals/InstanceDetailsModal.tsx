@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { ChevronRight, RefreshCw, X } from 'lucide-react';
 import { MermaidDiagram } from '../MermaidDiagram';
-import { StatusBadge } from '../badges';
+import { RetryInfoBadges, StatusBadge } from '../badges';
 import type { FlowDto, HistoryEntryDto, UiInstance } from '../types';
 import { formatDateTime, historyDetailsLabel, historyStageLabel } from '../utils';
 
@@ -72,7 +72,13 @@ export const InstanceDetailsModal = ({
           <div className="grid grid-cols-2 gap-4">
             <div><div className="text-xs text-zinc-500 mb-1">Flow ID</div><div className="text-sm font-mono text-zinc-300">{selectedInstance.flowId}</div></div>
             <div><div className="text-xs text-zinc-500 mb-1">Current Stage</div><div data-testid="instance-details-stage" className="text-sm font-mono text-zinc-300">{selectedInstance.stage || '—'}</div></div>
-            <div><div className="text-xs text-zinc-500 mb-1">Status</div><div data-testid="instance-details-status"><StatusBadge status={selectedInstance.cockpitStatus} /></div></div>
+            <div>
+              <div className="text-xs text-zinc-500 mb-1">Status</div>
+              <div data-testid="instance-details-status">
+                <StatusBadge status={selectedInstance.cockpitStatus} />
+                {selectedInstance.cockpitStatus === 'Error' && <RetryInfoBadges retryInfo={selectedInstance.retryInfo} />}
+              </div>
+            </div>
             <div><div className="text-xs text-zinc-500 mb-1">Updated At</div><div className="text-sm text-zinc-300">{formatDateTime(selectedInstance.updatedAt)}</div></div>
           </div>
         </div>
@@ -92,6 +98,20 @@ export const InstanceDetailsModal = ({
           <div>
             <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-wide mb-3">Error Information</h4>
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-3">
+              {selectedInstance.retryInfo && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-zinc-500 mb-2">Failed Attempts</div>
+                    <div data-testid="instance-error-attempt-count" className="text-sm text-zinc-300">{selectedInstance.retryInfo.failedAttemptCount}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-zinc-500 mb-2">Next Auto Retry</div>
+                    <div data-testid="instance-next-auto-retry" className="text-sm text-zinc-300">
+                      {selectedInstance.retryInfo.nextAutoRetryAt ? formatDateTime(new Date(selectedInstance.retryInfo.nextAutoRetryAt)) : '—'}
+                    </div>
+                  </div>
+                </div>
+              )}
               <div><div className="text-xs text-zinc-500 mb-2">Error Message</div><div className="text-sm text-zinc-300">{selectedInstance.errorMessage}</div></div>
               {latestErrorStackTrace && (
                 <div>

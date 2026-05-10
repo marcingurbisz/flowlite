@@ -109,6 +109,96 @@ interface HistoryStore {
     fun append(entry: HistoryEntry)
 }
 
+interface FailureClassifier<T : Any> {
+    fun classify(
+        context: ActionContext,
+        stage: Stage,
+        state: T,
+        error: Exception,
+        failedAttemptCount: Int,
+    ): FailureHandling
+}
+
+data class FailureHandling(
+    val autoRetry: AutoRetryPlan? = null,
+    val externalRetryAllowed: Boolean = false,
+)
+
+data class AutoRetryPlan(
+    val maxAttempts: Int,
+    val backoffStrategy: BackoffStrategy,
+) {
+    init {
+        require(maxAttempts >= 1) { "maxAttempts must be >= 1" }
+    }
+
+    fun nextDelay(failedAttemptCount: Int): java.time.Duration = backoffStrategy.delayForAttempt(failedAttemptCount)
+}
+
+fun interface BackoffStrategy {
+    fun delayForAttempt(failedAttemptCount: Int): java.time.Duration
+
+    companion object {
+        fun fixed(delay: java.time.Duration) = BackoffStrategy { _ -> delay }
+
+        fun exponential(
+            initialDelay: java.time.Duration,
+            multiplier: Int = 2,
+            maxDelay: java.time.Duration? = null,
+        ) = BackoffStrategy { failedAttemptCount ->
+            require(multiplier >= 1) { "multiplier must be >= 1" }
+            val exponent = (failedAttemptCount - 1).coerceAtLeast(0)
+            val rawMillis = generateSequence(initialDelay.toMillis()) { previous ->
+                previous * multiplier
+            }.drop(exponent).first()
+            val cappedMillis = maxDelay?.toMillis()?.let { limit -> minOf(rawMillis, limit) } ?: rawMillis
+            java.time.Duration.ofMillis(cappedMillis)
+        }
+    }
+}
+
+enum class RetryTrigger {
+    Auto,
+    External,
+    Cockpit,
+}
+
+data class RetryState(
+    val flowId: String,
+    val flowInstanceId: UUID,
+    val stage: String,
+    val failedAttemptCount: Int,
+    val externalRetryAllowed: Boolean,
+    val autoRetryMaxAttempts: Int? = null,
+    val nextAutoRetryAt: Instant? = null,
+    val lastErrorType: String? = null,
+    val lastErrorMessage: String? = null,
+    val updatedAt: Instant = Instant.now(),
+) {
+    val autoRetryActive: Boolean
+        get() = autoRetryMaxAttempts != null && nextAutoRetryAt != null
+}
+
+interface RetryStateStore {
+    fun save(state: RetryState): RetryState
+
+    fun find(flowInstanceId: UUID): RetryState?
+
+    fun findAll(flowInstanceIds: Collection<UUID>): List<RetryState>
+
+    fun delete(flowInstanceId: UUID)
+}
+
+object NoopRetryStateStore : RetryStateStore {
+    override fun save(state: RetryState): RetryState = state
+
+    override fun find(flowInstanceId: UUID): RetryState? = null
+
+    override fun findAll(flowInstanceIds: Collection<UUID>): List<RetryState> = emptyList()
+
+    override fun delete(flowInstanceId: UUID) = Unit
+}
+
 enum class HistoryEntryType {
     Started,
     EventAppended,
@@ -134,6 +224,11 @@ sealed class HistoryEntry(
     open val errorType: String? = null,
     open val errorMessage: String? = null,
     open val errorStackTrace: String? = null,
+    open val retryTrigger: RetryTrigger? = null,
+    open val failedAttemptCount: Int? = null,
+    open val autoRetryMaxAttempts: Int? = null,
+    open val nextAutoRetryAt: Instant? = null,
+    open val externalRetryAllowed: Boolean? = null,
 ) {
     data class Started(
         override val flowId: String,
@@ -204,6 +299,7 @@ sealed class HistoryEntry(
         override val stage: String? = null,
         override val fromStatus: StageStatus? = StageStatus.Error,
         override val toStatus: StageStatus? = StageStatus.PendingEngine,
+        override val retryTrigger: RetryTrigger? = null,
     ) : HistoryEntry(
         flowId = flowId,
         flowInstanceId = flowInstanceId,
@@ -212,6 +308,7 @@ sealed class HistoryEntry(
         stage = stage,
         fromStatus = fromStatus,
         toStatus = toStatus,
+        retryTrigger = retryTrigger,
     )
 
     data class ManualStageChanged(
@@ -260,6 +357,10 @@ sealed class HistoryEntry(
         override val errorType: String? = null,
         override val errorMessage: String? = null,
         override val errorStackTrace: String? = null,
+        override val failedAttemptCount: Int? = null,
+        override val autoRetryMaxAttempts: Int? = null,
+        override val nextAutoRetryAt: Instant? = null,
+        override val externalRetryAllowed: Boolean? = null,
     ) : HistoryEntry(
         flowId = flowId,
         flowInstanceId = flowInstanceId,
@@ -271,6 +372,10 @@ sealed class HistoryEntry(
         errorType = errorType,
         errorMessage = errorMessage,
         errorStackTrace = errorStackTrace,
+        failedAttemptCount = failedAttemptCount,
+        autoRetryMaxAttempts = autoRetryMaxAttempts,
+        nextAutoRetryAt = nextAutoRetryAt,
+        externalRetryAllowed = externalRetryAllowed,
     )
 }
 
@@ -351,7 +456,7 @@ internal fun HistoryStore.recordStageChanged(flowId: String, data: InstanceData<
     )
 }
 
-internal fun HistoryStore.recordRetried(flowId: String, data: InstanceData<Any>) {
+internal fun HistoryStore.recordRetried(flowId: String, data: InstanceData<Any>, trigger: RetryTrigger) {
     appendBestEffort(
         HistoryEntry.Retried(
             flowId = flowId,
@@ -359,6 +464,7 @@ internal fun HistoryStore.recordRetried(flowId: String, data: InstanceData<Any>)
             stage = historyValueOf(data.stage),
             fromStatus = StageStatus.Error,
             toStatus = data.stageStatus,
+            retryTrigger = trigger,
         ),
     )
 }
@@ -383,7 +489,12 @@ internal fun HistoryStore.recordManualStageChanged(
     )
 }
 
-internal fun HistoryStore.recordError(flowId: String, data: InstanceData<Any>, ex: Exception) {
+internal fun HistoryStore.recordError(
+    flowId: String,
+    data: InstanceData<Any>,
+    ex: Exception,
+    retryState: RetryState? = null,
+) {
     appendBestEffort(
         HistoryEntry.Error(
             flowId = flowId,
@@ -394,6 +505,10 @@ internal fun HistoryStore.recordError(flowId: String, data: InstanceData<Any>, e
             errorType = ex::class.qualifiedName ?: ex::class.java.name,
             errorMessage = ex.message ?: ex.toString(),
             errorStackTrace = ex.stackTraceToString(),
+            failedAttemptCount = retryState?.failedAttemptCount,
+            autoRetryMaxAttempts = retryState?.autoRetryMaxAttempts,
+            nextAutoRetryAt = retryState?.nextAutoRetryAt,
+            externalRetryAllowed = retryState?.externalRetryAllowed,
         ),
     )
 }

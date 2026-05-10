@@ -8,6 +8,7 @@ export interface ConfirmationActionState {
 
 export type CockpitStatus = 'Running' | 'WaitingForTimer' | 'WaitingForEvent' | 'PendingEngine' | 'Error' | 'Completed' | 'Cancelled';
 export type HistoryEventType = 'Started' | 'EventAppended' | 'StatusChanged' | 'StageChanged' | 'Retried' | 'ManualStageChanged' | 'Cancelled' | 'Error';
+export type RetryTrigger = 'Auto' | 'External' | 'Cockpit';
 export type ActiveView = 'flows' | 'errors' | 'long-running' | 'instances';
 export type StatusFilter = 'all' | CockpitStatus;
 export type LongRunningStatusFilter = 'default' | 'all' | Extract<CockpitStatus, 'Running' | 'WaitingForTimer' | 'WaitingForEvent' | 'PendingEngine'>;
@@ -28,6 +29,14 @@ export interface FlowDto {
   }>;
 }
 
+export interface RetryInfoDto {
+  externalRetryAllowed: boolean;
+  autoRetryActive: boolean;
+  failedAttemptCount: number;
+  autoRetryMaxAttempts: number | null;
+  nextAutoRetryAt: string | null;
+}
+
 export interface InstanceDto {
   flowId: string;
   flowInstanceId: string;
@@ -35,6 +44,7 @@ export interface InstanceDto {
   cockpitStatus: CockpitStatus;
   lastUpdatedAt: string;
   lastErrorMessage: string | null;
+  retryInfo: RetryInfoDto | null;
 }
 
 export interface ErrorGroupDto {
@@ -55,6 +65,11 @@ export interface HistoryEntryDto {
   errorType?: string | null;
   errorMessage?: string | null;
   errorStackTrace?: string | null;
+  retryTrigger?: RetryTrigger | null;
+  failedAttemptCount?: number | null;
+  autoRetryMaxAttempts?: number | null;
+  nextAutoRetryAt?: string | null;
+  externalRetryAllowed?: boolean | null;
 }
 
 export interface UiInstance {
@@ -65,6 +80,7 @@ export interface UiInstance {
   updatedAt: Date;
   createdAt: Date;
   errorMessage: string | null;
+  retryInfo: RetryInfoDto | null;
 }
 
 export interface CockpitLocationState {
@@ -115,4 +131,5 @@ export const toUiInstance = (instance: InstanceDto): UiInstance => ({
   updatedAt: new Date(instance.lastUpdatedAt),
   createdAt: new Date(instance.lastUpdatedAt),
   errorMessage: instance.lastErrorMessage,
+  retryInfo: instance.retryInfo,
 });

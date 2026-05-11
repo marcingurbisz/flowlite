@@ -16,7 +16,7 @@
 > Validation: `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`, `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`, `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`.
 > Learning: the current retry shape is still coherent as `Error` + separate retry metadata; the main remaining trade-off is whether Cockpit should eventually denormalize retry data into the instance summary projection.
 
-## [REOPEN 2026-05-10.1] On render I have now this log
+## [FOR HUMAN 2026-05-10.1] On render I have now this log
 memory diagnostics config enabled=false requestedIntervalSeconds=60 effectiveIntervalSeconds=60 rawEnabledEnv=null rawIntervalEnv=null
 
 > Agent:
@@ -32,6 +32,8 @@ memory diagnostics config enabled=false requestedIntervalSeconds=60 effectiveInt
 > 1. Blueprint env vars must exist under the service `envVars` or a linked env group.
 > 2. Dashboard env-var changes only affect runtime after a deploy; `Save only` does not redeploy.
 > Practical fix: verify the FlowLite service actually defines these vars in Render for the active environment, then trigger `Save and deploy` or `Save, rebuild, and deploy`. If the values are meant to come from `render.yaml`, ensure they are under that service's `envVars` section and that the Blueprint sync was applied to the existing service. If they are secrets defined with `sync: false`, Render will not backfill them on Blueprint updates, so they must be added manually in the Dashboard.
+> Additional check: confirmed that [render.yaml](/workspaces/workplace/flowlite/render.yaml) in this repo already defines both `FLOWLITE_DIAGNOSTICS_MEMORY_LOG_ENABLED` and `FLOWLITE_DIAGNOSTICS_MEMORY_LOG_INTERVAL_SECONDS` under the `flowlite-test-instance` service.
+> Conclusion: the remaining fix is outside the repo. Most likely the existing Render service has not picked up the Blueprint env vars for the active environment yet, or it needs an explicit sync/redeploy from the Dashboard.
 
 ## Why from and to status for Retried?
 case 'Retried':
@@ -122,6 +124,13 @@ What about testing it in a way that we start some process which fails, and then 
 > Reviewed the focused diff for `badges.tsx`, `utils.ts`, `CockpitPlaywrightTest.kt`, `persistance.kt`, and this TODO ledger.
 > Validation: checked the diff for unnecessary complexity, missing test updates, and mismatches between the UI wording and the assertions.
 > Learning: no new in-scope issues found beyond the already documented future consideration of a real-execution retry scenario for Cockpit Playwright coverage.
+
+## [DONE 2026-05-11.2] Self-review of Render item closure
+
+> Agent:
+> Reviewed the follow-up change that reclassified the remaining Render diagnostics item from repo work to human-side deployment work.
+> Validation: confirmed [render.yaml](/workspaces/workplace/flowlite/render.yaml) already contains the two diagnostics env vars and that no non-`DONE`/non-`FOR HUMAN` items remain in this TODO ledger.
+> Learning: the earlier stop was wrong because one item still looked open in the ledger even though the repo-side investigation was already complete.
 
 ## [FOR HUMAN] Review git changes
 * Review perf(engine): raise tick worker default 3/25/26, 9:13 AM marcingurbisz

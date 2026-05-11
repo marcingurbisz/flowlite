@@ -86,12 +86,7 @@ export const historyDetailsLabel = (event: HistoryEntryDto) => {
         ? `status: ${event.fromStatus ?? '—'} → ${event.toStatus ?? '—'}`
         : '—';
     case 'Retried':
-      return [
-        event.fromStatus || event.toStatus
-          ? `status: ${event.fromStatus ?? '—'} → ${event.toStatus ?? '—'}`
-          : null,
-        event.retryTrigger ? `trigger=${event.retryTrigger}` : null,
-      ].filter(Boolean).join(' • ') || '—';
+      return event.retryTrigger ? `trigger=${event.retryTrigger}` : '—';
     case 'StageChanged':
       return [
         event.fromStage || event.toStage ? `${event.fromStage ?? '—'} → ${event.toStage ?? '—'}` : null,

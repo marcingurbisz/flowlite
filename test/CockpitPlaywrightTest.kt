@@ -864,8 +864,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
             navigateToCockpit(page, "tab=instances")
 
             page.getByTestId("instances-search").fill(fixture.orderErrorRetryId.toString())
-            assertThat(page.getByTestId("instance-status-${fixture.orderErrorRetryId}")).containsText("External retry allowed")
-            assertThat(page.getByTestId("instance-status-${fixture.orderErrorRetryId}")).containsText("Auto retry")
+            assertThat(page.getByTestId("instance-status-${fixture.orderErrorRetryId}")).containsText("ExternallyRetryable")
+            assertThat(page.getByTestId("instance-status-${fixture.orderErrorRetryId}")).containsText("AutoRetry")
             saveScreenshot(page, "cockpit-retry-badges-list.png")
 
             instanceRow(page, fixture.orderErrorRetryId).click()
@@ -881,8 +881,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
             then("it renders retry badges, retry details, and retry history triggers") {
                 verifyRecordedContext(session) { currentPage ->
                     retryHistoryDetails.shouldContain("trigger=External")
-                    assertThat(currentPage.getByTestId("instance-details-status")).containsText("External retry allowed")
-                    assertThat(currentPage.getByTestId("instance-details-status")).not().containsText("Auto retry")
+                    assertThat(currentPage.getByTestId("instance-details-status")).containsText("ExternallyRetryable")
+                    assertThat(currentPage.getByTestId("instance-details-status")).not().containsText("AutoRetry")
                 }
             }
         }

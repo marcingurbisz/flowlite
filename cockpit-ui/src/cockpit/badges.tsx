@@ -15,7 +15,7 @@ export const StatusBadge = ({ status }: { status: CockpitStatus }) => {
   const style = statusConfig[status];
 
   return (
-    <span className={`px-2 py-1 rounded text-xs font-mono ${style.bg} ${style.text} flex items-center gap-1`}>
+    <span className={`px-2 py-1 rounded text-xs font-mono ${style.bg} ${style.text} inline-flex items-center gap-1`}>
       {status === 'Error' && <AlertCircle size={12} />}
       {status === 'Completed' && <CheckCircle size={12} />}
       {status === 'Cancelled' && <X size={12} />}
@@ -30,16 +30,16 @@ export const RetryInfoBadges = ({ retryInfo }: { retryInfo: RetryInfoDto | null 
   if (!retryInfo) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mt-2">
+    <div className="inline-flex flex-wrap items-center gap-1 align-middle ml-2">
       {retryInfo.externalRetryAllowed && (
-        <span className="px-2 py-1 rounded text-[11px] font-mono bg-sky-500/15 text-sky-300 border border-sky-500/30">
-          External retry allowed
+        <span className="px-2 py-1 rounded text-[11px] font-mono bg-sky-500/15 text-sky-300 border border-sky-500/30 whitespace-nowrap">
+          ExternallyRetryable
         </span>
       )}
       {retryInfo.autoRetryActive && (
-        <span className="px-2 py-1 rounded text-[11px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30 inline-flex items-center gap-1">
+        <span className="px-2 py-1 rounded text-[11px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30 inline-flex items-center gap-1 whitespace-nowrap">
           <RotateCcw size={11} />
-          Auto retry
+          AutoRetry
         </span>
       )}
     </div>

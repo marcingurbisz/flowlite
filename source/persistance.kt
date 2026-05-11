@@ -140,20 +140,6 @@ fun interface BackoffStrategy {
 
     companion object {
         fun fixed(delay: java.time.Duration) = BackoffStrategy { _ -> delay }
-
-        fun exponential(
-            initialDelay: java.time.Duration,
-            multiplier: Int = 2,
-            maxDelay: java.time.Duration? = null,
-        ) = BackoffStrategy { failedAttemptCount ->
-            require(multiplier >= 1) { "multiplier must be >= 1" }
-            val exponent = (failedAttemptCount - 1).coerceAtLeast(0)
-            val rawMillis = generateSequence(initialDelay.toMillis()) { previous ->
-                previous * multiplier
-            }.drop(exponent).first()
-            val cappedMillis = maxDelay?.toMillis()?.let { limit -> minOf(rawMillis, limit) } ?: rawMillis
-            java.time.Duration.ofMillis(cappedMillis)
-        }
     }
 }
 

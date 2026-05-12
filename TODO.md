@@ -41,12 +41,18 @@ Do we need to decode stage into a tick?
 > Yes, we still need it. Delayed timer and auto-retry ticks can fire after the instance has already moved elsewhere. Without `targetStage`, a stale delayed tick could wake the instance in the wrong stage and incorrectly re-enter processing. The stage tag is what makes those delayed ticks safe to ignore.
 >> MG: What are the biggest consequences if stale tick would be processed? Process moves from timer to next stage? Any other? 
 
-## [REOPEN] We have clearRetryState in so many places
+## [DONE 2026-05-12.2] We have clearRetryState in so many places
 Why not to clear it before adding a new entry?
 
 > Agent:
 > Because that would lose information needed by the failure path. We want retry metadata to survive until successful progress or an intentional release to a waiting status. Clearing only on successful progression/wait handoff preserves the failed-attempt count for repeated failures in the same stage. I agree the call sites are repetitive; if we revisit this area, the right cleanup is extracting the common successful-exit paths, not clearing earlier.
 >> MG: Not earlier. I meant clearing only just before ext retry occur for this instance. 
+
+> Agent:
+> Still no. The current `RetryStateStore` is a snapshot of the current failure/retry situation, not a history table. If we kept rows until explicit external retry only, then successful normal progress, successful auto-retry, timer waits, and completed instances would keep stale retry rows long after the failure was gone.
+> Consequences: the store would stop meaning "instance is currently retry-related" and start meaning "instance once failed", which is not the contract used by the engine. It would also retain obsolete `nextAutoRetryAt` / `externalRetryAllowed` metadata until an unrelated later external retry happens, or forever if it never happens.
+> Validation: reviewed the current engine paths that clear retry state on normal progress/wait handoff and the Cockpit read path that treats retry state as current error metadata.
+> Learning: if we want fewer `clearRetryState(...)` call sites, the right refactor is centralizing successful-exit paths, not delaying cleanup until external retry.
 
 ## [REOPEN] Access to flowlite from browser automation
 > browser automation from the chat browser could not reach container localhost

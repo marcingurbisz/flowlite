@@ -12,6 +12,7 @@ import io.flowlite.FlowLiteInstanceSummaryRepository
 import io.flowlite.FlowLiteRetryStateRepository
 import io.flowlite.FlowLiteRetryStateRow
 import io.flowlite.FlowLiteTickRepository
+import io.flowlite.Engine
 import io.flowlite.HistoryEntryType
 import io.flowlite.PendingEventRepository
 import io.flowlite.RetryTrigger
@@ -78,6 +79,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
     lateinit var summaryRepo: FlowLiteInstanceSummaryRepository
     lateinit var retryStateRepo: FlowLiteRetryStateRepository
     lateinit var tickRepo: FlowLiteTickRepository
+    lateinit var engine: Engine
     lateinit var pendingEventRepo: PendingEventRepository
     lateinit var orderRepo: OrderConfirmationRepository
     lateinit var employeeRepo: EmployeeOnboardingRepository
@@ -98,6 +100,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
         summaryRepo = context.getBean()
         retryStateRepo = context.getBean()
         tickRepo = context.getBean()
+        engine = context.getBean()
         pendingEventRepo = context.getBean()
         orderRepo = context.getBean()
         employeeRepo = context.getBean()
@@ -113,6 +116,10 @@ class CockpitPlaywrightTest : BehaviorSpec({
         runCatching { browser.close() }
         runCatching { playwright.close() }
         runCatching { context.close() }
+    }
+
+    afterTest {
+        ShowcaseActionBehavior.configure(enabled = false, maxDelayMs = 0, failureRate = 0.0)
     }
 
     fun sanitizeArtifactName(value: String): String =
@@ -361,6 +368,39 @@ class CockpitPlaywrightTest : BehaviorSpec({
                 .setPath(screenshotDir.resolve(fileName))
                 .setFullPage(true),
         )
+    }
+
+    fun waitUntil(timeout: Duration = Duration.ofSeconds(5), condition: () -> Boolean) {
+        val deadline = System.nanoTime() + timeout.toNanos()
+        while (System.nanoTime() < deadline) {
+            if (condition()) return
+            Thread.sleep(50)
+        }
+        error("Condition was not met within $timeout")
+    }
+
+    fun createRealRetryOrder(): UUID {
+        resetCockpitData()
+        ShowcaseActionBehavior.configure(enabled = true, maxDelayMs = 0, failureRate = 1.0)
+
+        val flowInstanceId = engine.startInstance(
+            ORDER_CONFIRMATION_FLOW_ID,
+            OrderConfirmation(
+                stage = OrderConfirmationStage.InitializingConfirmation,
+                orderNumber = "SHOW-PLAYWRIGHT-RETRY",
+                confirmationType = ConfirmationType.Digital,
+                customerName = "Retry Customer",
+            ),
+        )
+
+        waitUntil {
+            orderRepo.findById(flowInstanceId).orElse(null)?.stageStatus == StageStatus.Error &&
+                historyRepo.findTimeline(ORDER_CONFIRMATION_FLOW_ID, flowInstanceId)
+                    .lastOrNull { it.type == HistoryEntryType.Error }
+                    ?.externalRetryAllowed == true
+        }
+
+        return flowInstanceId
     }
 
     fun seedRichFixture(): CockpitFixture {
@@ -883,6 +923,29 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     retryHistoryDetails.shouldContain("trigger=External")
                     assertThat(currentPage.getByTestId("instance-details-status")).containsText("ExternallyRetryable")
                     assertThat(currentPage.getByTestId("instance-details-status")).not().containsText("AutoRetry")
+                }
+            }
+        }
+
+        `when`("viewing retry metadata produced by real flow execution") {
+            val flowInstanceId = createRealRetryOrder()
+            val session = openRecordedContext("it-renders-real-retry-metadata")
+            val page = session.page
+
+            navigateToCockpit(page, "tab=instances")
+            page.getByTestId("instances-search").fill(flowInstanceId.toString())
+            assertThat(page.getByTestId("instance-status-$flowInstanceId")).containsText("ExternallyRetryable")
+            assertThat(page.getByTestId("instance-status-$flowInstanceId")).containsText("AutoRetry")
+
+            instanceRow(page, flowInstanceId).click()
+            saveScreenshot(page, "cockpit-retry-badges-real-execution.png")
+
+            then("it renders retry metadata sourced from real engine execution") {
+                verifyRecordedContext(session) { currentPage ->
+                    assertThat(currentPage.getByTestId("instance-error-attempt-count")).containsText("1")
+                    assertThat(currentPage.getByTestId("instance-next-auto-retry")).isVisible()
+                    assertThat(currentPage.getByTestId("instance-details-status")).containsText("ExternallyRetryable")
+                    assertThat(currentPage.getByTestId("instance-details-status")).containsText("AutoRetry")
                 }
             }
         }

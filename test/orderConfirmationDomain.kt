@@ -1,10 +1,15 @@
 package io.flowlite.test
 
 import io.flowlite.Event
+import io.flowlite.FailureClassifier
+import io.flowlite.FailureHandling
 import io.flowlite.InstanceData
 import io.flowlite.Stage
 import io.flowlite.StageStatus
 import io.flowlite.StatePersister
+import io.flowlite.ActionContext
+import io.flowlite.AutoRetryPlan
+import io.flowlite.BackoffStrategy
 import io.flowlite.flow
 import io.flowlite.test.OrderConfirmationEvent.Confirmed
 import io.flowlite.test.OrderConfirmationStage.InformingCustomer
@@ -144,5 +149,26 @@ fun createOrderConfirmationFlow() = flow<OrderConfirmation, OrderConfirmationSta
 private fun wasConfirmedDigitally(confirmation: OrderConfirmation) = confirmation.confirmationType == ConfirmationType.Digital
 
 private fun OrderConfirmation.isShowcaseInstance() = orderNumber.startsWith("SHOW-")
+
+fun orderRetryFailureClassifier(): FailureClassifier<OrderConfirmation> = object : FailureClassifier<OrderConfirmation> {
+    override fun classify(
+        context: ActionContext,
+        stage: Stage,
+        state: OrderConfirmation,
+        error: Exception,
+        failedAttemptCount: Int,
+    ): FailureHandling {
+        if (!state.isShowcaseInstance()) return FailureHandling()
+        if (error !is IllegalStateException) return FailureHandling()
+
+        return FailureHandling(
+            autoRetry = AutoRetryPlan(
+                maxAttempts = 3,
+                backoffStrategy = BackoffStrategy.fixed(java.time.Duration.ofSeconds(5)),
+            ),
+            externalRetryAllowed = true,
+        )
+    }
+}
 
 private val orderLog = KotlinLogging.logger {}

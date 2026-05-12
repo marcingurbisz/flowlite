@@ -125,7 +125,12 @@ object Beans {
                 retryStateStore = bean(),
                 clock = bean<AdjustableClock>(),
             ).also { engine ->
-                engine.registerFlow(ORDER_CONFIRMATION_FLOW_ID, createOrderConfirmationFlow(), orderPersister)
+                engine.registerFlow(
+                    ORDER_CONFIRMATION_FLOW_ID,
+                    createOrderConfirmationFlow(),
+                    orderPersister,
+                    failureClassifier = orderRetryFailureClassifier(),
+                )
                 engine.registerFlow(EMPLOYEE_ONBOARDING_FLOW_ID, createEmployeeOnboardingFlow(onboardingActions), onboardingPersister)
             }
         }

@@ -54,7 +54,7 @@ Why not to clear it before adding a new entry?
 > Validation: reviewed the current engine paths that clear retry state on normal progress/wait handoff and the Cockpit read path that treats retry state as current error metadata.
 > Learning: if we want fewer `clearRetryState(...)` call sites, the right refactor is centralizing successful-exit paths, not delaying cleanup until external retry.
 
-## [REOPEN] Access to flowlite from browser automation
+## [DONE 2026-05-12.4] Access to flowlite from browser automation
 > browser automation from the chat browser could not reach container localhost
 
 Why we have this problem? Because flowlite is started in devcontainer? Can we expose the port so it is visible to browser automation?
@@ -63,12 +63,23 @@ Why we have this problem? Because flowlite is started in devcontainer? Can we ex
 > Yes, this is because the chat browser tool is not inside the devcontainer network namespace, so its `localhost` is not the container's `localhost`. The app is reachable from the container itself, but not automatically from that browser tool. The practical fix is port forwarding / exposing the container port to the host-side browser context. I could not do that directly with the current toolset, so exploratory verification used `curl` inside the container plus saved Playwright artifacts.
 >> MG: Isn't it a workspace devcontainer.json modification? Go for it.
 
-## [REOPEN] In CockpitPlaywrightTest you are preparing retry data
+> Agent:
+> Done at workspace level: added `forwardPorts: [8080]` to [devcontainer.json](/workspaces/workplace/.devcontainer/devcontainer.json).
+> Validation: this is a workspace-side change, not part of the `flowlite` git repo, so it is not included in the FlowLite commit history. It should take effect after reopening/rebuilding the devcontainer.
+> Learning: the browser-access fix belongs to the workspace container config, not to FlowLite runtime code.
+
+## [DONE 2026-05-12.3] In CockpitPlaywrightTest you are preparing retry data
 What about testing it in a way that we start some process which fails, and then we see have the "real" inserted by process execution instead of manipulated data?
 
 > Agent:
 > I agree that would be stronger coverage, but it needs a deterministic failing flow exposed through the test app specifically for UI testing. I did not add that in this loop because your earlier constraint was to avoid changing the test app to trigger external retries. The current seeded Playwright fixture keeps the UI contract deterministic; a real-execution Playwright scenario is a good follow-up once we decide on the dedicated failing test flow.
 >> MG: Go for it. 
+
+> Agent:
+> Done. Added a real-execution retry scenario to `CockpitPlaywrightTest` using an actual `order-confirmation` flow instance instead of manually inserting retry rows.
+> Changes: introduced a showcase-only failure classifier for order flows in the test app, reused `ShowcaseActionBehavior` to force a deterministic runtime failure, and added a Playwright scenario that verifies retry badges/details from real persisted engine history.
+> Validation: `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`.
+> Learning: for Cockpit coverage, waiting on persisted error history with retry metadata is a more stable readiness signal than waiting on retry-state rows directly.
 
 ## [ONHOLD] Retry metadata source of truth
 
@@ -82,13 +93,25 @@ What about testing it in a way that we start some process which fails, and then 
 > 1. keep retry-state as the write model,
 > 2. add retry fields to `FlowLiteInstanceSummaryRow` only when Cockpit query pressure proves the extra projection complexity is worth it.
 
-## [REOPEN] Exploratory test with runPerfTestApp
+## [DONE 2026-05-12.5] Exploratory test with runPerfTestApp
 
 > Agent:
 > Started `./gradlew runPerfTestApp` and checked the local Cockpit surface from inside the container.
 > Validation: `curl -I http://127.0.0.1:8080/cockpit` returned `HTTP/1.1 200`; `curl -s http://127.0.0.1:8080/api/flows | head -c 800` returned the expected showcase flow payload with active counts and Mermaid diagram data.
 > Learning: the exploratory app serves correctly inside the devcontainer, but host-side browser automation still needs explicit port exposure/forwarding to inspect that instance directly.
 >> MG: Why not use playwright-cli for exploratory tests while you do not have access to app from browser automation? 
+
+> Agent:
+> Done. Used Playwright CLI from inside the container after installing the local Chromium browser.
+> Validation: `npx playwright screenshot http://127.0.0.1:8080/cockpit ../build/reports/playwright/screenshots/exploratory-perf-cockpit-cli.png` completed successfully and produced the exploratory screenshot in `build/reports/playwright/screenshots/exploratory-perf-cockpit-cli.png`.
+> Learning: Playwright CLI is a good fallback for exploratory visual checks even when the chat browser cannot reach the container directly.
+
+## [DONE 2026-05-12.6] Self-review of current loop
+
+> Agent:
+> Reviewed the changes for explicit auto-retry ticks, retry-state cleanup reasoning, real-execution Cockpit retry coverage, and the exploratory/browser-access follow-up notes.
+> Validation: `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.EngineBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`; exploratory `curl` checks plus Playwright CLI screenshot.
+> Learning: the main residual limitation is that the workspace-level `devcontainer.json` change is outside the FlowLite repo, so it needs its own workspace-level persistence/reload path.
 
 ## [FOR HUMAN] Review git changes
 * Review perf(engine): raise tick worker default 3/25/26, 9:13 AM marcingurbisz

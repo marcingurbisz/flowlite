@@ -4,6 +4,7 @@ create table if not exists flowlite_tick (
     flow_instance_id uuid not null,
     not_before timestamp not null,
     target_stage varchar(128),
+    auto_retry boolean not null default false,
     version bigint
 );
 

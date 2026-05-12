@@ -365,13 +365,24 @@ class EngineBehaviorTest : BehaviorSpec({
             flowInstanceId: UUID,
             notBefore: Instant,
             targetStage: String?,
+            autoRetry: Boolean,
         ) {
-            queue += ScheduledTick(flowId, flowInstanceId, notBefore, targetStage)
+            queue += ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, autoRetry)
         }
 
-        override fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String): ScheduledTick? {
+        override fun findScheduledTick(
+            flowId: String,
+            flowInstanceId: UUID,
+            targetStage: String,
+            autoRetry: Boolean,
+        ): ScheduledTick? {
             return queue
-                .filter { it.flowId == flowId && it.flowInstanceId == flowInstanceId && it.targetStage == targetStage }
+                .filter {
+                    it.flowId == flowId &&
+                        it.flowInstanceId == flowInstanceId &&
+                        it.targetStage == targetStage &&
+                        it.autoRetry == autoRetry
+                }
                 .minByOrNull { it.notBefore }
         }
 

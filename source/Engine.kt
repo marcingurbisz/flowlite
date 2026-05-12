@@ -13,7 +13,6 @@ class Engine(
 ) {
     private companion object {
         private val log = KotlinLogging.logger {}
-        private const val AUTO_RETRY_TICK_PREFIX = "__auto_retry__:"
     }
 
     init {
@@ -185,8 +184,9 @@ class Engine(
         flowInstanceId: UUID,
         notBefore: java.time.Instant = clock.instant(),
         targetStage: String? = null,
+        autoRetry: Boolean = false,
     ) {
-        tickScheduler.scheduleTick(flowId, flowInstanceId, notBefore, targetStage)
+        tickScheduler.scheduleTick(flowId, flowInstanceId, notBefore, targetStage, autoRetry)
     }
 
     private fun processTick(tick: ScheduledTick) {
@@ -196,14 +196,13 @@ class Engine(
         val loaded = persister.load(tick.flowInstanceId)
         if (tick.targetStage != null) {
             val currentStage = historyValueOf(loaded.stage)
-            val expectedStage = decodeTickTargetStage(tick.targetStage)
-            if (currentStage != expectedStage) {
+            if (currentStage != tick.targetStage) {
                 log.info {
                     "Ignoring stale timer tick for ${tick.flowId}/${tick.flowInstanceId}: currentStage=$currentStage targetStage=${tick.targetStage}"
                 }
                 return
             }
-            if (isAutoRetryTick(tick.targetStage) && loaded.stageStatus != StageStatus.Error) {
+            if (tick.autoRetry && loaded.stageStatus != StageStatus.Error) {
                 log.info {
                     "Ignoring stale auto retry tick for ${tick.flowId}/${tick.flowInstanceId}: currentStatus=${loaded.stageStatus} targetStage=${tick.targetStage}"
                 }
@@ -213,7 +212,7 @@ class Engine(
 
         when (loaded.stageStatus) {
             StageStatus.Error -> {
-                if (isAutoRetryTick(tick.targetStage) && tryAutoRetry(tick.flowId, flow, persister, loaded)) {
+                if (tick.autoRetry && tryAutoRetry(tick.flowId, flow, persister, loaded)) {
                     return
                 }
                 log.info { "Tick when ${tick.flowId}/${tick.flowInstanceId} is in ERROR at stage ${loaded.stage}; awaiting retry" }
@@ -277,8 +276,8 @@ class Engine(
                 if (def.timer != null) {
                     val stageKey = historyValueOf(data.stage)
                     val now = clock.instant()
-                    val existingTick = tickScheduler.findScheduledTick(flowId, flowInstanceId, stageKey)
-                    val isDueTimerTick = tick.targetStage == stageKey && !tick.notBefore.isAfter(now)
+                    val existingTick = tickScheduler.findScheduledTick(flowId, flowInstanceId, stageKey, autoRetry = false)
+                    val isDueTimerTick = tick.targetStage == stageKey && !tick.autoRetry && !tick.notBefore.isAfter(now)
 
                     when {
                         isDueTimerTick -> Unit
@@ -423,7 +422,8 @@ class Engine(
                         flowId = flowId,
                         flowInstanceId = flowInstanceId,
                         notBefore = nextAutoRetryAt,
-                        targetStage = autoRetryTickTarget(data.stage),
+                        targetStage = historyValueOf(data.stage),
+                        autoRetry = true,
                     )
                     return
                 }
@@ -489,14 +489,6 @@ class Engine(
         enqueueTick(flowId, loaded.flowInstanceId)
         return true
     }
-
-    private fun autoRetryTickTarget(stage: Stage): String = AUTO_RETRY_TICK_PREFIX + historyValueOf(stage)
-
-    private fun decodeTickTargetStage(targetStage: String): String =
-        if (targetStage.startsWith(AUTO_RETRY_TICK_PREFIX)) targetStage.removePrefix(AUTO_RETRY_TICK_PREFIX) else targetStage
-
-    private fun isAutoRetryTick(targetStage: String?): Boolean =
-        targetStage?.startsWith(AUTO_RETRY_TICK_PREFIX) == true
 
     private fun tryConsumeEventAndAdvance(
         flowId: String,

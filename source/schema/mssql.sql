@@ -6,6 +6,7 @@ BEGIN
         flow_instance_id uniqueidentifier NOT NULL,
         not_before datetime2 NOT NULL,
         target_stage varchar(128) NULL,
+        auto_retry bit NOT NULL CONSTRAINT df_flowlite_tick_auto_retry DEFAULT 0,
         version bigint NULL
     )
 END;

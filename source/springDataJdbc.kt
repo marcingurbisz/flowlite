@@ -25,6 +25,7 @@ data class FlowLiteTick(
     val flowInstanceId: UUID,
     val notBefore: Instant,
     val targetStage: String? = null,
+    val autoRetry: Boolean = false,
     @Version
     var version: Long? = null, // Only so Spring Data JDBC treats the aggregate as "new" with an assigned (non-null) id.
 )
@@ -48,11 +49,12 @@ interface FlowLiteTickRepository : CrudRepository<FlowLiteTick, UUID> {
         where flow_id = :flowId
           and flow_instance_id = :flowInstanceId
           and target_stage = :targetStage
+                    and auto_retry = :autoRetry
         order by not_before asc, id asc
         limit 1
         """,
     )
-    fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String): FlowLiteTick?
+        fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String, autoRetry: Boolean): FlowLiteTick?
 }
 
 class SpringDataJdbcTickScheduler(
@@ -96,6 +98,7 @@ class SpringDataJdbcTickScheduler(
         flowInstanceId: UUID,
         notBefore: Instant,
         targetStage: String?,
+        autoRetry: Boolean,
     ) {
         tickRepo.save(
             FlowLiteTick(
@@ -104,12 +107,18 @@ class SpringDataJdbcTickScheduler(
                 flowInstanceId = flowInstanceId,
                 notBefore = notBefore,
                 targetStage = targetStage,
+                autoRetry = autoRetry,
             ),
         )
     }
 
-    override fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String): ScheduledTick? =
-        tickRepo.findScheduledTick(flowId, flowInstanceId, targetStage)?.toScheduledTick()
+    override fun findScheduledTick(
+        flowId: String,
+        flowInstanceId: UUID,
+        targetStage: String,
+        autoRetry: Boolean,
+    ): ScheduledTick? =
+        tickRepo.findScheduledTick(flowId, flowInstanceId, targetStage, autoRetry)?.toScheduledTick()
 
     private fun runPollLoop() {
         val handler = requireNotNull(tickHandler)
@@ -153,6 +162,7 @@ class SpringDataJdbcTickScheduler(
                     flowInstanceId = tick.flowInstanceId,
                     notBefore = tick.notBefore,
                     targetStage = tick.targetStage,
+                    autoRetry = tick.autoRetry,
                 ),
             )
         } catch (e: Exception) {
@@ -192,6 +202,7 @@ private fun FlowLiteTick.toScheduledTick() =
         flowInstanceId = flowInstanceId,
         notBefore = notBefore,
         targetStage = targetStage,
+        autoRetry = autoRetry,
     )
 
 // --- Event store ---

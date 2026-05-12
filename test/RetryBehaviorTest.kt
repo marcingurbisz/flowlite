@@ -184,8 +184,9 @@ private class DueTickScheduler(private val clock: AdjustableClock) : TickSchedul
         flowInstanceId: UUID,
         notBefore: Instant,
         targetStage: String?,
+        autoRetry: Boolean,
     ) {
-        queue.addLast(ScheduledTick(flowId, flowInstanceId, notBefore, targetStage))
+        queue.addLast(ScheduledTick(flowId, flowInstanceId, notBefore, targetStage, autoRetry))
     }
 
     fun drainDue(limit: Int = 1000) {

@@ -19,10 +19,13 @@
 2026-05-12T03:17:16.065Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=58 committedMiB=74 maxMiB=123 freeMiB=15 heapUsedMiB=58 heapCommittedMiB=74 nonHeapUsedMiB=84 threads=55
 2026-05-12T03:18:16.065Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=62 committedMiB=74 maxMiB=123 freeMiB=12 heapUsedMiB=62 heapCommittedMiB=74 nonHeapUsedMiB=86 threads=58
 
-## [REOPEN] Why we need to decode target tick stage?
+## [DONE 2026-05-12.1] Why we need to decode target tick stage?
 
 > Agent:
-> Because auto-retry ticks overload the existing `targetStage` field with a prefix marker. The runtime still needs the original stage name to decide whether the delayed tick is stale. `decodeTickTargetStage(...)` is only the small adapter that strips the auto-retry prefix before comparing with the current stage.
+> Reworked this to make auto-retry explicit instead of encoding it into `targetStage`.
+> Changes: added `autoRetry` to `ScheduledTick` and `FLOWLITE_TICK`, updated JDBC tick scheduling/lookup, removed the `__auto_retry__:` prefix logic from the engine, and kept timer lookup scoped to non-auto-retry ticks.
+> Validation: `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.EngineBehaviorTest'`.
+> Learning: this is clearer than the prefix approach and also closes a subtle coupling where timer lookup had to infer tick intent from a stage string.
 >> MG: What about making it explicit by adding auto-retry attribute?
 
 ## [ONHOLD] What about joining with retry state store in sql instead in kotlin?

@@ -85,6 +85,7 @@ data class ScheduledTick(
     val flowInstanceId: UUID,
     val notBefore: Instant = Instant.now(),
     val targetStage: String? = null,
+    val autoRetry: Boolean = false,
 )
 
 interface TickScheduler {
@@ -94,9 +95,15 @@ interface TickScheduler {
         flowInstanceId: UUID,
         notBefore: Instant = Instant.now(),
         targetStage: String? = null,
+        autoRetry: Boolean = false,
     )
 
-    fun findScheduledTick(flowId: String, flowInstanceId: UUID, targetStage: String): ScheduledTick? = null
+    fun findScheduledTick(
+        flowId: String,
+        flowInstanceId: UUID,
+        targetStage: String,
+        autoRetry: Boolean = false,
+    ): ScheduledTick? = null
 }
 
 /**

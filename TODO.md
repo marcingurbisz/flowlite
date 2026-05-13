@@ -132,6 +132,13 @@ Do we need to decode stage into a tick?
   * docs: update TODO marcingurbisz 3/7/26, 3:57 PM
   * docs: update TODO marcingurbisz 3/6/26, 7:13 AM
 
+## [DONE 2026-05-13.1] Self-review of current loop
+> Agent:
+> Reviewed: the `Engine` successful-exit refactor, the browser-automation verification path, the Render runtime-pressure mitigation, and the newly added design answers in `TODO.md`.
+> Result: no further code defects found in the touched slices after the focused validations. The main residual risk is operational rather than local code correctness: the Render worker-thread reduction is a reasonable mitigation, but it still needs observation after deployment to confirm that responsiveness improves under long-running showcase load.
+> Validation reviewed: `./gradlew test --tests 'io.flowlite.test.EngineBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`; live browser automation against `/cockpit`.
+> Learning: this loop benefited from keeping boundary commits aligned to single TODO slices; it made the design-only clarifications cheap to review and kept the one runtime mitigation isolated.
+
 ## [ON HOLD] Topics on hold for now
 * Check sonar findings and decide if they should be fixed
 * Visual testing - comparing screenshots before and after changes? Not sure about it because when agent can

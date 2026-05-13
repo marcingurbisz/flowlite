@@ -7,6 +7,8 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/flows
     envVars:
+      - key: FLOWLITE_TICK_WORKER_THREADS
+        value: "8"
       - key: FLOWLITE_DIAGNOSTICS_MEMORY_LOG_ENABLED
         value: "true"
       - key: FLOWLITE_DIAGNOSTICS_MEMORY_LOG_INTERVAL_SECONDS

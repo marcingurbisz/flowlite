@@ -22,6 +22,13 @@ If not what can be the other problem that is causing our render instance to stop
 2026-05-12T03:17:16.065Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=58 committedMiB=74 maxMiB=123 freeMiB=15 heapUsedMiB=58 heapCommittedMiB=74 nonHeapUsedMiB=84 threads=55
 2026-05-12T03:18:16.065Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=62 committedMiB=74 maxMiB=123 freeMiB=12 heapUsedMiB=62 heapCommittedMiB=74 nonHeapUsedMiB=86 threads=58
 
+> Agent:
+> Assessment: these snapshots do not show a convincing memory-failure pattern. Heap usage moves up and down, thread count stays roughly flat, and there is no monotonic climb toward `maxMiB=123` that would suggest an obvious leak or imminent OOM.
+> Likely other cause: the more suspicious configuration is runtime pressure from the tick scheduler. The test app on Render was inheriting `SpringDataJdbcTickScheduler` default `workerThreads=60`, which is high for a small web instance and can translate into CPU saturation, scheduler thrash, JDBC contention, or general liveness degradation without any heap crash.
+> Changes: made the test app worker count configurable through `flowlite.tick.worker-threads` and set `FLOWLITE_TICK_WORKER_THREADS=8` in `render.yaml` so Render no longer relies on the hardcoded library default.
+> Validation: reviewed the memory logger implementation and the Render env file; verified the scheduler default in `SpringDataJdbcTickScheduler`; ran `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'` after wiring the config change.
+> Learning: these diagnostics are useful to rule out obvious heap pressure, but they are not enough to prove liveness issues. For the next Render incident, add CPU, request latency, datasource pool, and tick backlog diagnostics so the app can distinguish memory pressure from thread/DB saturation.
+
 ## [DONE 2026-05-13.1] We have clearRetryState in so many places
 Why not to clear it before adding a new entry?
 

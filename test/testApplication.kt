@@ -74,8 +74,10 @@ object Beans {
         }
 
         registerBean {
+            val environment = bean<Environment>()
             SpringDataJdbcTickScheduler(
                 tickRepo = bean<FlowLiteTickRepository>(),
+                workerThreads = environment.getProperty<Int>("flowlite.tick.worker-threads", defaultTickWorkerThreads()),
                 clock = bean<AdjustableClock>(),
             )
         }
@@ -239,6 +241,8 @@ object ShowcaseActionBehavior {
 
 private val showcaseLog = KotlinLogging.logger {}
 private val diagnosticsLog = KotlinLogging.logger {}
+
+private fun defaultTickWorkerThreads(): Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
 
 internal class PeriodicMemoryLogger(
     enabled: Boolean,

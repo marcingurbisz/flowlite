@@ -53,7 +53,7 @@ Why not to clear it before adding a new entry?
 > Validation: `curl -I http://127.0.0.1:8080/cockpit` returned `HTTP/1.1 200`; browser automation opened `http://127.0.0.1:8080/cockpit?tab=flows`, rendered the Cockpit shell, and loaded live flow data (`flows: 2`, `instances: 1200`) with a screenshot.
 > Learning: after the VS Code restart, forwarded port access is good enough for browser automation against the Cockpit running inside the devcontainer.
 
-## [REOPEN] Exploratory test with runPerfTestApp
+## [DONE 2026-05-13.1] Exploratory test with runPerfTestApp
 
 > Agent:
 > Started `./gradlew runPerfTestApp` and checked the local Cockpit surface from inside the container.
@@ -66,6 +66,13 @@ Why not to clear it before adding a new entry?
 > Validation: `npx playwright screenshot http://127.0.0.1:8080/cockpit ../build/reports/playwright/screenshots/exploratory-perf-cockpit-cli.png` completed successfully and produced the exploratory screenshot in `build/reports/playwright/screenshots/exploratory-perf-cockpit-cli.png`.
 > Learning: Playwright CLI is a good fallback for exploratory visual checks even when the chat browser cannot reach the container directly.
 >> MG: Do you prefer to use browser automation instead of Playwright MCP or CLI to do exploratory tests? What are pros and cons of each?. Add you're learnings into [ief-loop-extensions.md](ief-loop-extensions.md)
+
+> Agent:
+> Answer: yes, when the live app is reachable I prefer browser automation first, Playwright-style scripted automation second, and CLI third.
+> Pros/cons: browser automation is fastest for interactive exploration and seeing the real rendered state, but it is weaker for repeatable long flows and low-level diagnostics; scripted Playwright automation is better for reproducibility, waits, and deeper debugging, but costs more setup; CLI is the lightest fallback for smoke checks and screenshots from inside the container, but it gives the least observability and weakest interaction model.
+> Changes: added an explicit exploratory tool preference order and fallback rule to `ief-loop-extensions.md`.
+> Validation: reviewed the updated loop-extension text against the just-completed browser-access check and earlier CLI fallback path so the rule matches how the repo was actually exercised.
+> Learning: the right default is not one universal tool but a preference ladder based on reachability and diagnostic depth.
 
 ## [ONHOLD] What about joining with retry state store in sql instead in kotlin?
 

@@ -6,9 +6,11 @@
   nextAutoRetryAt?: string | null;
   externalRetryAllowed?: boolean | null;
 * Review engine once again
+* Review CockpitPlaywrightTest
+* Review ONHOLD and decide
 
 ## Logs from render before and after incident
-
+Does the logs below show memory problems before render restarts the app?
 2026-05-12T03:10:20.000Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=65 committedMiB=123 maxMiB=123 freeMiB=58 heapUsedMiB=65 heapCommittedMiB=123 nonHeapUsedMiB=85 threads=71
 2026-05-12T03:11:19.995Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=99 committedMiB=123 maxMiB=123 freeMiB=24 heapUsedMiB=100 heapCommittedMiB=123 nonHeapUsedMiB=85 threads=63
 2026-05-12T03:12:19.995Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=91 committedMiB=123 maxMiB=123 freeMiB=32 heapUsedMiB=91 heapCommittedMiB=123 nonHeapUsedMiB=85 threads=73
@@ -19,14 +21,40 @@
 2026-05-12T03:17:16.065Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=58 committedMiB=74 maxMiB=123 freeMiB=15 heapUsedMiB=58 heapCommittedMiB=74 nonHeapUsedMiB=84 threads=55
 2026-05-12T03:18:16.065Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=62 committedMiB=74 maxMiB=123 freeMiB=12 heapUsedMiB=62 heapCommittedMiB=74 nonHeapUsedMiB=86 threads=58
 
-## [DONE 2026-05-12.1] Why we need to decode target tick stage?
+## [REOPEN] We have clearRetryState in so many places
+Why not to clear it before adding a new entry?
 
 > Agent:
-> Reworked this to make auto-retry explicit instead of encoding it into `targetStage`.
-> Changes: added `autoRetry` to `ScheduledTick` and `FLOWLITE_TICK`, updated JDBC tick scheduling/lookup, removed the `__auto_retry__:` prefix logic from the engine, and kept timer lookup scoped to non-auto-retry ticks.
-> Validation: `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.EngineBehaviorTest'`.
-> Learning: this is clearer than the prefix approach and also closes a subtle coupling where timer lookup had to infer tick intent from a stage string.
->> MG: What about making it explicit by adding auto-retry attribute?
+> Because that would lose information needed by the failure path. We want retry metadata to survive until successful progress or an intentional release to a waiting status. Clearing only on successful progression/wait handoff preserves the failed-attempt count for repeated failures in the same stage. I agree the call sites are repetitive; if we revisit this area, the right cleanup is extracting the common successful-exit paths, not clearing earlier.
+>> MG: Not earlier. I meant clearing only just before ext retry occur for this instance. 
+
+> Agent:
+> Still no. The current `RetryStateStore` is a snapshot of the current failure/retry situation, not a history table. If we kept rows until explicit external retry only, then successful normal progress, successful auto-retry, timer waits, and completed instances would keep stale retry rows long after the failure was gone.
+> Consequences: the store would stop meaning "instance is currently retry-related" and start meaning "instance once failed", which is not the contract used by the engine. It would also retain obsolete `nextAutoRetryAt` / `externalRetryAllowed` metadata until an unrelated later external retry happens, or forever if it never happens.
+> Validation: reviewed the current engine paths that clear retry state on normal progress/wait handoff and the Cockpit read path that treats retry state as current error metadata.
+> Learning: if we want fewer `clearRetryState(...)` call sites, the right refactor is centralizing successful-exit paths, not delaying cleanup until external retry.
+>> MG: Ok. Try to centralize successful-exit path.
+
+## [REOPEN] Access to flowlite from browser automation
+> Agent:
+> Done at workspace level: added `forwardPorts: [8080]` to [devcontainer.json](/workspaces/workplace/.devcontainer/devcontainer.json).
+> Validation: this is a workspace-side change, not part of the `flowlite` git repo, so it is not included in the FlowLite commit history. It should take effect after reopening/rebuilding the devcontainer.
+> Learning: the browser-access fix belongs to the workspace container config, not to FlowLite runtime code.
+>> MG: VS Code has been restarted. Check if you can use browser automation to reach the app.
+
+## [REOPEN] Exploratory test with runPerfTestApp
+
+> Agent:
+> Started `./gradlew runPerfTestApp` and checked the local Cockpit surface from inside the container.
+> Validation: `curl -I http://127.0.0.1:8080/cockpit` returned `HTTP/1.1 200`; `curl -s http://127.0.0.1:8080/api/flows | head -c 800` returned the expected showcase flow payload with active counts and Mermaid diagram data.
+> Learning: the exploratory app serves correctly inside the devcontainer, but host-side browser automation still needs explicit port exposure/forwarding to inspect that instance directly.
+>> MG: Why not use playwright-cli for exploratory tests while you do not have access to app from browser automation? 
+
+> Agent:
+> Done. Used Playwright CLI from inside the container after installing the local Chromium browser.
+> Validation: `npx playwright screenshot http://127.0.0.1:8080/cockpit ../build/reports/playwright/screenshots/exploratory-perf-cockpit-cli.png` completed successfully and produced the exploratory screenshot in `build/reports/playwright/screenshots/exploratory-perf-cockpit-cli.png`.
+> Learning: Playwright CLI is a good fallback for exploratory visual checks even when the chat browser cannot reach the container directly.
+>> MG: Do you prefer to use browser automation instead of Playwright MCP or CLI to do exploratory tests? What are pros and cons of each?. Add you're learnings into [ief-loop-extensions.md](ief-loop-extensions.md)
 
 ## [ONHOLD] What about joining with retry state store in sql instead in kotlin?
 
@@ -39,47 +67,7 @@ Do we need to decode stage into a tick?
 
 > Agent:
 > Yes, we still need it. Delayed timer and auto-retry ticks can fire after the instance has already moved elsewhere. Without `targetStage`, a stale delayed tick could wake the instance in the wrong stage and incorrectly re-enter processing. The stage tag is what makes those delayed ticks safe to ignore.
->> MG: What are the biggest consequences if stale tick would be processed? Process moves from timer to next stage? Any other? 
-
-## [DONE 2026-05-12.2] We have clearRetryState in so many places
-Why not to clear it before adding a new entry?
-
-> Agent:
-> Because that would lose information needed by the failure path. We want retry metadata to survive until successful progress or an intentional release to a waiting status. Clearing only on successful progression/wait handoff preserves the failed-attempt count for repeated failures in the same stage. I agree the call sites are repetitive; if we revisit this area, the right cleanup is extracting the common successful-exit paths, not clearing earlier.
->> MG: Not earlier. I meant clearing only just before ext retry occur for this instance. 
-
-> Agent:
-> Still no. The current `RetryStateStore` is a snapshot of the current failure/retry situation, not a history table. If we kept rows until explicit external retry only, then successful normal progress, successful auto-retry, timer waits, and completed instances would keep stale retry rows long after the failure was gone.
-> Consequences: the store would stop meaning "instance is currently retry-related" and start meaning "instance once failed", which is not the contract used by the engine. It would also retain obsolete `nextAutoRetryAt` / `externalRetryAllowed` metadata until an unrelated later external retry happens, or forever if it never happens.
-> Validation: reviewed the current engine paths that clear retry state on normal progress/wait handoff and the Cockpit read path that treats retry state as current error metadata.
-> Learning: if we want fewer `clearRetryState(...)` call sites, the right refactor is centralizing successful-exit paths, not delaying cleanup until external retry.
-
-## [DONE 2026-05-12.4] Access to flowlite from browser automation
-> browser automation from the chat browser could not reach container localhost
-
-Why we have this problem? Because flowlite is started in devcontainer? Can we expose the port so it is visible to browser automation?
-
-> Agent:
-> Yes, this is because the chat browser tool is not inside the devcontainer network namespace, so its `localhost` is not the container's `localhost`. The app is reachable from the container itself, but not automatically from that browser tool. The practical fix is port forwarding / exposing the container port to the host-side browser context. I could not do that directly with the current toolset, so exploratory verification used `curl` inside the container plus saved Playwright artifacts.
->> MG: Isn't it a workspace devcontainer.json modification? Go for it.
-
-> Agent:
-> Done at workspace level: added `forwardPorts: [8080]` to [devcontainer.json](/workspaces/workplace/.devcontainer/devcontainer.json).
-> Validation: this is a workspace-side change, not part of the `flowlite` git repo, so it is not included in the FlowLite commit history. It should take effect after reopening/rebuilding the devcontainer.
-> Learning: the browser-access fix belongs to the workspace container config, not to FlowLite runtime code.
-
-## [DONE 2026-05-12.3] In CockpitPlaywrightTest you are preparing retry data
-What about testing it in a way that we start some process which fails, and then we see have the "real" inserted by process execution instead of manipulated data?
-
-> Agent:
-> I agree that would be stronger coverage, but it needs a deterministic failing flow exposed through the test app specifically for UI testing. I did not add that in this loop because your earlier constraint was to avoid changing the test app to trigger external retries. The current seeded Playwright fixture keeps the UI contract deterministic; a real-execution Playwright scenario is a good follow-up once we decide on the dedicated failing test flow.
->> MG: Go for it. 
-
-> Agent:
-> Done. Added a real-execution retry scenario to `CockpitPlaywrightTest` using an actual `order-confirmation` flow instance instead of manually inserting retry rows.
-> Changes: introduced a showcase-only failure classifier for order flows in the test app, reused `ShowcaseActionBehavior` to force a deterministic runtime failure, and added a Playwright scenario that verifies retry badges/details from real persisted engine history.
-> Validation: `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`.
-> Learning: for Cockpit coverage, waiting on persisted error history with retry metadata is a more stable readiness signal than waiting on retry-state rows directly.
+>> MG: What are the biggest consequences if stale tick would be processed? Process moves from timer to next stage? Any other?
 
 ## [ONHOLD] Retry metadata source of truth
 
@@ -92,26 +80,6 @@ What about testing it in a way that we start some process which fails, and then 
 > That is the strongest next option if we want one Cockpit read model with cheap queries. I did not move there in this loop because it adds more projection/update rules and more denormalized state to maintain. My current preference is:
 > 1. keep retry-state as the write model,
 > 2. add retry fields to `FlowLiteInstanceSummaryRow` only when Cockpit query pressure proves the extra projection complexity is worth it.
-
-## [DONE 2026-05-12.5] Exploratory test with runPerfTestApp
-
-> Agent:
-> Started `./gradlew runPerfTestApp` and checked the local Cockpit surface from inside the container.
-> Validation: `curl -I http://127.0.0.1:8080/cockpit` returned `HTTP/1.1 200`; `curl -s http://127.0.0.1:8080/api/flows | head -c 800` returned the expected showcase flow payload with active counts and Mermaid diagram data.
-> Learning: the exploratory app serves correctly inside the devcontainer, but host-side browser automation still needs explicit port exposure/forwarding to inspect that instance directly.
->> MG: Why not use playwright-cli for exploratory tests while you do not have access to app from browser automation? 
-
-> Agent:
-> Done. Used Playwright CLI from inside the container after installing the local Chromium browser.
-> Validation: `npx playwright screenshot http://127.0.0.1:8080/cockpit ../build/reports/playwright/screenshots/exploratory-perf-cockpit-cli.png` completed successfully and produced the exploratory screenshot in `build/reports/playwright/screenshots/exploratory-perf-cockpit-cli.png`.
-> Learning: Playwright CLI is a good fallback for exploratory visual checks even when the chat browser cannot reach the container directly.
-
-## [DONE 2026-05-12.6] Self-review of current loop
-
-> Agent:
-> Reviewed the changes for explicit auto-retry ticks, retry-state cleanup reasoning, real-execution Cockpit retry coverage, and the exploratory/browser-access follow-up notes.
-> Validation: `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.EngineBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.CockpitPlaywrightTest'`; exploratory `curl` checks plus Playwright CLI screenshot.
-> Learning: the main residual limitation is that the workspace-level `devcontainer.json` change is outside the FlowLite repo, so it needs its own workspace-level persistence/reload path.
 
 ## [FOR HUMAN] Review git changes
 * Review perf(engine): raise tick worker default 3/25/26, 9:13 AM marcingurbisz

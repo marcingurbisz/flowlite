@@ -41,12 +41,17 @@ Why not to clear it before adding a new entry?
 > Validation: `./gradlew test --tests 'io.flowlite.test.EngineBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`
 > Learning: the duplication was mostly in three shapes only: release to waiting status, complete from `Running`, and advance to next stage. Pulling exactly those shapes out reduces call sites without changing retry timing semantics.
 
-## [REOPEN] Access to flowlite from browser automation
+## [DONE 2026-05-13.1] Access to flowlite from browser automation
 > Agent:
 > Done at workspace level: added `forwardPorts: [8080]` to [devcontainer.json](/workspaces/workplace/.devcontainer/devcontainer.json).
 > Validation: this is a workspace-side change, not part of the `flowlite` git repo, so it is not included in the FlowLite commit history. It should take effect after reopening/rebuilding the devcontainer.
 > Learning: the browser-access fix belongs to the workspace container config, not to FlowLite runtime code.
 >> MG: VS Code has been restarted. Check if you can use browser automation to reach the app.
+
+> Agent:
+> Changes: verified the reopened workspace setup against a live `runPerfTestApp` instance using browser automation, not only container-local `curl`.
+> Validation: `curl -I http://127.0.0.1:8080/cockpit` returned `HTTP/1.1 200`; browser automation opened `http://127.0.0.1:8080/cockpit?tab=flows`, rendered the Cockpit shell, and loaded live flow data (`flows: 2`, `instances: 1200`) with a screenshot.
+> Learning: after the VS Code restart, forwarded port access is good enough for browser automation against the Cockpit running inside the devcontainer.
 
 ## [REOPEN] Exploratory test with runPerfTestApp
 

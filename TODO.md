@@ -94,6 +94,16 @@ Do we need to decode stage into a tick?
 > Yes, we still need it. Delayed timer and auto-retry ticks can fire after the instance has already moved elsewhere. Without `targetStage`, a stale delayed tick could wake the instance in the wrong stage and incorrectly re-enter processing. The stage tag is what makes those delayed ticks safe to ignore.
 >> MG: What are the biggest consequences if stale tick would be processed? Process moves from timer to next stage? Any other?
 
+> Agent:
+> Biggest consequences are broader than just `timer -> next stage`.
+> 1. A stale timer tick can wake a completely different current stage and let the engine claim `Running`, so the instance may progress even though the business condition that originally scheduled the tick is no longer relevant.
+> 2. That can consume pending mailbox events from the current stage earlier than intended, because once the stale tick enters `processTickLoop`, the engine behaves as if the current stage was legitimately woken.
+> 3. It can execute current-stage actions and their side effects under the wrong trigger, which is worse than a harmless duplicate tick because the action may call external systems.
+> 4. It can clear current retry metadata on successful progress paths, even though the tick belonged to an older stage/timer context.
+> 5. It can enqueue new delayed work from the wrong point in the flow, so one stale tick can fan out into more incorrect ticks/history rows instead of being a single no-op mistake.
+> Validation: reviewed `processTick(...)` and `processTickLoop(...)` in `Engine`; once a tick passes the stale-stage guard, the runtime treats it as a legitimate wake-up and may claim, consume events, run actions, advance stage, clear retry state, and record history.
+> Learning: `targetStage` is not just a convenience for logs; it is the guard that keeps delayed wake-ups causally tied to the stage that originally scheduled them.
+
 ## [ONHOLD] Retry metadata source of truth
 
 > Agent:

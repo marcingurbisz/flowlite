@@ -116,6 +116,14 @@ Do we need to decode stage into a tick?
 > 1. keep retry-state as the write model,
 > 2. add retry fields to `FlowLiteInstanceSummaryRow` only when Cockpit query pressure proves the extra projection complexity is worth it.
 
+> Agent:
+> More concrete answer: yes, adding retry attributes to `FlowLiteInstanceSummaryRow` is the cleanest way to make Cockpit read from one table, but only if we are ready to treat summary projection as an intentional read model rather than a minimal status cache.
+> Cost: today `FlowLiteInstanceSummaryRow.apply(...)` updates stage, status, cockpitStatus, and last error message only. If we move retry metadata there, we must also project and clear `retryTrigger`, `failedAttemptCount`, `autoRetryMaxAttempts`, `nextAutoRetryAt`, and `externalRetryAllowed` on error, retry, successful progress, manual stage change, completion, and cancellation paths. That is doable, but it is more state to keep correct.
+> Benefit: Cockpit list/details queries become simpler and cheaper, and the current fallback from retry-state to latest error history can be removed because the summary row itself becomes the Cockpit source of truth.
+> Current decision: still keep this `ONHOLD`. I would promote it only when we decide Cockpit read simplicity is more important than keeping retry projection logic minimal.
+> Validation: reviewed `SpringDataJdbcHistoryStore.append(...)`, `HistoryEntry.toSummaryProjectionUpdate()`, and `FlowLiteInstanceSummaryRow.apply(...)`; the current summary projection is intentionally narrow, so retry fields would be a deliberate expansion of that model rather than a small tweak.
+> Learning: this is not mainly a storage decision; it is a read-model ownership decision. Once retry fields land in summary, that projection should be considered the primary Cockpit contract, not just a cache of a few status columns.
+
 ## [FOR HUMAN] Review git changes
 * Review perf(engine): raise tick worker default 3/25/26, 9:13 AM marcingurbisz
 * loop starting from 75abfec728b2184501ae4ebae0c83c07f1e0ba23

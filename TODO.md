@@ -11,6 +11,7 @@
 
 ## Logs from render before and after incident
 Does the logs below show memory problems before render restarts the app?
+If not what can be the other problem that is causing our render instance to stop responding after few/dozen of hours?
 2026-05-12T03:10:20.000Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=65 committedMiB=123 maxMiB=123 freeMiB=58 heapUsedMiB=65 heapCommittedMiB=123 nonHeapUsedMiB=85 threads=71
 2026-05-12T03:11:19.995Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=99 committedMiB=123 maxMiB=123 freeMiB=24 heapUsedMiB=100 heapCommittedMiB=123 nonHeapUsedMiB=85 threads=63
 2026-05-12T03:12:19.995Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=91 committedMiB=123 maxMiB=123 freeMiB=32 heapUsedMiB=91 heapCommittedMiB=123 nonHeapUsedMiB=85 threads=73
@@ -21,7 +22,7 @@ Does the logs below show memory problems before render restarts the app?
 2026-05-12T03:17:16.065Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=58 committedMiB=74 maxMiB=123 freeMiB=15 heapUsedMiB=58 heapCommittedMiB=74 nonHeapUsedMiB=84 threads=55
 2026-05-12T03:18:16.065Z  INFO 7 --- [ory-diagnostics] io.flowlite.test.TestApplication         : memory diagnostics reason=periodic usedMiB=62 committedMiB=74 maxMiB=123 freeMiB=12 heapUsedMiB=62 heapCommittedMiB=74 nonHeapUsedMiB=86 threads=58
 
-## [REOPEN] We have clearRetryState in so many places
+## [DONE 2026-05-13.1] We have clearRetryState in so many places
 Why not to clear it before adding a new entry?
 
 > Agent:
@@ -34,6 +35,11 @@ Why not to clear it before adding a new entry?
 > Validation: reviewed the current engine paths that clear retry state on normal progress/wait handoff and the Cockpit read path that treats retry state as current error metadata.
 > Learning: if we want fewer `clearRetryState(...)` call sites, the right refactor is centralizing successful-exit paths, not delaying cleanup until external retry.
 >> MG: Ok. Try to centralize successful-exit path.
+
+> Agent:
+> Changes: extracted `releaseRunning(...)`, `completeRunning(...)`, and `advanceStage(...)` in `Engine` so successful exit paths share the retry-state cleanup and history writes instead of repeating the same sequence inline.
+> Validation: `./gradlew test --tests 'io.flowlite.test.EngineBehaviorTest'`; `./gradlew test --tests 'io.flowlite.test.RetryBehaviorTest'`
+> Learning: the duplication was mostly in three shapes only: release to waiting status, complete from `Running`, and advance to next stage. Pulling exactly those shapes out reduces call sites without changing retry timing semantics.
 
 ## [REOPEN] Access to flowlite from browser automation
 > Agent:

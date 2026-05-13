@@ -282,9 +282,7 @@ class Engine(
                     when {
                         isDueTimerTick -> Unit
                         existingTick != null -> {
-                            clearRetryState(flowInstanceId)
-                            persister.save(data.copy(stageStatus = StageStatus.WaitingForTimer))
-                            historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.WaitingForTimer)
+                            releaseRunning(flowId, data, persister, StageStatus.WaitingForTimer)
                             log.debug { "Timer stage ${data.stage} already has wake-up at ${existingTick.notBefore} ($flowId/$flowInstanceId)" }
                             return
                         }
@@ -297,9 +295,7 @@ class Engine(
                                     notBefore = wakeUpAt,
                                     targetStage = stageKey,
                                 )
-                                clearRetryState(flowInstanceId)
-                                persister.save(data.copy(stageStatus = StageStatus.WaitingForTimer))
-                                historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.WaitingForTimer)
+                                releaseRunning(flowId, data, persister, StageStatus.WaitingForTimer)
                                 log.debug { "Timer stage ${data.stage} scheduled wake-up at $wakeUpAt ($flowId/$flowInstanceId)" }
                                 return
                             }
@@ -307,9 +303,7 @@ class Engine(
                     }
 
                     if (def.isTerminal()) {
-                        clearRetryState(flowInstanceId)
-                        persister.save(data.copy(stageStatus = StageStatus.Completed))
-                        historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Completed)
+                        completeRunning(flowId, data, persister)
                         log.info { "Timer stage ${def.stage} completed after wake-up ($flowId/$flowInstanceId)" }
                         return
                     }
@@ -323,10 +317,7 @@ class Engine(
                         ?: error("Non-terminal stage ${data.stage} has a timer but no nextStage/condition")
 
                     val from = data.stage
-                    val before = data
-                    clearRetryState(flowInstanceId)
-                    data = persister.save(data.copy(stage = nextStage))
-                    historyStore.recordStageChanged(flowId, before, from = from, to = nextStage)
+                    data = advanceStage(flowId, data, persister, nextStage)
                     log.debug { "Timer advanced $from -> $nextStage ($flowId/$flowInstanceId)" }
                     continue
                 }
@@ -340,9 +331,7 @@ class Engine(
                         continue
                     }
                     // No matching event; release the RUNNING claim.
-                    clearRetryState(flowInstanceId)
-                    persister.save(data.copy(stageStatus = StageStatus.WaitingForEvent))
-                    historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.WaitingForEvent)
+                    releaseRunning(flowId, data, persister, StageStatus.WaitingForEvent)
                     // If an event arrived while we were RUNNING, its tick might have been delivered and ignored.
                     // Check the store and enqueue a tick in case event is there
                     if (eventStore.peek(flowId, flowInstanceId, def.eventHandlers.keys) != null) {
@@ -356,9 +345,7 @@ class Engine(
                     val newState = result ?: data.state
 
                     if (def.isTerminal()) {
-                        clearRetryState(flowInstanceId)
-                        persister.save(data.copy(state = newState, stageStatus = StageStatus.Completed))
-                        historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Completed)
+                        completeRunning(flowId, data, persister, newState)
                         log.info { "Stage ${def.stage} completed after action ($flowId/$flowInstanceId)" }
                         return
                     }
@@ -372,40 +359,29 @@ class Engine(
                         ?: error("Non-terminal stage ${data.stage} has an action but no nextStage/condition")
 
                     val from = data.stage
-                    val before = data
-                    clearRetryState(flowInstanceId)
-                    data = persister.save(data.copy(state = newState, stage = nextStage))
-                    historyStore.recordStageChanged(flowId, before, from = from, to = nextStage)
+                    data = advanceStage(flowId, data, persister, nextStage, newState)
                     log.debug { "Action advanced $from -> $nextStage ($flowId/$flowInstanceId)" }
                     continue
                 }
 
                 def.conditionHandler?.let { cond ->
-                    val from = data.stage
                     val target = resolveConditionInitialStage(cond, data.state)
                         ?: error("Condition did not resolve to a stage from ${data.stage}")
-                    val before = data
-                    clearRetryState(flowInstanceId)
-                    data = persister.save(data.copy(stage = target))
-                    historyStore.recordStageChanged(flowId, before, from = from, to = target)
+                    val from = data.stage
+                    data = advanceStage(flowId, data, persister, target)
                     log.debug { "Condition transition $from -> $target ($flowId/$flowInstanceId)" }
                     continue
                 }
 
                 def.nextStage?.let { ns ->
                     val from = data.stage
-                    val before = data
-                    clearRetryState(flowInstanceId)
-                    data = persister.save(data.copy(stage = ns))
-                    historyStore.recordStageChanged(flowId, before, from = from, to = ns)
+                    data = advanceStage(flowId, data, persister, ns)
                     log.debug { "Automatic transition $from -> $ns ($flowId/$flowInstanceId)" }
                     continue
                 }
 
                 if (def.isTerminal()) {
-                    clearRetryState(flowInstanceId)
-                    persister.save(data.copy(stageStatus = StageStatus.Completed))
-                    historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = StageStatus.Completed)
+                    completeRunning(flowId, data, persister)
                     log.info { "Stage ${data.stage} marked COMPLETED ($flowId/$flowInstanceId)" }
                     return
                 }
@@ -434,6 +410,38 @@ class Engine(
 
     private fun clearRetryState(flowInstanceId: UUID) {
         retryStateStore.delete(flowInstanceId)
+    }
+
+    private fun releaseRunning(
+        flowId: String,
+        data: InstanceData<Any>,
+        persister: StatePersister<Any>,
+        targetStatus: StageStatus,
+    ): InstanceData<Any> {
+        clearRetryState(data.flowInstanceId)
+        val saved = persister.save(data.copy(stageStatus = targetStatus))
+        historyStore.recordStatusChanged(flowId, data, from = StageStatus.Running, to = targetStatus)
+        return saved
+    }
+
+    private fun completeRunning(
+        flowId: String,
+        data: InstanceData<Any>,
+        persister: StatePersister<Any>,
+        newState: Any = data.state,
+    ): InstanceData<Any> = releaseRunning(flowId, data.copy(state = newState), persister, StageStatus.Completed)
+
+    private fun advanceStage(
+        flowId: String,
+        data: InstanceData<Any>,
+        persister: StatePersister<Any>,
+        targetStage: Stage,
+        newState: Any = data.state,
+    ): InstanceData<Any> {
+        clearRetryState(data.flowInstanceId)
+        val saved = persister.save(data.copy(state = newState, stage = targetStage))
+        historyStore.recordStageChanged(flowId, data, from = data.stage, to = targetStage)
+        return saved
     }
 
     private fun buildRetryState(flowId: String, data: InstanceData<Any>, error: Exception): RetryState {

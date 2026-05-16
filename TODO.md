@@ -17,7 +17,7 @@
 > Validation: `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`
 > Learning: the previous worker-thread mitigation and the new OOM-kill hypothesis point in different directions, so the safer move is to revert the concurrency override and increase observability first. `rssMiB` should help distinguish JVM-managed memory from whole-process memory growth on Render.
 
-## [REOPEN] Exploratory test with runPerfTestApp
+## [DONE 2026-05-16.1] Exploratory test with runPerfTestApp
 
 > Agent:
 > Answer: yes, when the live app is reachable I prefer browser automation first, Playwright-style scripted automation second, and CLI third.
@@ -26,6 +26,14 @@
 > Validation: reviewed the updated loop-extension text against the just-completed browser-access check and earlier CLI fallback path so the rule matches how the repo was actually exercised.
 > Learning: the right default is not one universal tool but a preference ladder based on reachability and diagnostic depth.
 >> MG: Where would you put playwright MCP?
+
+> Agent:
+> Between browser automation and Playwright CLI.
+> Reasoning: MCP is closer to scripted Playwright automation than to one-shot CLI usage. It is stronger than CLI when you need multi-step control, waits, or repeatability, but still less direct than live browser automation for quick visual exploration.
+> Updated order: browser automation first, Playwright MCP second, Playwright CLI third.
+> Changes: refined the exploratory-testing rule in `ief-loop-extensions.md` so MCP and CLI no longer share the same fallback bucket.
+> Validation: reviewed the updated rule against the kinds of exploratory work we already did here: live Cockpit inspection fits browser automation, richer scripted repro would fit MCP, and single-screenshot fallback fits CLI.
+> Learning: MCP is best treated as the structured fallback for interactive automation, while CLI remains the lightweight smoke-check tool.
 
 ## [REOPEN] Why scheduled tick needs target stage?
 We know where the flow is right now so we know what should be the next stage, don't we?

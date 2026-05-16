@@ -35,7 +35,7 @@
 > Validation: reviewed the updated rule against the kinds of exploratory work we already did here: live Cockpit inspection fits browser automation, richer scripted repro would fit MCP, and single-screenshot fallback fits CLI.
 > Learning: MCP is best treated as the structured fallback for interactive automation, while CLI remains the lightweight smoke-check tool.
 
-## [REOPEN] Why scheduled tick needs target stage?
+## [DONE 2026-05-16.1] Why scheduled tick needs target stage?
 We know where the flow is right now so we know what should be the next stage, don't we?
 Do we need to decode stage into a tick?
 
@@ -53,6 +53,16 @@ Do we need to decode stage into a tick?
 > Validation: reviewed `processTick(...)` and `processTickLoop(...)` in `Engine`; once a tick passes the stale-stage guard, the runtime treats it as a legitimate wake-up and may claim, consume events, run actions, advance stage, clear retry state, and record history.
 > Learning: `targetStage` is not just a convenience for logs; it is the guard that keeps delayed wake-ups causally tied to the stage that originally scheduled them.
 >> MG: The only problem I can see is moving out of timer stage to early. For other type of stages I do not think that processing stale tick will cause any problem. Do you agree? Actually looking at the code I think we are also protected from progressing from timer even if tick will come earlier.
+
+> Agent:
+> I agree partially, but with one important correction.
+> 1. You are right that an early timer tick is already handled safely. In the current code `isDueTimerTick` requires `!tick.notBefore.isAfter(now)`, so a timer tick that arrives before its due time does not advance the instance. The engine recalculates/schedules and returns to `WaitingForTimer`.
+> 2. The main timer risk is not "too early while still in the same timer stage". The real risk is "late after the instance has already left that timer stage". That is exactly what `targetStage` protects against.
+> 3. For ordinary immediate ticks I mostly agree with you: they do not carry `targetStage`, and duplicate delivery is usually benign because claim/status checks and event-store semantics make them idempotent enough.
+> 4. The other important delayed case is auto-retry. Auto-retry ticks are not generic duplicates; they are delayed wake-ups tied to the stage that failed. If that stage is no longer current, the stale auto-retry tick must be ignored for the same causal reason as stale timer ticks.
+> So the refined answer is: yes, timer-stage early wake-up is already guarded by `notBefore`; no, that does not remove the need for `targetStage`, because `targetStage` is guarding against delayed wake-ups arriving after the instance has moved on, and that matters for timer ticks and auto-retry ticks specifically.
+> Validation: re-reviewed `processTick(...)` and the timer branch in `processTickLoop(...)`; the due-time check protects against early wake-up, while the `currentStage != tick.targetStage` and stale auto-retry checks protect against wake-ups that belong to an older stage context.
+> Learning: `notBefore` answers "is it time yet?" while `targetStage` answers "is this wake-up still for the current stage?". We need both.
 
 ## [REOPEN] Retry metadata source of truth
 

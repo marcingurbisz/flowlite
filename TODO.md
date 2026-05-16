@@ -105,6 +105,13 @@ Do we need to decode stage into a tick?
   * docs: update TODO marcingurbisz 3/7/26, 3:57 PM
   * docs: update TODO marcingurbisz 3/6/26, 7:13 AM
 
+## [DONE 2026-05-16.1] Self-review of current loop
+> Agent:
+> Reviewed: the Render diagnostics change set, the exploratory-tooling clarification, and the two reopened design discussions about stale ticks and retry metadata ownership.
+> Result: no additional local defects found in the touched code/docs slices after validation. The main remaining risk is deployment-time rather than local correctness: the new memory diagnostics should now be observed on Render to confirm whether RSS/direct/mapped memory explains the restarts.
+> Validation reviewed: `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`; diff review for each docs-only slice; final TODO scan shows no remaining `REOPEN` or `IN PROGRESS` headings.
+> Learning: this loop was mostly about correcting the diagnostic direction. Reverting the speculative worker-thread mitigation before adding stronger observability kept the operational hypothesis honest.
+
 ## [ON HOLD] Topics on hold for now
 * Check sonar findings and decide if they should be fixed
 * Visual testing - comparing screenshots before and after changes? Not sure about it because when agent can

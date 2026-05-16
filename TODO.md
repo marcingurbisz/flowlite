@@ -96,6 +96,13 @@ Do we need to decode stage into a tick?
   * docs: update TODO marcingurbisz 3/7/26, 3:57 PM
   * docs: update TODO marcingurbisz 3/6/26, 7:13 AM
 
+## [DONE 2026-05-16.2] Self-review of current loop
+> Agent:
+> Reviewed: the retry-state consolidation into summary, the Cockpit read-path simplification, touched schema changes, and the final `targetStage` clarification against `processTick(...)`.
+> Result: no additional local defects found in the current loop changes. The main residual risk is environmental rather than code-level: Playwright host dependencies are still missing in this container, so browser-backed assertions are only indirectly covered through the green Gradle build rather than a fully provisioned browser runtime.
+> Validation reviewed: `./gradlew test`; final TODO scan shows no remaining `REOPEN` or `IN PROGRESS` headings.
+> Learning: the retry-state change stayed manageable because the abstraction boundary was already in the right place. `RetryStateStore` could stay stable while the physical storage and Cockpit read model were simplified underneath it.
+
 ## [ON HOLD] Topics on hold for now
 * Check sonar findings and decide if they should be fixed
 * Visual testing - comparing screenshots before and after changes? Not sure about it because when agent can

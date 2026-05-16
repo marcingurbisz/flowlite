@@ -8,34 +8,7 @@
 * Review engine once again
 * Review CockpitPlaywrightTest
 
-## [DONE 2026-05-16.1] Render restarts investigation
-* Revert setting FLOWLITE_TICK_WORKER_THREADS to 8
-* From Claude: Render instance dies after hours with `read: connection reset by peer` on health check. TCP RST mid-response = process killed (likely container OOM-kill on free tier 512 MiB, since JVM heap maxed at 123 MiB rules out JVM-level OOM). Free tier has no memory metrics, so we must log RSS ourselves. Extend memory diagnostics logger — add `rssMiB`, `directMiB`, `mappedMiB`
-
-> Agent:
-> Changes: removed the Render-specific `FLOWLITE_TICK_WORKER_THREADS=8` override and restored the test app scheduler wiring to the library default. Extended `PeriodicMemoryLogger` to emit `rssMiB`, `directMiB`, and `mappedMiB` in addition to the existing JVM heap/non-heap metrics.
-> Validation: `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`
-> Learning: the previous worker-thread mitigation and the new OOM-kill hypothesis point in different directions, so the safer move is to revert the concurrency override and increase observability first. `rssMiB` should help distinguish JVM-managed memory from whole-process memory growth on Render.
-
-## [DONE 2026-05-16.1] Exploratory test with runPerfTestApp
-
-> Agent:
-> Answer: yes, when the live app is reachable I prefer browser automation first, Playwright-style scripted automation second, and CLI third.
-> Pros/cons: browser automation is fastest for interactive exploration and seeing the real rendered state, but it is weaker for repeatable long flows and low-level diagnostics; scripted Playwright automation is better for reproducibility, waits, and deeper debugging, but costs more setup; CLI is the lightest fallback for smoke checks and screenshots from inside the container, but it gives the least observability and weakest interaction model.
-> Changes: added an explicit exploratory tool preference order and fallback rule to `ief-loop-extensions.md`.
-> Validation: reviewed the updated loop-extension text against the just-completed browser-access check and earlier CLI fallback path so the rule matches how the repo was actually exercised.
-> Learning: the right default is not one universal tool but a preference ladder based on reachability and diagnostic depth.
->> MG: Where would you put playwright MCP?
-
-> Agent:
-> Between browser automation and Playwright CLI.
-> Reasoning: MCP is closer to scripted Playwright automation than to one-shot CLI usage. It is stronger than CLI when you need multi-step control, waits, or repeatability, but still less direct than live browser automation for quick visual exploration.
-> Updated order: browser automation first, Playwright MCP second, Playwright CLI third.
-> Changes: refined the exploratory-testing rule in `ief-loop-extensions.md` so MCP and CLI no longer share the same fallback bucket.
-> Validation: reviewed the updated rule against the kinds of exploratory work we already did here: live Cockpit inspection fits browser automation, richer scripted repro would fit MCP, and single-screenshot fallback fits CLI.
-> Learning: MCP is best treated as the structured fallback for interactive automation, while CLI remains the lightweight smoke-check tool.
-
-## [DONE 2026-05-16.1] Why scheduled tick needs target stage?
+## [REOPEN] Why scheduled tick needs target stage?
 We know where the flow is right now so we know what should be the next stage, don't we?
 Do we need to decode stage into a tick?
 
@@ -63,8 +36,9 @@ Do we need to decode stage into a tick?
 > So the refined answer is: yes, timer-stage early wake-up is already guarded by `notBefore`; no, that does not remove the need for `targetStage`, because `targetStage` is guarding against delayed wake-ups arriving after the instance has moved on, and that matters for timer ticks and auto-retry ticks specifically.
 > Validation: re-reviewed `processTick(...)` and the timer branch in `processTickLoop(...)`; the due-time check protects against early wake-up, while the `currentStage != tick.targetStage` and stale auto-retry checks protect against wake-ups that belong to an older stage context.
 > Learning: `notBefore` answers "is it time yet?" while `targetStage` answers "is this wake-up still for the current stage?". We need both.
+>> MG: We are adding targetStage to ticks when in timer stage or when retrying after Exception. In case of complete targetStage removal the only problematic case I can think of is a timer or autoretry tick that comes when process is in error state on another stage. In other case processing this tick is not a problem. In case of process in ERROR state will it advance if timer tick comes? I guess only autoretry tick can advance it.
 
-## [DONE 2026-05-16.1] Retry metadata source of truth
+## [REOPEN] Retry metadata source of truth
 
 > Agent:
 > Cockpit now prefers retry-state rows but falls back to the latest error history row when retry metadata is unavailable from that store. The runtime path writes both, so the UI stays correct.
@@ -96,6 +70,7 @@ Do we need to decode stage into a tick?
 > Main caution: choose one owner for writing those retry fields. Right now summary is updated through `SpringDataJdbcHistoryStore.append(...)`, while retry snapshot writes happen through `RetryStateStore`. If we move retry state into summary, we should avoid a muddled "two writers, same columns" design. I would keep the `RetryStateStore` abstraction as the engine-facing owner of current retry snapshot and make it persist into summary row fields.
 > Validation: reviewed `RetryStateStore`, `FlowLiteRetryStateRow`, `FlowLiteInstanceSummaryRow`, and the current `SpringDataJdbcHistoryStore` / `SpringDataJdbcRetryStateStore` split. The duplication today is structural, not accidental.
 > Learning: once summary is accepted as the internal read model, duplicating current retry state in a second table buys little. The cleaner trade-off is one summary-backed current snapshot plus append-only history.
+>> MG: Go for it. No migration needed. We do not have any production instances for flowlite. Is FlowLiteInstanceSummary the best name? Is adding a Row to the name a good pattern?
 
 ## [FOR HUMAN] Review git changes
 * Review perf(engine): raise tick worker default 3/25/26, 9:13 AM marcingurbisz
@@ -104,13 +79,6 @@ Do we need to decode stage into a tick?
   * docs: TODO update marcingurbisz 3/8/26, 9:12 AM
   * docs: update TODO marcingurbisz 3/7/26, 3:57 PM
   * docs: update TODO marcingurbisz 3/6/26, 7:13 AM
-
-## [DONE 2026-05-16.1] Self-review of current loop
-> Agent:
-> Reviewed: the Render diagnostics change set, the exploratory-tooling clarification, and the two reopened design discussions about stale ticks and retry metadata ownership.
-> Result: no additional local defects found in the touched code/docs slices after validation. The main remaining risk is deployment-time rather than local correctness: the new memory diagnostics should now be observed on Render to confirm whether RSS/direct/mapped memory explains the restarts.
-> Validation reviewed: `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`; diff review for each docs-only slice; final TODO scan shows no remaining `REOPEN` or `IN PROGRESS` headings.
-> Learning: this loop was mostly about correcting the diagnostic direction. Reverting the speculative worker-thread mitigation before adding stronger observability kept the operational hypothesis honest.
 
 ## [ON HOLD] Topics on hold for now
 * Check sonar findings and decide if they should be fixed

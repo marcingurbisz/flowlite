@@ -17,7 +17,10 @@ import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.cockpitRouter
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.lang.management.BufferPoolMXBean
 import java.lang.management.ManagementFactory
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -74,10 +77,8 @@ object Beans {
         }
 
         registerBean {
-            val environment = bean<Environment>()
             SpringDataJdbcTickScheduler(
                 tickRepo = bean<FlowLiteTickRepository>(),
-                workerThreads = environment.getProperty<Int>("flowlite.tick.worker-threads", defaultTickWorkerThreads()),
                 clock = bean<AdjustableClock>(),
             )
         }
@@ -242,8 +243,6 @@ object ShowcaseActionBehavior {
 private val showcaseLog = KotlinLogging.logger {}
 private val diagnosticsLog = KotlinLogging.logger {}
 
-private fun defaultTickWorkerThreads(): Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
-
 internal class PeriodicMemoryLogger(
     enabled: Boolean,
     intervalSeconds: Long,
@@ -284,9 +283,12 @@ internal class PeriodicMemoryLogger(
         val maxBytes = runtime.maxMemory()
         val heapUsage = ManagementFactory.getMemoryMXBean().heapMemoryUsage
         val nonHeapUsage = ManagementFactory.getMemoryMXBean().nonHeapMemoryUsage
+        val rssBytes = readProcessResidentSetBytes()
+        val directBytes = bufferPoolUsageBytes("direct")
+        val mappedBytes = bufferPoolUsageBytes("mapped")
 
         diagnosticsLog.info {
-            "memory diagnostics reason=$reason usedMiB=${usedBytes.toMiB()} committedMiB=${totalBytes.toMiB()} maxMiB=${maxBytes.toMiB()} freeMiB=${freeBytes.toMiB()} heapUsedMiB=${heapUsage.used.toMiB()} heapCommittedMiB=${heapUsage.committed.toMiB()} nonHeapUsedMiB=${nonHeapUsage.used.toMiB()} threads=${Thread.getAllStackTraces().size}"
+            "memory diagnostics reason=$reason usedMiB=${usedBytes.toMiB()} committedMiB=${totalBytes.toMiB()} maxMiB=${maxBytes.toMiB()} freeMiB=${freeBytes.toMiB()} heapUsedMiB=${heapUsage.used.toMiB()} heapCommittedMiB=${heapUsage.committed.toMiB()} nonHeapUsedMiB=${nonHeapUsage.used.toMiB()} rssMiB=${rssBytes.toMiBOrUnavailable()} directMiB=${directBytes.toMiBOrUnavailable()} mappedMiB=${mappedBytes.toMiBOrUnavailable()} threads=${Thread.getAllStackTraces().size}"
         }
     }
 
@@ -296,6 +298,28 @@ internal class PeriodicMemoryLogger(
 }
 
 private fun Long.toMiB(): Long = this / (1024 * 1024)
+
+private fun Long?.toMiBOrUnavailable(): String = this?.toMiB()?.toString() ?: "n/a"
+
+private fun readProcessResidentSetBytes(): Long? {
+    val statusPath = Path.of("/proc/self/status")
+    if (!Files.isReadable(statusPath)) return null
+    return Files.readAllLines(statusPath)
+        .firstOrNull { it.startsWith("VmRSS:") }
+        ?.removePrefix("VmRSS:")
+        ?.trim()
+        ?.split(Regex("\\s+"))
+        ?.firstOrNull()
+        ?.toLongOrNull()
+        ?.times(1024)
+}
+
+private fun bufferPoolUsageBytes(poolNamePrefix: String): Long? {
+    val pools = ManagementFactory.getPlatformMXBeans(BufferPoolMXBean::class.java)
+        .filter { it.name.startsWith(poolNamePrefix, ignoreCase = true) }
+    if (pools.isEmpty()) return null
+    return pools.sumOf { it.memoryUsed.coerceAtLeast(0L) }
+}
 
 internal class ShowcaseFlowSeeder(
     private val engine: Engine,

@@ -8,9 +8,14 @@
 * Review engine once again
 * Review CockpitPlaywrightTest
 
-## Render restarts investigation
+## [DONE 2026-05-16.1] Render restarts investigation
 * Revert setting FLOWLITE_TICK_WORKER_THREADS to 8
 * From Claude: Render instance dies after hours with `read: connection reset by peer` on health check. TCP RST mid-response = process killed (likely container OOM-kill on free tier 512 MiB, since JVM heap maxed at 123 MiB rules out JVM-level OOM). Free tier has no memory metrics, so we must log RSS ourselves. Extend memory diagnostics logger — add `rssMiB`, `directMiB`, `mappedMiB`
+
+> Agent:
+> Changes: removed the Render-specific `FLOWLITE_TICK_WORKER_THREADS=8` override and restored the test app scheduler wiring to the library default. Extended `PeriodicMemoryLogger` to emit `rssMiB`, `directMiB`, and `mappedMiB` in addition to the existing JVM heap/non-heap metrics.
+> Validation: `./gradlew test --tests 'io.flowlite.test.CockpitServiceTest'`
+> Learning: the previous worker-thread mitigation and the new OOM-kill hypothesis point in different directions, so the safer move is to revert the concurrency override and increase observability first. `rssMiB` should help distinguish JVM-managed memory from whole-process memory growth on Render.
 
 ## [REOPEN] Exploratory test with runPerfTestApp
 

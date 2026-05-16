@@ -96,19 +96,8 @@ BEGIN
         stage varchar(128) NULL,
         status varchar(32) NOT NULL,
         cockpit_status varchar(32) NOT NULL,
-        last_error_message varchar(4000) NULL,
-        updated_at datetime2 NOT NULL
-    )
-END;
-
-IF OBJECT_ID('dbo.flowlite_retry_state', 'U') IS NULL
-BEGIN
-    CREATE TABLE dbo.flowlite_retry_state (
-        flow_instance_id uniqueidentifier NOT NULL PRIMARY KEY,
-        flow_id varchar(128) NOT NULL,
-        stage varchar(128) NOT NULL,
-        failed_attempt_count int NOT NULL,
-        external_retry_allowed bit NOT NULL,
+        failed_attempt_count int NULL,
+        external_retry_allowed bit NULL,
         auto_retry_max_attempts int NULL,
         next_auto_retry_at datetime2 NULL,
         last_error_type varchar(512) NULL,
@@ -155,14 +144,4 @@ IF NOT EXISTS (
 )
 BEGIN
     CREATE INDEX idx_flowlite_instance_summary_cockpit_status ON dbo.flowlite_instance_summary(cockpit_status, updated_at, flow_id, flow_instance_id)
-END;
-
-IF NOT EXISTS (
-    SELECT 1
-    FROM sys.indexes
-    WHERE name = 'idx_flowlite_retry_state_flow'
-      AND object_id = OBJECT_ID('dbo.flowlite_retry_state')
-)
-BEGIN
-    CREATE INDEX idx_flowlite_retry_state_flow ON dbo.flowlite_retry_state(flow_id, updated_at, flow_instance_id)
 END;

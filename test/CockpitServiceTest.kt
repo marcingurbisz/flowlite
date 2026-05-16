@@ -3,9 +3,9 @@ package io.flowlite.test
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
 import io.flowlite.FlowLiteInstanceSummaryRepository
-import io.flowlite.FlowLiteRetryStateRepository
-import io.flowlite.FlowLiteRetryStateRow
 import io.flowlite.HistoryEntryType
+import io.flowlite.RetryState
+import io.flowlite.RetryStateStore
 import io.flowlite.RetryTrigger
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
@@ -25,7 +25,7 @@ class CockpitServiceTest : BehaviorSpec({
     val service = context.getBean<CockpitService>()
     val historyRepo = context.getBean<FlowLiteHistoryRepository>()
     val summaryRepo = context.getBean<FlowLiteInstanceSummaryRepository>()
-    val retryStateRepo = context.getBean<FlowLiteRetryStateRepository>()
+    val retryStateStore = context.getBean<RetryStateStore>()
     val historyStore = context.getBean<SpringDataJdbcHistoryStore>()
 
     afterSpec {
@@ -47,7 +47,6 @@ class CockpitServiceTest : BehaviorSpec({
             fun seedRows() {
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                retryStateRepo.deleteAll()
                 listOf(
                     historyRow("2026-03-04T08:00:00Z", flowA, aRunning, HistoryEntryType.Started, stage = "Init", toStatus = StageStatus.PendingEngine),
                     historyRow("2026-03-04T08:01:00Z", flowA, aRunning, HistoryEntryType.StatusChanged, stage = "Init", fromStatus = StageStatus.PendingEngine, toStatus = StageStatus.Running),
@@ -92,10 +91,10 @@ class CockpitServiceTest : BehaviorSpec({
             }
 
             then("listInstances and instance expose retry metadata for error rows") {
-                retryStateRepo.save(
-                    FlowLiteRetryStateRow(
-                        flowInstanceId = aError2,
+                retryStateStore.save(
+                    RetryState(
                         flowId = flowA,
+                        flowInstanceId = aError2,
                         stage = "Review",
                         failedAttemptCount = 2,
                         externalRetryAllowed = true,
@@ -134,7 +133,6 @@ class CockpitServiceTest : BehaviorSpec({
             then("it returns diagrams and per-flow counters only for registered flows") {
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                retryStateRepo.deleteAll()
                 listOf(
                     historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.WaitingForEvent, toStatus = StageStatus.Running),
                     historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.WaitingForEvent),
@@ -193,7 +191,6 @@ class CockpitServiceTest : BehaviorSpec({
             then("it derives cockpit status for pending event and timer stages") {
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                retryStateRepo.deleteAll()
                 listOf(
                     historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.WaitingForEvent, toStatus = StageStatus.Running),
                     historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.WaitingForEvent),
@@ -213,7 +210,6 @@ class CockpitServiceTest : BehaviorSpec({
 
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                retryStateRepo.deleteAll()
                 listOf(
                     historyRow(now.minus(Duration.ofMinutes(30)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.WaitingForEvent, toStatus = StageStatus.Running),
                     historyRow(now.minus(Duration.ofHours(2)).toString(), ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.WaitingForEvent),
@@ -244,7 +240,6 @@ class CockpitServiceTest : BehaviorSpec({
             then("timeline returns rows in repository order") {
                 summaryRepo.deleteAll()
                 historyRepo.deleteAll()
-                retryStateRepo.deleteAll()
                 listOf(
                     historyRow("2026-03-04T10:00:00Z", flowId, id, HistoryEntryType.Started, stage = "InitializingConfirmation", toStatus = StageStatus.PendingEngine),
                     historyRow("2026-03-04T10:01:00Z", flowId, id, HistoryEntryType.Error, stage = "InitializingConfirmation", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "boom", failedAttemptCount = 1, autoRetryMaxAttempts = 3, nextAutoRetryAt = Instant.parse("2026-03-04T10:05:00Z"), externalRetryAllowed = true),

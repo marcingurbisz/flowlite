@@ -283,20 +283,6 @@ data class FlowLiteHistoryRow(
     val externalRetryAllowed: Boolean? = null,
 )
 
-@Table("FLOWLITE_RETRY_STATE")
-data class FlowLiteRetryStateRow(
-    @Id val flowInstanceId: UUID,
-    val flowId: String,
-    val stage: String,
-    val failedAttemptCount: Int,
-    val externalRetryAllowed: Boolean,
-    val autoRetryMaxAttempts: Int? = null,
-    val nextAutoRetryAt: Instant? = null,
-    val lastErrorType: String? = null,
-    val lastErrorMessage: String? = null,
-    val updatedAt: Instant,
-)
-
 @Table("FLOWLITE_INSTANCE_SUMMARY")
 data class FlowLiteInstanceSummaryRow(
     @Id val id: UUID? = null,
@@ -305,6 +291,11 @@ data class FlowLiteInstanceSummaryRow(
     val stage: String? = null,
     val status: String,
     val cockpitStatus: String,
+    val failedAttemptCount: Int? = null,
+    val externalRetryAllowed: Boolean? = null,
+    val autoRetryMaxAttempts: Int? = null,
+    val nextAutoRetryAt: Instant? = null,
+    val lastErrorType: String? = null,
     val lastErrorMessage: String? = null,
     val updatedAt: Instant,
 )
@@ -337,10 +328,6 @@ interface FlowLiteHistoryRepository : CrudRepository<FlowLiteHistoryRow, UUID> {
     fun findTimeline(flowId: String, flowInstanceId: UUID): List<FlowLiteHistoryRow>
 }
 
-interface FlowLiteRetryStateRepository : CrudRepository<FlowLiteRetryStateRow, UUID> {
-    fun findAllByFlowInstanceIdIn(flowInstanceIds: Collection<UUID>): List<FlowLiteRetryStateRow>
-}
-
 interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSummaryRow, UUID> {
     @Query(
         """
@@ -350,6 +337,17 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         """,
     )
     fun findSummary(flowId: String, flowInstanceId: UUID): FlowLiteInstanceSummaryRow?
+
+    @Query(
+        """
+        select *
+        from flowlite_instance_summary
+        where flow_instance_id = :flowInstanceId
+        """,
+    )
+    fun findByFlowInstanceId(flowInstanceId: UUID): FlowLiteInstanceSummaryRow?
+
+    fun findAllByFlowInstanceIdIn(flowInstanceIds: Collection<UUID>): List<FlowLiteInstanceSummaryRow>
 
     @Query(
         """
@@ -472,23 +470,34 @@ class SpringDataJdbcHistoryStore(
 }
 
 class SpringDataJdbcRetryStateStore(
-    private val repo: FlowLiteRetryStateRepository,
+    private val summaryRepo: FlowLiteInstanceSummaryRepository,
 ) : RetryStateStore {
     override fun save(state: RetryState): RetryState {
-        repo.save(state.toRow())
+        val existing = summaryRepo.findSummary(state.flowId, state.flowInstanceId)
+        val next = (existing ?: FlowLiteInstanceSummaryRow(
+            id = null,
+            flowId = state.flowId,
+            flowInstanceId = state.flowInstanceId,
+            stage = state.stage,
+            status = StageStatus.Error.name,
+            cockpitStatus = StageStatus.Error.name,
+            updatedAt = state.updatedAt,
+        )).withRetryState(state)
+        summaryRepo.save(next)
         return state
     }
 
     override fun find(flowInstanceId: UUID): RetryState? =
-        repo.findById(flowInstanceId).orElse(null)?.toRetryState()
+        summaryRepo.findByFlowInstanceId(flowInstanceId)?.toRetryStateOrNull()
 
     override fun findAll(flowInstanceIds: Collection<UUID>): List<RetryState> {
         if (flowInstanceIds.isEmpty()) return emptyList()
-        return repo.findAllById(flowInstanceIds).map { it.toRetryState() }
+        return summaryRepo.findAllByFlowInstanceIdIn(flowInstanceIds).mapNotNull { it.toRetryStateOrNull() }
     }
 
     override fun delete(flowInstanceId: UUID) {
-        repo.deleteById(flowInstanceId)
+        val existing = summaryRepo.findByFlowInstanceId(flowInstanceId) ?: return
+        summaryRepo.save(existing.clearRetryState())
     }
 }
 
@@ -534,6 +543,27 @@ private fun FlowLiteInstanceSummaryRow.apply(
         updatedAt = entry.occurredAt,
     )
 }
+
+private fun FlowLiteInstanceSummaryRow.withRetryState(
+    state: RetryState,
+): FlowLiteInstanceSummaryRow = copy(
+    stage = state.stage,
+    failedAttemptCount = state.failedAttemptCount,
+    externalRetryAllowed = state.externalRetryAllowed,
+    autoRetryMaxAttempts = state.autoRetryMaxAttempts,
+    nextAutoRetryAt = state.nextAutoRetryAt,
+    lastErrorType = state.lastErrorType,
+    lastErrorMessage = state.lastErrorMessage,
+    updatedAt = state.updatedAt,
+)
+
+private fun FlowLiteInstanceSummaryRow.clearRetryState(): FlowLiteInstanceSummaryRow = copy(
+    failedAttemptCount = null,
+    externalRetryAllowed = null,
+    autoRetryMaxAttempts = null,
+    nextAutoRetryAt = null,
+    lastErrorType = null,
+)
 
 fun FlowLiteHistoryRow.toHistoryEntry() =
     when (type) {
@@ -609,30 +639,20 @@ fun FlowLiteHistoryRow.toHistoryEntry() =
         )
     }
 
-private fun RetryState.toRow() =
-    FlowLiteRetryStateRow(
-        flowInstanceId = flowInstanceId,
+private fun FlowLiteInstanceSummaryRow.toRetryStateOrNull(): RetryState? {
+    val retryStage = stage ?: return null
+    val attempts = failedAttemptCount ?: return null
+    val externalAllowed = externalRetryAllowed ?: return null
+    return RetryState(
         flowId = flowId,
-        stage = stage,
-        failedAttemptCount = failedAttemptCount,
-        externalRetryAllowed = externalRetryAllowed,
+        flowInstanceId = flowInstanceId,
+        stage = retryStage,
+        failedAttemptCount = attempts,
+        externalRetryAllowed = externalAllowed,
         autoRetryMaxAttempts = autoRetryMaxAttempts,
         nextAutoRetryAt = nextAutoRetryAt,
         lastErrorType = lastErrorType,
         lastErrorMessage = lastErrorMessage,
         updatedAt = updatedAt,
     )
-
-private fun FlowLiteRetryStateRow.toRetryState() =
-    RetryState(
-        flowId = flowId,
-        flowInstanceId = flowInstanceId,
-        stage = stage,
-        failedAttemptCount = failedAttemptCount,
-        externalRetryAllowed = externalRetryAllowed,
-        autoRetryMaxAttempts = autoRetryMaxAttempts,
-        nextAutoRetryAt = nextAutoRetryAt,
-        lastErrorType = lastErrorType,
-        lastErrorMessage = lastErrorMessage,
-        updatedAt = updatedAt,
-    )
+}

@@ -167,7 +167,6 @@ object Beans {
                 mermaid = bean<io.flowlite.MermaidGenerator>(),
                 historyRepo = bean<FlowLiteHistoryRepository>(),
                 summaryRepo = bean<FlowLiteInstanceSummaryRepository>(),
-                retryStateStore = bean(),
             )
         }
 

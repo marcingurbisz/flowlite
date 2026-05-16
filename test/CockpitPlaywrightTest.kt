@@ -9,12 +9,12 @@ import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
 import io.flowlite.FlowLiteHistoryRepository
 import io.flowlite.FlowLiteHistoryRow
 import io.flowlite.FlowLiteInstanceSummaryRepository
-import io.flowlite.FlowLiteRetryStateRepository
-import io.flowlite.FlowLiteRetryStateRow
 import io.flowlite.FlowLiteTickRepository
 import io.flowlite.Engine
 import io.flowlite.HistoryEntryType
 import io.flowlite.PendingEventRepository
+import io.flowlite.RetryState
+import io.flowlite.RetryStateStore
 import io.flowlite.RetryTrigger
 import io.flowlite.SpringDataJdbcHistoryStore
 import io.flowlite.StageStatus
@@ -77,7 +77,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
     lateinit var historyRepo: FlowLiteHistoryRepository
     lateinit var historyStore: SpringDataJdbcHistoryStore
     lateinit var summaryRepo: FlowLiteInstanceSummaryRepository
-    lateinit var retryStateRepo: FlowLiteRetryStateRepository
+    lateinit var retryStateStore: RetryStateStore
     lateinit var tickRepo: FlowLiteTickRepository
     lateinit var engine: Engine
     lateinit var pendingEventRepo: PendingEventRepository
@@ -98,7 +98,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
         historyRepo = context.getBean()
         historyStore = context.getBean()
         summaryRepo = context.getBean()
-        retryStateRepo = context.getBean()
+        retryStateStore = context.getBean()
         tickRepo = context.getBean()
         engine = context.getBean()
         pendingEventRepo = context.getBean()
@@ -280,7 +280,6 @@ class CockpitPlaywrightTest : BehaviorSpec({
     fun resetCockpitData() {
         tickRepo.deleteAll()
         pendingEventRepo.deleteAll()
-        retryStateRepo.deleteAll()
         summaryRepo.deleteAll()
         historyRepo.deleteAll()
         orderRepo.deleteAll()
@@ -299,10 +298,10 @@ class CockpitPlaywrightTest : BehaviorSpec({
         lastErrorMessage: String? = null,
         updatedAt: Instant,
     ) {
-        retryStateRepo.save(
-            FlowLiteRetryStateRow(
-                flowInstanceId = flowInstanceId,
+        retryStateStore.save(
+            RetryState(
                 flowId = flowId,
+                flowInstanceId = flowInstanceId,
                 stage = stage,
                 failedAttemptCount = failedAttemptCount,
                 externalRetryAllowed = externalRetryAllowed,

@@ -38,7 +38,7 @@ Do we need to decode stage into a tick?
 > Learning: `notBefore` answers "is it time yet?" while `targetStage` answers "is this wake-up still for the current stage?". We need both.
 >> MG: We are adding targetStage to ticks when in timer stage or when retrying after Exception. In case of complete targetStage removal the only problematic case I can think of is a timer or autoretry tick that comes when process is in error state on another stage. In other case processing this tick is not a problem. In case of process in ERROR state will it advance if timer tick comes? I guess only autoretry tick can advance it.
 
-## [REOPEN] Retry metadata source of truth
+## [DONE 2026-05-16.2] Retry metadata source of truth
 
 > Agent:
 > Cockpit now prefers retry-state rows but falls back to the latest error history row when retry metadata is unavailable from that store. The runtime path writes both, so the UI stays correct.
@@ -71,6 +71,13 @@ Do we need to decode stage into a tick?
 > Validation: reviewed `RetryStateStore`, `FlowLiteRetryStateRow`, `FlowLiteInstanceSummaryRow`, and the current `SpringDataJdbcHistoryStore` / `SpringDataJdbcRetryStateStore` split. The duplication today is structural, not accidental.
 > Learning: once summary is accepted as the internal read model, duplicating current retry state in a second table buys little. The cleaner trade-off is one summary-backed current snapshot plus append-only history.
 >> MG: Go for it. No migration needed. We do not have any production instances for flowlite. Is FlowLiteInstanceSummary the best name? Is adding a Row to the name a good pattern?
+
+> Agent:
+> Done.
+> Changes: moved retry snapshot fields into `FlowLiteInstanceSummaryRow`, switched `SpringDataJdbcRetryStateStore` to persist into summary rows, removed the separate `FLOWLITE_RETRY_STATE` schema/table, and simplified Cockpit to read retry metadata directly from summary instead of using retry-store/history fallback.
+> Naming: I would keep `FlowLiteInstanceSummaryRow` for now. `FlowLiteInstanceSummary` is a reasonable concept name for the internal read model, and the `Row` suffix is still useful here because this Kotlin type is also the Spring Data JDBC table-mapped record. If we later split "projection concept" from "JDBC record", then `FlowLiteInstanceSummary` plus a separate `...Row` type would make sense, but that would be extra churn today.
+> Validation: `./gradlew test` passed after the change. The run emitted a Playwright host dependency warning in this container, but the Gradle build still completed successfully.
+> Learning: the clean boundary is now append-only history plus one summary-backed current snapshot. Keeping `RetryStateStore` as the engine-facing abstraction still works well even though the physical storage moved into summary.
 
 ## [FOR HUMAN] Review git changes
 * Review perf(engine): raise tick worker default 3/25/26, 9:13 AM marcingurbisz

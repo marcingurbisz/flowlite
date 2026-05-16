@@ -64,7 +64,7 @@ Do we need to decode stage into a tick?
 > Validation: re-reviewed `processTick(...)` and the timer branch in `processTickLoop(...)`; the due-time check protects against early wake-up, while the `currentStage != tick.targetStage` and stale auto-retry checks protect against wake-ups that belong to an older stage context.
 > Learning: `notBefore` answers "is it time yet?" while `targetStage` answers "is this wake-up still for the current stage?". We need both.
 
-## [REOPEN] Retry metadata source of truth
+## [DONE 2026-05-16.1] Retry metadata source of truth
 
 > Agent:
 > Cockpit now prefers retry-state rows but falls back to the latest error history row when retry metadata is unavailable from that store. The runtime path writes both, so the UI stays correct.
@@ -84,6 +84,18 @@ Do we need to decode stage into a tick?
 > Validation: reviewed `SpringDataJdbcHistoryStore.append(...)`, `HistoryEntry.toSummaryProjectionUpdate()`, and `FlowLiteInstanceSummaryRow.apply(...)`; the current summary projection is intentionally narrow, so retry fields would be a deliberate expansion of that model rather than a small tweak.
 > Learning: this is not mainly a storage decision; it is a read-model ownership decision. Once retry fields land in summary, that projection should be considered the primary Cockpit contract, not just a cache of a few status columns.
 >> MG: Yes. FlowLiteInstanceSummaryRow is definitely for me internal read model not a minimal status cache. What do you think about moving FlowLiteRetryStateRow fields into FlowLiteInstanceSummaryRow instead duplicating them?
+
+> Agent:
+> I think that is the better direction.
+> If `FlowLiteInstanceSummaryRow` is an intentional internal read model, then moving the current retry snapshot there is cleaner than duplicating the same current-state fields in both `FLOWLITE_RETRY_STATE` and `FLOWLITE_INSTANCE_SUMMARY`.
+> My preferred shape would be:
+> 1. keep the `RetryStateStore` interface,
+> 2. back it with retry columns on `FlowLiteInstanceSummaryRow`,
+> 3. remove the separate `FlowLiteRetryStateRow` table once the migration is done,
+> 4. let Cockpit read retry metadata directly from summary without fallback logic.
+> Main caution: choose one owner for writing those retry fields. Right now summary is updated through `SpringDataJdbcHistoryStore.append(...)`, while retry snapshot writes happen through `RetryStateStore`. If we move retry state into summary, we should avoid a muddled "two writers, same columns" design. I would keep the `RetryStateStore` abstraction as the engine-facing owner of current retry snapshot and make it persist into summary row fields.
+> Validation: reviewed `RetryStateStore`, `FlowLiteRetryStateRow`, `FlowLiteInstanceSummaryRow`, and the current `SpringDataJdbcHistoryStore` / `SpringDataJdbcRetryStateStore` split. The duplication today is structural, not accidental.
+> Learning: once summary is accepted as the internal read model, duplicating current retry state in a second table buys little. The cleaner trade-off is one summary-backed current snapshot plus append-only history.
 
 ## [FOR HUMAN] Review git changes
 * Review perf(engine): raise tick worker default 3/25/26, 9:13 AM marcingurbisz

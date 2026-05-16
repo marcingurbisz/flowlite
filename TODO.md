@@ -8,7 +8,7 @@
 * Review engine once again
 * Review CockpitPlaywrightTest
 
-## [REOPEN] Why scheduled tick needs target stage?
+## [DONE 2026-05-16.2] Why scheduled tick needs target stage?
 We know where the flow is right now so we know what should be the next stage, don't we?
 Do we need to decode stage into a tick?
 
@@ -37,6 +37,15 @@ Do we need to decode stage into a tick?
 > Validation: re-reviewed `processTick(...)` and the timer branch in `processTickLoop(...)`; the due-time check protects against early wake-up, while the `currentStage != tick.targetStage` and stale auto-retry checks protect against wake-ups that belong to an older stage context.
 > Learning: `notBefore` answers "is it time yet?" while `targetStage` answers "is this wake-up still for the current stage?". We need both.
 >> MG: We are adding targetStage to ticks when in timer stage or when retrying after Exception. In case of complete targetStage removal the only problematic case I can think of is a timer or autoretry tick that comes when process is in error state on another stage. In other case processing this tick is not a problem. In case of process in ERROR state will it advance if timer tick comes? I guess only autoretry tick can advance it.
+
+> Agent:
+> Yes, your latest refinement is mostly right, and the key distinction is exactly timer tick vs auto-retry tick while current status is `Error`.
+> 1. A stale plain timer tick will not advance an instance that is currently `Error` on another stage. After the stale-stage guard, `processTick(...)` enters the `StageStatus.Error` branch, `tick.autoRetry` is false, so the engine only logs and returns.
+> 2. A stale auto-retry tick is the real advancing case. Without `targetStage`, that same `StageStatus.Error` branch would call `tryAutoRetry(...)`, which can reset the current error stage back to its waiting status and enqueue fresh work, even though the delayed tick belonged to an older stage failure.
+> 3. For non-error current states I would still not call stale timer ticks universally harmless; they degrade into generic duplicate wake-ups. Many will be benign, but they also stop being causally tied to the timer stage that scheduled them, which is exactly the contract `targetStage` is preserving.
+> So the narrowest concrete answer is: yes, if we remove `targetStage`, the sharpest incorrect advance is stale auto-retry against a different current `Error` stage; and no, a plain timer tick will not advance an instance that is already `Error`.
+> Validation: re-reviewed the `tick.targetStage` guard and the `StageStatus.Error` branch in `processTick(...)`; only `tick.autoRetry` can pass from `Error` into `tryAutoRetry(...)`.
+> Learning: `targetStage` is doing two jobs at once for delayed ticks: protecting timer causality in general and blocking the one truly dangerous cross-stage advance path, which is stale auto-retry into the wrong current error stage.
 
 ## [DONE 2026-05-16.2] Retry metadata source of truth
 

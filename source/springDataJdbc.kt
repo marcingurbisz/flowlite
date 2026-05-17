@@ -347,8 +347,6 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
     )
     fun findByFlowInstanceId(flowInstanceId: UUID): FlowLiteInstanceSummaryRow?
 
-    fun findAllByFlowInstanceIdIn(flowInstanceIds: Collection<UUID>): List<FlowLiteInstanceSummaryRow>
-
     @Query(
         """
         select *
@@ -489,11 +487,6 @@ class SpringDataJdbcRetryStateStore(
 
     override fun find(flowInstanceId: UUID): RetryState? =
         summaryRepo.findByFlowInstanceId(flowInstanceId)?.toRetryStateOrNull()
-
-    override fun findAll(flowInstanceIds: Collection<UUID>): List<RetryState> {
-        if (flowInstanceIds.isEmpty()) return emptyList()
-        return summaryRepo.findAllByFlowInstanceIdIn(flowInstanceIds).mapNotNull { it.toRetryStateOrNull() }
-    }
 
     override fun delete(flowInstanceId: UUID) {
         val existing = summaryRepo.findByFlowInstanceId(flowInstanceId) ?: return

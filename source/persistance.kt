@@ -177,8 +177,6 @@ interface RetryStateStore {
 
     fun find(flowInstanceId: UUID): RetryState?
 
-    fun findAll(flowInstanceIds: Collection<UUID>): List<RetryState>
-
     fun delete(flowInstanceId: UUID)
 }
 
@@ -186,8 +184,6 @@ object NoopRetryStateStore : RetryStateStore {
     override fun save(state: RetryState): RetryState = state
 
     override fun find(flowInstanceId: UUID): RetryState? = null
-
-    override fun findAll(flowInstanceIds: Collection<UUID>): List<RetryState> = emptyList()
 
     override fun delete(flowInstanceId: UUID) = Unit
 }

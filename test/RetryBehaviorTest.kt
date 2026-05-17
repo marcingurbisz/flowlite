@@ -242,9 +242,6 @@ private class InMemoryRetryStateStore : RetryStateStore {
 
     override fun find(flowInstanceId: UUID): RetryState? = states[flowInstanceId]
 
-    override fun findAll(flowInstanceIds: Collection<UUID>): List<RetryState> =
-        flowInstanceIds.mapNotNull(states::get)
-
     override fun delete(flowInstanceId: UUID) {
         states.remove(flowInstanceId)
     }

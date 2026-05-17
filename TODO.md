@@ -20,6 +20,13 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
 > Limitation: true `Engine.externalRetry(...)` is not exposed through the test app HTTP surface, so that exact trigger could not be exercised as a live exploratory step without adding a dedicated endpoint/debug hook. Existing automated coverage for that path remains in `RetryBehaviorTest`.
 > Findings: no functional regression found in the live autoretry/manual-retry behavior under this setup.
 
+## [DONE 2026-05-17.1] Fix tick worker thread churn
+> Agent:
+> Finding from the live exploratory run: before the fix, failure-heavy `runPerfTestApp` logs reached `flowlite-tick-worker-161` quickly, which strongly suggested that `SpringDataJdbcTickScheduler` was creating new platform threads per task instead of reusing a bounded worker set.
+> Changes: replaced the scheduler's `SimpleAsyncTaskExecutor` with a fixed thread pool in `source/springDataJdbc.kt`, keeping the same worker-count knob but making worker threads reusable.
+> Validation: `./gradlew test` passed after the scheduler change. A follow-up smoke run of `runPerfTestApp` on port `18081` showed `ThreadPoolExecutor` worker traces and tick-worker names in a much smaller range (`...-11`, `...-15`, `...-28`) under the same forced-failure setup instead of immediately racing upward into the hundreds.
+> Learning: the render thread-growth symptom was not only a diagnostics gap. The scheduler executor choice itself was contributing to thread churn.
+
 ## [FOR HUMAN]
 * Check on GUI:
   retryTrigger?: RetryTrigger | null;

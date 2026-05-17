@@ -45,6 +45,13 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
   * docs: update TODO marcingurbisz 3/7/26, 3:57 PM
   * docs: update TODO marcingurbisz 3/6/26, 7:13 AM
 
+## [DONE 2026-05-17.1] Self-review of current loop
+> Agent:
+> Reviewed: render diagnostics bean wiring, the `jcmd`-based VT dump path, render env changes for pinned-thread tracing, the retry exploratory notes, and the scheduler executor fix in `SpringDataJdbcTickScheduler`.
+> Result: no additional local defects found in the current loop changes. The main residual risk is still environmental: browser-backed exploratory coverage remains limited in this container by missing Playwright host libraries, so the retry exploration used live HTTP/API probing instead of full browser automation.
+> Validation reviewed: `./gradlew test`; two live `runPerfTestApp` probes with forced showcase failures; final TODO scan shows no remaining `REOPEN` or `IN PROGRESS` headings.
+> Learning: the loop started as pure observability work, but the live retry probe exposed a concrete scheduler issue that was worth fixing immediately. That kept the investigation grounded in executable evidence instead of only adding more diagnostics.
+
 ## [ON HOLD] Topics on hold for now
 * Check sonar findings and decide if they should be fixed
 * Visual testing - comparing screenshots before and after changes? Not sure about it because when agent can

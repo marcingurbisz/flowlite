@@ -17,6 +17,7 @@ import io.flowlite.cockpit.CockpitUiStaticConfig
 import io.flowlite.cockpit.CockpitService
 import io.flowlite.cockpit.cockpitRouter
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.IOException
 import java.lang.management.BufferPoolMXBean
 import java.lang.management.ManagementFactory
 import java.nio.file.Files
@@ -162,6 +163,17 @@ object Beans {
         }
 
         registerBean {
+            val environment = bean<Environment>()
+            PeriodicThreadDumpLogger(
+                enabled = environment.getProperty<Boolean>("flowlite.diagnostics.thread-dump-enabled", false),
+                intervalSeconds = environment.getProperty<Long>("flowlite.diagnostics.thread-dump-interval-seconds", 3600L),
+                rawEnabledEnv = System.getenv("FLOWLITE_DIAGNOSTICS_THREAD_DUMP_ENABLED"),
+                rawIntervalEnv = System.getenv("FLOWLITE_DIAGNOSTICS_THREAD_DUMP_INTERVAL_SECONDS"),
+                rawJdkJavaOptionsEnv = System.getenv("JDK_JAVA_OPTIONS"),
+            )
+        }
+
+        registerBean {
             CockpitService(
                 engine = bean<Engine>(),
                 mermaid = bean<io.flowlite.MermaidGenerator>(),
@@ -242,6 +254,11 @@ object ShowcaseActionBehavior {
 private val showcaseLog = KotlinLogging.logger {}
 private val diagnosticsLog = KotlinLogging.logger {}
 
+internal data class CommandExecutionResult(
+    val exitCode: Int,
+    val output: String,
+)
+
 internal class PeriodicMemoryLogger(
     enabled: Boolean,
     intervalSeconds: Long,
@@ -296,6 +313,77 @@ internal class PeriodicMemoryLogger(
     }
 }
 
+internal class PeriodicThreadDumpLogger(
+    enabled: Boolean,
+    intervalSeconds: Long,
+    private val rawEnabledEnv: String? = null,
+    private val rawIntervalEnv: String? = null,
+    private val rawJdkJavaOptionsEnv: String? = null,
+    private val pinnedThreadTracingMode: String? = System.getProperty("jdk.tracePinnedThreads"),
+    private val pidProvider: () -> Long = { ProcessHandle.current().pid() },
+    private val commandRunner: (List<String>) -> CommandExecutionResult = ::runCommand,
+) : AutoCloseable {
+    private val executor =
+        if (enabled) {
+            Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "flowlite-thread-dump-diagnostics").apply { isDaemon = true }
+            }
+        } else {
+            null
+        }
+
+    init {
+        val effectiveIntervalSeconds = intervalSeconds.coerceAtLeast(60L)
+        diagnosticsLog.info {
+            "thread dump diagnostics config enabled=$enabled requestedIntervalSeconds=$intervalSeconds effectiveIntervalSeconds=$effectiveIntervalSeconds rawEnabledEnv=$rawEnabledEnv rawIntervalEnv=$rawIntervalEnv pinnedThreadTracingMode=${pinnedThreadTracingMode ?: "disabled"} rawJdkJavaOptionsEnv=$rawJdkJavaOptionsEnv pid=${pidProvider()}"
+        }
+
+        if (enabled) {
+            dumpThreads("startup")
+            executor?.scheduleAtFixedRate(
+                { dumpThreads("periodic") },
+                effectiveIntervalSeconds,
+                effectiveIntervalSeconds,
+                TimeUnit.SECONDS,
+            )
+        }
+    }
+
+    private fun dumpThreads(reason: String) {
+        val pid = pidProvider()
+        val command = listOf("jcmd", pid.toString(), "Thread.print")
+
+        runCatching { commandRunner(command) }
+            .onSuccess { result ->
+                if (result.exitCode != 0) {
+                    diagnosticsLog.error {
+                        "thread dump diagnostics failed reason=$reason pid=$pid exitCode=${result.exitCode} command=${command.joinToString(" ")} output=${result.output.trim()}"
+                    }
+                    return
+                }
+
+                diagnosticsLog.info {
+                    "thread dump diagnostics start reason=$reason pid=$pid command=${command.joinToString(" ")}"
+                }
+                result.output.lineSequence().forEach { line ->
+                    diagnosticsLog.info { "thread dump reason=$reason $line" }
+                }
+                diagnosticsLog.info {
+                    "thread dump diagnostics end reason=$reason pid=$pid"
+                }
+            }
+            .onFailure { error ->
+                diagnosticsLog.error(error) {
+                    "thread dump diagnostics failed reason=$reason pid=$pid command=${command.joinToString(" ")}"
+                }
+            }
+    }
+
+    override fun close() {
+        executor?.shutdownNow()
+    }
+}
+
 private fun Long.toMiB(): Long = this / (1024 * 1024)
 
 private fun Long?.toMiBOrUnavailable(): String = this?.toMiB()?.toString() ?: "n/a"
@@ -318,6 +406,15 @@ private fun bufferPoolUsageBytes(poolNamePrefix: String): Long? {
         .filter { it.name.startsWith(poolNamePrefix, ignoreCase = true) }
     if (pools.isEmpty()) return null
     return pools.sumOf { it.memoryUsed.coerceAtLeast(0L) }
+}
+
+private fun runCommand(command: List<String>): CommandExecutionResult {
+    val process = ProcessBuilder(command)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().use { it.readText() }
+    val exitCode = process.waitFor()
+    return CommandExecutionResult(exitCode = exitCode, output = output)
 }
 
 internal class ShowcaseFlowSeeder(

@@ -1,9 +1,16 @@
-## Thread dump on render
+## [DONE 2026-05-17.1] Thread dump on render
 
 Engine hangs after hours of operation (no business logs, only memory diagnostics). RSS stable (~344 MiB) — not OOM. Thread count grows from ~30 → ~125 during hang. Render eventually restarts on health check RST.
 
 1. **Hourly VT-aware thread dump to logs** — dump should include Virtual Threads 
 2. **Add pinned-thread tracing**
+
+> Agent:
+> Done.
+> Changes: added a separate `PeriodicThreadDumpLogger` in `test/testApplication.kt`, wired it as a bean behind `flowlite.diagnostics.thread-dump-*` properties, and enabled it in `render.yaml` with an hourly interval. The logger uses `jcmd <pid> Thread.print` against the current JVM because the in-process management APIs available here do not include live virtual threads in their dumps.
+> Changes: enabled pinned-thread tracing on Render via `JDK_JAVA_OPTIONS=-Djdk.tracePinnedThreads=full` and log the effective tracing mode plus raw env at startup so the deployment logs show whether tracing was really activated.
+> Validation: `./gradlew test` passed. Added `RuntimeDiagnosticsLoggerTest` for the new command path. The build still emits the known Playwright host dependency warning in this container, but the Gradle test task succeeds.
+> Learning: `ThreadMXBean.dumpAllThreads(...)` and `Thread.getAllStackTraces()` are not sufficient for VT-aware diagnostics in this JDK; self-`jcmd` is the practical path when we want the dump in app logs.
 
 ## [FOR HUMAN]
 * Check on GUI:

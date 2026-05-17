@@ -12,6 +12,14 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
 > Validation: `./gradlew test` passed. Added `RuntimeDiagnosticsLoggerTest` for the new command path. The build still emits the known Playwright host dependency warning in this container, but the Gradle test task succeeds.
 > Learning: `ThreadMXBean.dumpAllThreads(...)` and `Thread.getAllStackTraces()` are not sufficient for VT-aware diagnostics in this JDK; self-`jcmd` is the practical path when we want the dump in app logs.
 
+## [DONE 2026-05-17.1] Exploratory tests for autoretry and external retry
+> Agent:
+> Tested on local `runPerfTestApp` started with `--server.port=18080 --flowlite.showcase.initial-seed-count=20 --flowlite.showcase.repeat-seeding-enabled=false --flowlite.showcase.action-failure-rate=1.0 --flowlite.showcase.max-action-delay-ms=0 --flowlite.showcase.max-event-delay-ms=1000` so showcase order-confirmation instances deterministically fail and expose retry behavior quickly.
+> Observed: Cockpit `/api/instances?flowId=order-confirmation&bucket=Error` returned 20 error instances with `retryInfo.externalRetryAllowed=true`. Live timelines showed the expected `Error -> Retried(Auto) -> Error` sequence, and after the retry budget was exhausted the instances stayed in `Error` with `nextAutoRetryAt=null`.
+> Observed: manual retry through the Cockpit endpoint `POST /api/instances/{flowId}/{flowInstanceId}/retry` returned `204`, added `Retried` with `retryTrigger=Cockpit` to history, and the instance re-entered processing before failing again under the forced-failure setup.
+> Limitation: true `Engine.externalRetry(...)` is not exposed through the test app HTTP surface, so that exact trigger could not be exercised as a live exploratory step without adding a dedicated endpoint/debug hook. Existing automated coverage for that path remains in `RetryBehaviorTest`.
+> Findings: no functional regression found in the live autoretry/manual-retry behavior under this setup.
+
 ## [FOR HUMAN]
 * Check on GUI:
   retryTrigger?: RetryTrigger | null;

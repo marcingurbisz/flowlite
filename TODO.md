@@ -1,3 +1,27 @@
+## Better jcmd or maybe dump via JMX?
+```
+fun dumpThreads() {
+    val server = ManagementFactory.getPlatformMBeanServer()
+    val name = ObjectName("com.sun.management:type=DiagnosticCommand")
+    val path = "/tmp/td-${System.currentTimeMillis()}.txt"
+    
+    server.invoke(
+        name,
+        "threadDumpToFile",
+        arrayOf(arrayOf("-format=plain", path)),
+        arrayOf(Array<String>::class.java.name)
+    )
+    
+    val file = File(path)
+    logger.info("=== THREAD DUMP START (${file.length()} bytes) ===")
+    file.readLines().chunked(100).forEachIndexed { i, chunk ->
+        logger.info("td chunk=$i\n${chunk.joinToString("\n")}")
+    }
+    logger.info("=== THREAD DUMP END ===")
+    file.delete()
+}
+```
+
 ## [DONE 2026-05-17.1] Thread dump on render
 
 Engine hangs after hours of operation (no business logs, only memory diagnostics). RSS stable (~344 MiB) — not OOM. Thread count grows from ~30 → ~125 during hang. Render eventually restarts on health check RST.
@@ -12,20 +36,28 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
 > Validation: `./gradlew test` passed. Added `RuntimeDiagnosticsLoggerTest` for the new command path. The build still emits the known Playwright host dependency warning in this container, but the Gradle test task succeeds.
 > Learning: `ThreadMXBean.dumpAllThreads(...)` and `Thread.getAllStackTraces()` are not sufficient for VT-aware diagnostics in this JDK; self-`jcmd` is the practical path when we want the dump in app logs.
 
-## [DONE 2026-05-17.1] Exploratory tests for autoretry and external retry
-> Agent:
-> Tested on local `runPerfTestApp` started with `--server.port=18080 --flowlite.showcase.initial-seed-count=20 --flowlite.showcase.repeat-seeding-enabled=false --flowlite.showcase.action-failure-rate=1.0 --flowlite.showcase.max-action-delay-ms=0 --flowlite.showcase.max-event-delay-ms=1000` so showcase order-confirmation instances deterministically fail and expose retry behavior quickly.
-> Observed: Cockpit `/api/instances?flowId=order-confirmation&bucket=Error` returned 20 error instances with `retryInfo.externalRetryAllowed=true`. Live timelines showed the expected `Error -> Retried(Auto) -> Error` sequence, and after the retry budget was exhausted the instances stayed in `Error` with `nextAutoRetryAt=null`.
-> Observed: manual retry through the Cockpit endpoint `POST /api/instances/{flowId}/{flowInstanceId}/retry` returned `204`, added `Retried` with `retryTrigger=Cockpit` to history, and the instance re-entered processing before failing again under the forced-failure setup.
-> Limitation: true `Engine.externalRetry(...)` is not exposed through the test app HTTP surface, so that exact trigger could not be exercised as a live exploratory step without adding a dedicated endpoint/debug hook. Existing automated coverage for that path remains in `RetryBehaviorTest`.
-> Findings: no functional regression found in the live autoretry/manual-retry behavior under this setup.
-
-## [DONE 2026-05-17.1] Fix tick worker thread churn
+## [REOPEN] Fix tick worker thread churn
 > Agent:
 > Finding from the live exploratory run: before the fix, failure-heavy `runPerfTestApp` logs reached `flowlite-tick-worker-161` quickly, which strongly suggested that `SpringDataJdbcTickScheduler` was creating new platform threads per task instead of reusing a bounded worker set.
 > Changes: replaced the scheduler's `SimpleAsyncTaskExecutor` with a fixed thread pool in `source/springDataJdbc.kt`, keeping the same worker-count knob but making worker threads reusable.
 > Validation: `./gradlew test` passed after the scheduler change. A follow-up smoke run of `runPerfTestApp` on port `18081` showed `ThreadPoolExecutor` worker traces and tick-worker names in a much smaller range (`...-11`, `...-15`, `...-28`) under the same forced-failure setup instead of immediately racing upward into the hundreds.
 > Learning: the render thread-growth symptom was not only a diagnostics gap. The scheduler executor choice itself was contributing to thread churn.
+>> MG: I think we are using virtual threads so there is no problem with creating many new threads. Is this change worth doing?
+
+## [REOPEN] Self-review of current loop
+> Agent:
+> Reviewed: render diagnostics bean wiring, the `jcmd`-based VT dump path, render env changes for pinned-thread tracing, the retry exploratory notes, and the scheduler executor fix in `SpringDataJdbcTickScheduler`.
+> Result: no additional local defects found in the current loop changes. The main residual risk is still environmental: browser-backed exploratory coverage remains limited in this container by missing Playwright host libraries, so the retry exploration used live HTTP/API probing instead of full browser automation.
+> Validation reviewed: `./gradlew test`; two live `runPerfTestApp` probes with forced showcase failures; final TODO scan shows no remaining `REOPEN` or `IN PROGRESS` headings.
+> Learning: the loop started as pure observability work, but the live retry probe exposed a concrete scheduler issue that was worth fixing immediately. That kept the investigation grounded in executable evidence instead of only adding more diagnostics.
+>> MG: But you have browser tool at hand. Why you haven't used it? Isn't it a full browser automation for you?
+>> MG: Are these missing libraries really prevents you from using playwright CLI or MCP?
+>> MG: How we can solve "missing Playwright host libraries"
+ 
+## Auto-retry and externally retriable on gui
+On Flows show only "final" errors - non externally retriable and (non autoretry or all retries are done)
+On Errors tab add filters - by default only final but you can choose externally retriable errors or the one with active auto-retry.
+Make sure that we have all types of errors on our test render instance.
 
 ## [FOR HUMAN]
 * Check on GUI:
@@ -44,13 +76,6 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
   * docs: TODO update marcingurbisz 3/8/26, 9:12 AM
   * docs: update TODO marcingurbisz 3/7/26, 3:57 PM
   * docs: update TODO marcingurbisz 3/6/26, 7:13 AM
-
-## [DONE 2026-05-17.1] Self-review of current loop
-> Agent:
-> Reviewed: render diagnostics bean wiring, the `jcmd`-based VT dump path, render env changes for pinned-thread tracing, the retry exploratory notes, and the scheduler executor fix in `SpringDataJdbcTickScheduler`.
-> Result: no additional local defects found in the current loop changes. The main residual risk is still environmental: browser-backed exploratory coverage remains limited in this container by missing Playwright host libraries, so the retry exploration used live HTTP/API probing instead of full browser automation.
-> Validation reviewed: `./gradlew test`; two live `runPerfTestApp` probes with forced showcase failures; final TODO scan shows no remaining `REOPEN` or `IN PROGRESS` headings.
-> Learning: the loop started as pure observability work, but the live retry probe exposed a concrete scheduler issue that was worth fixing immediately. That kept the investigation grounded in executable evidence instead of only adding more diagnostics.
 
 ## [ON HOLD] Topics on hold for now
 * Check sonar findings and decide if they should be fixed

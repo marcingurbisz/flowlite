@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { CheckCircle, ChevronRight, RefreshCw, X } from 'lucide-react';
-import type { ErrorGroupDto, FlowDto, UiInstance } from '../types';
+import type { ErrorGroupDto, ErrorRetryFilter, FlowDto, UiInstance } from '../types';
 import { toTestIdFragment } from '../utils';
 
 export const ErrorsView = ({
@@ -12,9 +12,11 @@ export const ErrorsView = ({
   errorFlowFilter,
   errorStageFilter,
   errorMessageFilterErrors,
+  errorRetryFilter,
   setErrorFlowFilter,
   setErrorStageFilter,
   setErrorMessageFilterErrors,
+  setErrorRetryFilter,
   clearErrorFilters,
   deselectAll,
   toggleSelectInstance,
@@ -34,9 +36,11 @@ export const ErrorsView = ({
   errorFlowFilter: string;
   errorStageFilter: string;
   errorMessageFilterErrors: string;
+  errorRetryFilter: ErrorRetryFilter;
   setErrorFlowFilter: (value: string) => void;
   setErrorStageFilter: (value: string) => void;
   setErrorMessageFilterErrors: (value: string) => void;
+  setErrorRetryFilter: (value: ErrorRetryFilter) => void;
   clearErrorFilters: () => void;
   deselectAll: () => void;
   toggleSelectInstance: (instanceId: string) => void;
@@ -77,6 +81,16 @@ export const ErrorsView = ({
         onChange={(event) => setErrorMessageFilterErrors(event.target.value)}
         className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
       />
+      <select
+        data-testid="errors-retry-filter"
+        value={errorRetryFilter}
+        onChange={(event) => setErrorRetryFilter(event.target.value as ErrorRetryFilter)}
+        className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
+      >
+        <option value="final">Final errors</option>
+        <option value="external-retry">Externally retriable</option>
+        <option value="auto-retry-active">Active auto-retry</option>
+      </select>
       <button
         data-testid="errors-clear-filters"
         onClick={clearErrorFilters}

@@ -6,6 +6,7 @@ import {
   statusFilters,
   type ActiveView,
   type CockpitLocationState,
+  type ErrorRetryFilter,
   type LongRunningStatusFilter,
   type StatusFilter,
 } from './types';
@@ -18,6 +19,9 @@ const isStatusFilter = (value: string | null): value is StatusFilter =>
 
 const isLongRunningStatusFilter = (value: string | null): value is LongRunningStatusFilter =>
   value !== null && longRunningStatusFilters.includes(value as LongRunningStatusFilter);
+
+const isErrorRetryFilter = (value: string | null): value is ErrorRetryFilter =>
+  value === 'final' || value === 'external-retry' || value === 'auto-retry-active';
 
 const normalizeFilterValue = (value: string | null) => {
   const trimmed = value?.trim();
@@ -46,6 +50,9 @@ export const readLocationState = (): CockpitLocationState => {
     errorFlowFilter: normalizeFilterValue(params.get('errorFlow')),
     errorStageFilter: normalizeFilterValue(params.get('errorStage')),
     errorMessageFilterErrors: params.get('errorMessage') ?? defaultLocationState.errorMessageFilterErrors,
+    errorRetryFilter: isErrorRetryFilter(params.get('errorRetry'))
+      ? params.get('errorRetry') as ErrorRetryFilter
+      : defaultLocationState.errorRetryFilter,
     longRunningFlowFilter: normalizeFilterValue(params.get('lrFlow')),
     longRunningStatusFilter: isLongRunningStatusFilter(params.get('lrStatus'))
       ? params.get('lrStatus') as LongRunningStatusFilter
@@ -68,6 +75,7 @@ export const buildLocationSearch = (state: CockpitLocationState) => {
   if (state.errorFlowFilter !== 'all') params.set('errorFlow', state.errorFlowFilter);
   if (state.errorStageFilter !== 'all') params.set('errorStage', state.errorStageFilter);
   if (state.errorMessageFilterErrors) params.set('errorMessage', state.errorMessageFilterErrors);
+  if (state.errorRetryFilter !== 'final') params.set('errorRetry', state.errorRetryFilter);
   if (state.longRunningFlowFilter !== 'all') params.set('lrFlow', state.longRunningFlowFilter);
   if (state.longRunningStatusFilter !== 'default') params.set('lrStatus', state.longRunningStatusFilter);
   if (state.longRunningThreshold.trim() && state.longRunningThreshold.trim() !== defaultLongRunningThreshold) {

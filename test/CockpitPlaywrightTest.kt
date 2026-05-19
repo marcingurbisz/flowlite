@@ -787,7 +787,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.keyboard().press("Escape")
             assertThat(page.getByTestId("flow-diagram-modal")).hasCount(0)
 
-            page.navigate(cockpitUrl("tab=errors"))
+            page.navigate(cockpitUrl("tab=errors&errorRetry=external-retry"))
             page.getByTestId("error-instance-${fixture.orderErrorChangeStageId}").click()
             page.getByTestId("instance-change-stage").click()
             assertThat(page.getByTestId("change-stage-modal")).isVisible()
@@ -823,7 +823,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.goBack()
             page.getByTestId("flow-stage-order-confirmation-WaitingForConfirmation").click()
             page.goBack()
-            page.getByTestId("flow-stage-errors-order-confirmation-InformingCustomer").click()
+            page.getByTestId("flow-stage-errors-employee-onboarding-UpdateHRSystem").click()
 
             val bookmarkUrl = page.url()
             page.navigate(bookmarkUrl)
@@ -831,11 +831,11 @@ class CockpitPlaywrightTest : BehaviorSpec({
             then("it supports long inactive, incomplete, stage and error jumps with bookmarkable URLs") {
                 verifyRecordedContext(session) { currentPage ->
                     longRunningStatusAfterShortcut shouldBe "default"
-                    assertThat(currentPage.getByTestId("errors-flow-filter")).hasValue(ORDER_CONFIRMATION_FLOW_ID)
-                    assertThat(currentPage.getByTestId("errors-stage-filter")).hasValue(OrderConfirmationStage.InformingCustomer.name)
+                    assertThat(currentPage.getByTestId("errors-flow-filter")).hasValue(EMPLOYEE_ONBOARDING_FLOW_ID)
+                    assertThat(currentPage.getByTestId("errors-stage-filter")).hasValue(EmployeeStage.UpdateHRSystem.name)
                     bookmarkUrl.shouldContain("tab=errors")
-                    bookmarkUrl.shouldContain("errorFlow=order-confirmation")
-                    bookmarkUrl.shouldContain("errorStage=InformingCustomer")
+                    bookmarkUrl.shouldContain("errorFlow=employee-onboarding")
+                    bookmarkUrl.shouldContain("errorStage=UpdateHRSystem")
                 }
             }
         }
@@ -863,16 +863,24 @@ class CockpitPlaywrightTest : BehaviorSpec({
 
             navigateToCockpit(page, "tab=errors")
 
+            assertThat(page.getByTestId("errors-retry-filter")).hasValue("final")
+            assertThat(page.getByTestId("error-group-order-confirmation-InformingCustomer")).hasCount(0)
             page.getByTestId("errors-flow-filter").selectOption(EMPLOYEE_ONBOARDING_FLOW_ID)
             page.getByTestId("errors-flow-filter").selectOption("all")
             page.getByTestId("errors-stage-filter").fill(OrderConfirmationStage.InformingCustomer.name)
             page.getByTestId("errors-stage-filter").fill("")
             page.getByTestId("errors-message-filter").fill("hr sync")
             page.getByTestId("errors-clear-filters").click()
+            page.getByTestId("errors-retry-filter").selectOption("external-retry")
             page.getByTestId("error-group-select-all-order-confirmation-InformingCustomer").click()
-            page.getByTestId("error-group-select-all-employee-onboarding-UpdateHRSystem").click()
             page.getByTestId("error-group-deselect-all-order-confirmation-InformingCustomer").click()
+            page.getByTestId("errors-retry-filter").selectOption("auto-retry-active")
+            page.getByTestId("error-group-order-confirmation-InformingCustomer").click()
+            page.getByTestId("instance-details-close").click()
+            page.getByTestId("errors-retry-filter").selectOption("final")
+            page.getByTestId("error-group-select-all-employee-onboarding-UpdateHRSystem").click()
             page.getByTestId("errors-deselect-selected").click()
+            page.getByTestId("errors-retry-filter").selectOption("external-retry")
             page.getByTestId("error-instance-${fixture.orderErrorRetryId}").click()
             page.getByTestId("instance-error-stacktrace-toggle").click()
             instanceErrorStackTrace = page.getByTestId("instance-error-stacktrace").textContent() ?: ""
@@ -885,8 +893,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     assertThat(currentPage.getByTestId("errors-flow-filter")).hasValue("all")
                     assertThat(currentPage.getByTestId("errors-stage-filter")).hasValue("")
                     assertThat(currentPage.getByTestId("errors-message-filter")).hasValue("")
+                    assertThat(currentPage.getByTestId("errors-retry-filter")).hasValue("external-retry")
                     assertThat(currentPage.getByTestId("error-group-order-confirmation-InformingCustomer")).isVisible()
-                    assertThat(currentPage.getByTestId("error-group-employee-onboarding-UpdateHRSystem")).isVisible()
                     instanceErrorStackTrace.shouldContain("notification retry needed")
                     historyErrorStackTrace.shouldContain("Notify.retry")
                     assertThat(currentPage.getByTestId("instance-details-modal")).hasCount(0)
@@ -955,7 +963,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             val page = session.page
             var changedStageText = ""
 
-            navigateToCockpit(page, "tab=errors")
+            navigateToCockpit(page, "tab=errors&errorRetry=external-retry")
 
             page.getByTestId("error-instance-checkbox-${fixture.orderErrorRetryId}").check()
             page.getByTestId("errors-retry-selected").click()
@@ -967,6 +975,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("change-stage-confirm").click()
             page.getByTestId("action-confirmation-confirm").click()
 
+            page.getByTestId("errors-retry-filter").selectOption("final")
             page.getByTestId("error-instance-checkbox-${fixture.employeeErrorCancelId}").check()
             page.getByTestId("errors-cancel-selected").click()
             page.getByTestId("action-confirmation-confirm").click()
@@ -1025,7 +1034,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             val session = openRecordedContext("it-refreshes-detail-modal-after-actions")
             val page = session.page
 
-            navigateToCockpit(page, "tab=errors")
+            navigateToCockpit(page, "tab=errors&errorRetry=external-retry")
 
             page.getByTestId("error-instance-${fixture.orderErrorChangeStageId}").click()
             page.getByTestId("instance-change-stage").click()
@@ -1035,6 +1044,7 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("instance-details-close").click()
             assertThat(page.getByTestId("instance-details-modal")).hasCount(0)
 
+            page.getByTestId("errors-retry-filter").selectOption("final")
             assertThat(page.getByTestId("error-instance-${fixture.employeeErrorCancelId}")).isVisible()
             page.getByTestId("error-instance-${fixture.employeeErrorCancelId}").click()
             page.getByTestId("instance-cancel").click()

@@ -39,6 +39,9 @@ fun cockpitRouter(service: CockpitService) =
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
                 .orElse(null)
+                val errorFilter = request.param("errorFilter")
+                    .map(::parseErrorFilter)
+                    .orElse(null)
             val showIncompleteOnly = request.param("incompleteOnly")
                 .map { it.trim().lowercase() }
                 .map { it == "1" || it == "true" || it == "yes" }
@@ -61,6 +64,7 @@ fun cockpitRouter(service: CockpitService) =
                     searchTerm = searchTerm,
                     stage = stage,
                     errorMessage = errorMessage,
+                        errorFilter = errorFilter,
                     showIncompleteOnly = showIncompleteOnly,
                     cockpitStatusFilter = cockpitStatusFilter,
                     longInactiveThresholdSeconds = longInactiveThresholdSeconds,
@@ -106,4 +110,11 @@ fun cockpitRouter(service: CockpitService) =
             service.changeStage(flowId, flowInstanceId, stage)
             ServerResponse.status(HttpStatus.NO_CONTENT).build()
         }
+    }
+
+    private fun parseErrorFilter(raw: String): CockpitErrorFilter? = when (raw.trim().lowercase()) {
+        "final" -> CockpitErrorFilter.Final
+        "externalretry", "external-retry" -> CockpitErrorFilter.ExternalRetry
+        "autoretryactive", "auto-retry-active" -> CockpitErrorFilter.AutoRetryActive
+        else -> null
     }

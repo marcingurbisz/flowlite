@@ -514,6 +514,8 @@ External updates exist (GUI / notifications / other services):
 
 Showcase seeding is implemented by `ShowcaseFlowSeeder` in [test/testApplication.kt](test/testApplication.kt). It seeds one order confirmation instance and one employee onboarding instance on startup, then repeats every 5 seconds so the Cockpit always has fresh activity to display.
 
+The servlet test app also seeds a deterministic showcase error catalog on startup: one final error, one externally retriable error, and one active auto-retry error. This keeps the Errors tab and the flow error counters demonstrable even when `runPerfTestApp` disables random showcase failures.
+
 Showcase-only behavior is intentionally explicit:
 - Order confirmations are tagged by `orderNumber` values prefixed with `SHOW-`.
 - Employee onboarding uses a dedicated `isShowcaseInstance` field instead of overloading business flags such as `isRemoteEmployee`.
@@ -530,7 +532,7 @@ Relevant properties:
 
 This keeps demo traffic visually interesting in Cockpit without changing normal deterministic test flows.
 
-For local perf investigations, `./gradlew runPerfTestApp` starts the servlet app with `600` startup seed cycles, which produces `1200` showcase instances immediately and disables the random delays/failures plus the 5-second repeat seeding loop.
+For local perf investigations, `./gradlew runPerfTestApp` starts the servlet app with `600` startup seed cycles, which produces `1200` showcase instances immediately and disables the random delays/failures plus the 5-second repeat seeding loop. The deterministic showcase error catalog is still added so the Cockpit continues to expose all retry/error categories during exploratory checks.
 
 ### Public test instance deployment (free/cheap)
 

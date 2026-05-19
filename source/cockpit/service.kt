@@ -23,6 +23,12 @@ data class CockpitFlowStageDto(
     val errorCount: Int,
 )
 
+enum class CockpitErrorFilter {
+    Final,
+    ExternalRetry,
+    AutoRetryActive,
+}
+
 data class CockpitFlowDto(
     val flowId: String,
     val diagram: String,
@@ -84,20 +90,55 @@ class CockpitService(
         val updatedBefore = Instant.now().minus(longRunningThreshold)
         val countsByFlow = summaryRepo.findFlowSummaryAggregates(updatedBefore)
             .associateBy { it.flowId }
-        val stageBreakdownByFlow = summaryRepo.findIncompleteStageBreakdown()
+        val finalErrorRowsByFlow = summaryRepo.findFilteredSummaries(
+            flowId = null,
+            bucket = CockpitInstanceBucket.Error.name,
+            status = null,
+            searchPattern = null,
+            searchFlowInstanceId = null,
+            stage = null,
+            errorMessagePattern = null,
+            showIncompleteOnly = false,
+            cockpitStatusFilter = null,
+            updatedBefore = null,
+        )
+            .filter { it.matchesErrorFilter(CockpitErrorFilter.Final) }
             .groupBy { it.flowId }
 
         return flowMetadataById.keys.sorted().mapNotNull { flowId ->
             val metadata = flowMetadataById[flowId] ?: return@mapNotNull null
             val counts = countsByFlow[flowId]
-            val stageBreakdown = stageBreakdownByFlow[flowId].orEmpty().map { it.toDto() }
+            val finalErrorRows = finalErrorRowsByFlow[flowId].orEmpty()
+            val finalErrorCountByStage = finalErrorRows
+                .groupingBy { it.stage }
+                .eachCount()
+            val stageBreakdown = metadata.stages.mapNotNull { stageName ->
+                val stageRows = summaryRepo.findFilteredSummaries(
+                    flowId = flowId,
+                    bucket = null,
+                    status = null,
+                    searchPattern = null,
+                    searchFlowInstanceId = null,
+                    stage = stageName,
+                    errorMessagePattern = null,
+                    showIncompleteOnly = true,
+                    cockpitStatusFilter = null,
+                    updatedBefore = null,
+                )
+                if (stageRows.isEmpty()) return@mapNotNull null
+                CockpitFlowStageDto(
+                    stage = stageName,
+                    totalCount = stageRows.size,
+                    errorCount = finalErrorCountByStage[stageName] ?: 0,
+                )
+            }
 
             CockpitFlowDto(
                 flowId = flowId,
                 diagram = metadata.diagram,
                 stages = metadata.stages,
                 notCompletedCount = counts?.notCompletedCount ?: 0,
-                errorCount = counts?.errorCount ?: 0,
+                errorCount = finalErrorRows.size,
                 activeCount = counts?.activeCount ?: 0,
                 completedCount = counts?.completedCount ?: 0,
                 longRunningCount = counts?.longRunningCount ?: 0,
@@ -113,6 +154,7 @@ class CockpitService(
         searchTerm: String? = null,
         stage: String? = null,
         errorMessage: String? = null,
+        errorFilter: CockpitErrorFilter? = null,
         showIncompleteOnly: Boolean = false,
         cockpitStatusFilter: String? = null,
         longInactiveThresholdSeconds: Long? = null,
@@ -140,7 +182,9 @@ class CockpitService(
             cockpitStatusFilter = normalizedCockpitStatusFilter,
             updatedBefore = updatedBefore,
         )
-        return rows.map { row -> row.toDto() }
+        return rows
+            .filter { row -> errorFilter == null || row.matchesErrorFilter(errorFilter) }
+            .map { row -> row.toDto() }
     }
 
     fun instance(flowId: String, flowInstanceId: UUID): CockpitInstanceDto? {
@@ -187,12 +231,17 @@ class CockpitService(
             retryInfo = retryInfo,
         )
     }
+    private fun FlowLiteInstanceSummaryRow.matchesErrorFilter(filter: CockpitErrorFilter): Boolean {
+        if (cockpitStatus != StageStatus.Error.name) return false
+        return when (filter) {
+            CockpitErrorFilter.Final -> !isExternalRetryAllowed() && !isAutoRetryActive()
+            CockpitErrorFilter.ExternalRetry -> isExternalRetryAllowed()
+            CockpitErrorFilter.AutoRetryActive -> isAutoRetryActive()
+        }
+    }
 
-    private fun FlowLiteFlowStageBreakdownRow.toDto() =
-        CockpitFlowStageDto(
-            stage = stage,
-            totalCount = totalCount,
-            errorCount = errorCount,
-        )
+    private fun FlowLiteInstanceSummaryRow.isExternalRetryAllowed() = externalRetryAllowed == true
+
+    private fun FlowLiteInstanceSummaryRow.isAutoRetryActive() = autoRetryMaxAttempts != null && nextAutoRetryAt != null
 
 }

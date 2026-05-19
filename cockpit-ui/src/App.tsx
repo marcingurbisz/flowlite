@@ -10,6 +10,7 @@ import {
   type ActiveView,
   type ConfirmationActionState,
   type CockpitStatus,
+  type ErrorRetryFilter,
   type ErrorGroupDto,
   type FlowDto,
   type HistoryEntryDto,
@@ -18,6 +19,12 @@ import {
   type StatusFilter,
   type UiInstance,
 } from './cockpit/types';
+
+function toApiErrorFilter(errorRetryFilter: ErrorRetryFilter): string {
+  if (errorRetryFilter === 'external-retry') return 'external-retry';
+  if (errorRetryFilter === 'auto-retry-active') return 'auto-retry-active';
+  return 'final';
+}
 import { parseDurationToSeconds } from './cockpit/utils';
 import { ErrorsView } from './cockpit/views/ErrorsView';
 import { FlowsView } from './cockpit/views/FlowsView';
@@ -70,6 +77,7 @@ const FlowLiteCockpit = () => {
   const [errorFlowFilter, setErrorFlowFilter] = useState(initialLocationState.errorFlowFilter);
   const [errorStageFilter, setErrorStageFilter] = useState(initialLocationState.errorStageFilter);
   const [errorMessageFilterErrors, setErrorMessageFilterErrors] = useState(initialLocationState.errorMessageFilterErrors);
+  const [errorRetryFilter, setErrorRetryFilter] = useState<ErrorRetryFilter>(initialLocationState.errorRetryFilter);
   const [longRunningFlowFilter, setLongRunningFlowFilter] = useState(initialLocationState.longRunningFlowFilter);
   const [longRunningStatusFilter, setLongRunningStatusFilter] = useState<LongRunningStatusFilter>(initialLocationState.longRunningStatusFilter);
   const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
@@ -145,6 +153,7 @@ const FlowLiteCockpit = () => {
         instancesParams.set('errorMessage', errorMessageFilterErrors.trim());
       }
       instancesParams.set('bucket', 'error');
+      instancesParams.set('errorFilter', toApiErrorFilter(errorRetryFilter));
       instancesPath = `/api/instances?${instancesParams.toString()}`;
     }
 
@@ -295,6 +304,7 @@ const FlowLiteCockpit = () => {
       setErrorFlowFilter(next.errorFlowFilter);
       setErrorStageFilter(next.errorStageFilter);
       setErrorMessageFilterErrors(next.errorMessageFilterErrors);
+      setErrorRetryFilter(next.errorRetryFilter);
       setLongRunningFlowFilter(next.longRunningFlowFilter);
       setLongRunningStatusFilter(next.longRunningStatusFilter);
       setLongRunningThreshold(next.longRunningThreshold);
@@ -328,6 +338,7 @@ const FlowLiteCockpit = () => {
       errorFlowFilter,
       errorStageFilter,
       errorMessageFilterErrors,
+      errorRetryFilter,
       longRunningFlowFilter,
       longRunningStatusFilter,
       longRunningThreshold,
@@ -359,6 +370,7 @@ const FlowLiteCockpit = () => {
     errorFlowFilter,
     errorStageFilter,
     errorMessageFilterErrors,
+    errorRetryFilter,
     longRunningFlowFilter,
     longRunningStatusFilter,
     longRunningThreshold,
@@ -470,8 +482,32 @@ const FlowLiteCockpit = () => {
     [flows],
   );
 
+  const matchesErrorRetryFilter = (instance: UiInstance) => {
+    const retryInfo = instance.retryInfo;
+    if (!retryInfo) return errorRetryFilter === 'final';
+
+    if (errorRetryFilter === 'external-retry') return retryInfo.externalRetryAllowed;
+    if (errorRetryFilter === 'auto-retry-active') return retryInfo.autoRetryActive;
+    return !retryInfo.externalRetryAllowed && !retryInfo.autoRetryActive;
+  };
+
   const filteredInstances = instances;
-  const filteredErrorGroups = errorsByGroup;
+  const filteredErrorInstances = useMemo(
+    () => instances.filter((instance) => instance.cockpitStatus === 'Error' && matchesErrorRetryFilter(instance)),
+    [instances, errorRetryFilter],
+  );
+  const filteredErrorGroups = useMemo(
+    () => groupErrors(filteredErrorInstances.map((instance) => ({
+      flowId: instance.flowId,
+      flowInstanceId: instance.id,
+      stage: instance.stage,
+      cockpitStatus: instance.cockpitStatus,
+      lastUpdatedAt: instance.updatedAt.toISOString(),
+      lastErrorMessage: instance.errorMessage,
+      retryInfo: instance.retryInfo,
+    }))),
+    [filteredErrorInstances],
+  );
 
   const longRunningInstances = useMemo(() => {
     const now = Date.now();
@@ -518,16 +554,19 @@ const FlowLiteCockpit = () => {
     flow = 'all',
     stage = 'all',
     errorMessage = '',
+    retry = 'final',
   }: {
     flow?: string;
     stage?: string;
     errorMessage?: string;
+    retry?: ErrorRetryFilter;
   }) => {
     setLoadingView('errors');
     setActiveView('errors');
     setErrorFlowFilter(flow);
     setErrorStageFilter(stage);
     setErrorMessageFilterErrors(errorMessage);
+    setErrorRetryFilter(retry);
     setSelectedInstances(new Set());
   };
 
@@ -704,14 +743,16 @@ const FlowLiteCockpit = () => {
             flows={flows}
             isLoading={loadingView === 'errors'}
             filteredErrorGroups={filteredErrorGroups}
-            instances={instances}
+            instances={filteredErrorInstances}
             selectedInstances={selectedInstances}
             errorFlowFilter={errorFlowFilter}
             errorStageFilter={errorStageFilter}
             errorMessageFilterErrors={errorMessageFilterErrors}
+            errorRetryFilter={errorRetryFilter}
             setErrorFlowFilter={setErrorFlowFilter}
             setErrorStageFilter={setErrorStageFilter}
             setErrorMessageFilterErrors={setErrorMessageFilterErrors}
+            setErrorRetryFilter={setErrorRetryFilter}
             clearErrorFilters={clearErrorFilters}
             deselectAll={deselectAll}
             toggleSelectInstance={toggleSelectInstance}

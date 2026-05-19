@@ -12,6 +12,7 @@ export type RetryTrigger = 'Auto' | 'External' | 'Cockpit';
 export type ActiveView = 'flows' | 'errors' | 'long-running' | 'instances';
 export type StatusFilter = 'all' | CockpitStatus;
 export type LongRunningStatusFilter = 'default' | 'all' | Extract<CockpitStatus, 'Running' | 'WaitingForTimer' | 'WaitingForEvent' | 'PendingEngine'>;
+export type ErrorRetryFilter = 'final' | 'external-retry' | 'auto-retry-active';
 
 export interface FlowDto {
   flowId: string;
@@ -93,6 +94,7 @@ export interface CockpitLocationState {
   errorFlowFilter: string;
   errorStageFilter: string;
   errorMessageFilterErrors: string;
+  errorRetryFilter: ErrorRetryFilter;
   longRunningFlowFilter: string;
   longRunningStatusFilter: LongRunningStatusFilter;
   longRunningThreshold: string;
@@ -116,6 +118,7 @@ export const defaultLocationState: CockpitLocationState = {
   errorFlowFilter: 'all',
   errorStageFilter: 'all',
   errorMessageFilterErrors: '',
+  errorRetryFilter: 'final',
   longRunningFlowFilter: 'all',
   longRunningStatusFilter: 'default',
   longRunningThreshold: defaultLongRunningThreshold,

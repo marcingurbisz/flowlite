@@ -60,6 +60,20 @@ class CockpitServiceTest : BehaviorSpec({
             }
 
             seedRows()
+            retryStateStore.save(
+                RetryState(
+                    flowId = flowA,
+                    flowInstanceId = aError2,
+                    stage = "Review",
+                    failedAttemptCount = 2,
+                    externalRetryAllowed = true,
+                    autoRetryMaxAttempts = 5,
+                    nextAutoRetryAt = Instant.parse("2026-03-04T08:10:00Z"),
+                    lastErrorType = "java.io.IOException",
+                    lastErrorMessage = "boom-2",
+                    updatedAt = Instant.parse("2026-03-04T08:05:00Z"),
+                ),
+            )
 
             then("listInstances returns expected sorting and bucket projections") {
                 service.listInstances().map { it.flowInstanceId } shouldContainExactly listOf(
@@ -88,6 +102,23 @@ class CockpitServiceTest : BehaviorSpec({
 
                 service.listInstances(searchTerm = bError.toString())
                     .map { it.flowInstanceId } shouldContainExactly listOf(bError)
+            }
+
+            then("listInstances supports retry-aware error filters") {
+                service.listInstances(
+                    bucket = CockpitInstanceBucket.Error,
+                    errorFilter = io.flowlite.cockpit.CockpitErrorFilter.Final,
+                ).map { it.flowInstanceId } shouldContainExactly listOf(aError1, bError)
+
+                service.listInstances(
+                    bucket = CockpitInstanceBucket.Error,
+                    errorFilter = io.flowlite.cockpit.CockpitErrorFilter.ExternalRetry,
+                ).map { it.flowInstanceId } shouldContainExactly listOf(aError2)
+
+                service.listInstances(
+                    bucket = CockpitInstanceBucket.Error,
+                    errorFilter = io.flowlite.cockpit.CockpitErrorFilter.AutoRetryActive,
+                ).map { it.flowInstanceId } shouldContainExactly listOf(aError2)
             }
 
             then("listInstances and instance expose retry metadata for error rows") {
@@ -128,7 +159,8 @@ class CockpitServiceTest : BehaviorSpec({
             val onboardingCompleted = UUID.fromString("00000000-0000-0000-0000-000000000103")
             val onboardingWaitingForTimer = UUID.fromString("00000000-0000-0000-0000-000000000106")
             val onboardingPendingEngine = UUID.fromString("00000000-0000-0000-0000-000000000107")
-            val unknownFlow = UUID.fromString("00000000-0000-0000-0000-000000000104")
+            val onboardingFinalError = UUID.fromString("00000000-0000-0000-0000-000000000104")
+            val unknownFlow = UUID.fromString("00000000-0000-0000-0000-000000000108")
 
             then("it returns diagrams and per-flow counters only for registered flows") {
                 summaryRepo.deleteAll()
@@ -136,12 +168,27 @@ class CockpitServiceTest : BehaviorSpec({
                 listOf(
                     historyRow("2026-03-04T09:00:00Z", ORDER_CONFIRMATION_FLOW_ID, orderActive, HistoryEntryType.StatusChanged, stage = "WaitingForConfirmation", fromStatus = StageStatus.WaitingForEvent, toStatus = StageStatus.Running),
                     historyRow("2026-03-04T08:30:00Z", ORDER_CONFIRMATION_FLOW_ID, orderWaitingForEvent, HistoryEntryType.Started, stage = "WaitingForConfirmation", toStatus = StageStatus.WaitingForEvent),
-                    historyRow("2026-03-04T09:01:00Z", ORDER_CONFIRMATION_FLOW_ID, orderError, HistoryEntryType.Error, stage = "InformingCustomer", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "order-failed"),
+                    historyRow("2026-03-04T09:01:00Z", ORDER_CONFIRMATION_FLOW_ID, orderError, HistoryEntryType.Error, stage = "InformingCustomer", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "order-failed", externalRetryAllowed = true, autoRetryMaxAttempts = 3, nextAutoRetryAt = Instant.parse("2026-03-04T09:05:00Z")),
                     historyRow("2026-03-04T09:02:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingCompleted, HistoryEntryType.StatusChanged, stage = "CompleteOnboarding", fromStatus = StageStatus.Running, toStatus = StageStatus.Completed),
                     historyRow("2026-03-04T08:00:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingWaitingForTimer, HistoryEntryType.Started, stage = "DelayAfterHRUpdate", toStatus = StageStatus.WaitingForTimer),
                     historyRow("2026-03-04T07:30:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingPendingEngine, HistoryEntryType.Started, stage = "GenerateOnboardingDocuments", toStatus = StageStatus.PendingEngine),
+                    historyRow("2026-03-04T09:04:00Z", EMPLOYEE_ONBOARDING_FLOW_ID, onboardingFinalError, HistoryEntryType.Error, stage = "UpdateHRSystem", fromStatus = StageStatus.Running, toStatus = StageStatus.Error, errorMessage = "employee-final-failed"),
                     historyRow("2026-03-04T09:03:00Z", "unknown-flow", unknownFlow, HistoryEntryType.StatusChanged, stage = "X", fromStatus = StageStatus.PendingEngine, toStatus = StageStatus.Running),
                 ).forEach { historyStore.append(it.toHistoryEntry()) }
+                retryStateStore.save(
+                    RetryState(
+                        flowId = ORDER_CONFIRMATION_FLOW_ID,
+                        flowInstanceId = orderError,
+                        stage = "InformingCustomer",
+                        failedAttemptCount = 1,
+                        externalRetryAllowed = true,
+                        autoRetryMaxAttempts = 3,
+                        nextAutoRetryAt = Instant.parse("2026-03-04T09:05:00Z"),
+                        lastErrorType = "java.lang.IllegalStateException",
+                        lastErrorMessage = "order-failed",
+                        updatedAt = Instant.parse("2026-03-04T09:01:00Z"),
+                    ),
+                )
 
                 val flows = service.listFlows(longRunningThresholdSeconds = 3600)
 
@@ -149,15 +196,20 @@ class CockpitServiceTest : BehaviorSpec({
 
                 val onboarding = flows.first { it.flowId == EMPLOYEE_ONBOARDING_FLOW_ID }
                 onboarding.activeCount shouldBe 2
-                onboarding.errorCount shouldBe 0
+                onboarding.errorCount shouldBe 1
                 onboarding.completedCount shouldBe 1
                 onboarding.longRunningCount shouldBe 1
-                onboarding.notCompletedCount shouldBe 2
+                onboarding.notCompletedCount shouldBe 3
                 onboarding.stageBreakdown shouldContainExactly listOf(
                     io.flowlite.cockpit.CockpitFlowStageDto(
                         stage = "DelayAfterHRUpdate",
                         totalCount = 1,
                         errorCount = 0,
+                    ),
+                    io.flowlite.cockpit.CockpitFlowStageDto(
+                        stage = "UpdateHRSystem",
+                        totalCount = 1,
+                        errorCount = 1,
                     ),
                     io.flowlite.cockpit.CockpitFlowStageDto(
                         stage = "GenerateOnboardingDocuments",
@@ -169,7 +221,7 @@ class CockpitServiceTest : BehaviorSpec({
 
                 val order = flows.first { it.flowId == ORDER_CONFIRMATION_FLOW_ID }
                 order.activeCount shouldBe 2
-                order.errorCount shouldBe 1
+                order.errorCount shouldBe 0
                 order.completedCount shouldBe 0
                 order.longRunningCount shouldBe 1
                 order.notCompletedCount shouldBe 3
@@ -177,7 +229,7 @@ class CockpitServiceTest : BehaviorSpec({
                     io.flowlite.cockpit.CockpitFlowStageDto(
                         stage = "InformingCustomer",
                         totalCount = 1,
-                        errorCount = 1,
+                        errorCount = 0,
                     ),
                     io.flowlite.cockpit.CockpitFlowStageDto(
                         stage = "WaitingForConfirmation",

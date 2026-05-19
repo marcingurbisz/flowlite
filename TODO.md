@@ -128,6 +128,27 @@ MG: .filter { row -> errorFilter == null || row.matchesErrorFilter(errorFilter) 
 > Validation: `git --no-pager diff -- test/testApplication.kt test/ShowcaseErrorCatalogSeeder.kt TODO.md`; `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`
 > Learning: keeping test support helpers in dedicated files reduces churn in `testApplication.kt`, which is already carrying a lot of unrelated runtime/test bootstrap code.
 
+## [DONE 2026-05-19.5] Exploratory tests for cockpit functionality
+Focus on live `runPerfTestApp` checks across cockpit views with special attention to `auto-retry` and `external-retry` behavior in GUI and API.
+
+> Agent:
+> Changes: ran live exploratory checks against `SERVER_PORT=18081 ./gradlew runPerfTestApp` across Flows, Errors, Long Inactive, and Instances.
+> Validation: verified `/api/instances?bucket=Error&errorFilter=final|external-retry|auto-retry-active` returned the expected seeded categories; verified Errors tab defaulted to final, switched correctly to external-retry and auto-retry-active, and exposed the expected retry metadata in instance details.
+> Validation: exercised GUI retry on the seeded externally retriable `order-confirmation` instance and confirmed the item left the external-retry list and moved forward in backend state.
+> Learning: the retry/error slices are consistent end-to-end after the recent backend-first filtering changes. The main exploratory regression found in this loop was separate: direct navigation to the Instances tab left the banner stats at zero.
+
+## [DONE 2026-05-19.6] Fix instances banner stats on direct navigation
+> Agent:
+> Changes: updated cockpit data refresh so flow summary stats are fetched even when the app lands directly on the `instances` view, which fixes the `flows: 0 • instances: 0 • errors: 0` banner on deep links like `?tab=instances&q=...`.
+> Validation: `cd cockpit-ui && npm run build`; restarted `SERVER_PORT=18081 ./gradlew runPerfTestApp`; rechecked `http://127.0.0.1:18081/cockpit?tab=instances&q=d2480e3c-ce1b-3f45-bf8b-f2c440bbb4eb` and confirmed the banner now showed non-zero flow stats after load.
+> Learning: the instances table and banner had drifted because they did not share the same fetch prerequisites; deep-linking exposed that the table can be populated independently while the banner still depends on `/api/flows`.
+
+## [DONE 2026-05-19.6] Review own changes
+> Agent:
+> Changes: reviewed the exploratory/fix diff to confirm the code change stayed limited to the instances-view flow-summary fetch condition and that no retry/filter semantics were altered by the fix.
+> Validation: `git --no-pager diff -- cockpit-ui/src/App.tsx TODO.md`; `cd cockpit-ui && npm run build`; live deep-link recheck on the restarted app.
+> Learning: exploratory loops are most valuable here when they include direct-entry URLs, not only in-app tab clicks, because location-state bootstrapping can hide fetch gaps.
+
 ## [FOR HUMAN]
 * Review agent-responding-to-failures.md
 * Check on GUI:

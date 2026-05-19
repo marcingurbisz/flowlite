@@ -137,7 +137,7 @@ const FlowLiteCockpit = () => {
       setInstances([]);
     }
 
-    const shouldFetchFlows = view !== 'instances' && (flows.length === 0 || view === 'flows');
+    const shouldFetchFlows = flows.length === 0 || view === 'flows';
     const flowPath = `/api/flows?longRunningThresholdSeconds=${encodeURIComponent(longRunningThresholdSeconds.toString())}`;
     const instancesParams = new URLSearchParams();
     let instancesPath: string | null = null;

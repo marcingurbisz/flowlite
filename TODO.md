@@ -115,7 +115,18 @@ MG: .filter { row -> errorFilter == null || row.matchesErrorFilter(errorFilter) 
 > Validation: `git --no-pager diff -- source/cockpit/service.kt source/springDataJdbc.kt cockpit-ui/src/App.tsx TODO.md`; `./gradlew test --tests "*CockpitServiceTest"`; `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`; `cd cockpit-ui && npm run build`
 > Learning: this topic stays maintainable when the retry classification is expressed once and reused by both detail and summary queries; otherwise the FE and service start drifting on the same semantics.
 
-## Move seeding to separate file
+## [DONE 2026-05-19.4] Move seeding to separate file
+
+> Agent:
+> Changes: extracted `ShowcaseErrorCatalogSeeder` from `test/testApplication.kt` into its own file `test/ShowcaseErrorCatalogSeeder.kt`, keeping the same constructor/wiring and giving the helper its own logger.
+> Validation: `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`
+> Learning: this helper was already cohesive enough to stand alone; once moved, the only hidden coupling was the private file-level logger, which is better owned by the seeder itself.
+
+## [DONE 2026-05-19.4] Review own changes
+> Agent:
+> Changes: reviewed the extraction diff to confirm it was a pure move plus logger decoupling, with no change to seeding semantics or bean wiring.
+> Validation: `git --no-pager diff -- test/testApplication.kt test/ShowcaseErrorCatalogSeeder.kt TODO.md`; `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`
+> Learning: keeping test support helpers in dedicated files reduces churn in `testApplication.kt`, which is already carrying a lot of unrelated runtime/test bootstrap code.
 
 ## [FOR HUMAN]
 * Review agent-responding-to-failures.md

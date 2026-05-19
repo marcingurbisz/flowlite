@@ -269,7 +269,7 @@ const FlowLiteCockpit = () => {
 
   const flowRefreshToken = activeView === 'flows' ? longRunningThresholdSeconds : null;
   const errorsRefreshToken = activeView === 'errors'
-    ? `${errorFlowFilter}|${errorStageFilter}|${errorMessageFilterErrors}`
+    ? `${errorFlowFilter}|${errorStageFilter}|${errorMessageFilterErrors}|${errorRetryFilter}`
     : null;
   const longRunningRefreshToken = activeView === 'long-running'
     ? `${longRunningFlowFilter}|${longRunningStatusFilter}|${longRunningThresholdSeconds}`

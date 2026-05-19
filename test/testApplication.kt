@@ -56,6 +56,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.web.servlet.function.RouterFunction
 import org.springframework.web.servlet.function.ServerResponse
+import javax.management.ObjectName
 import javax.sql.DataSource
 
 @SpringBootApplication
@@ -340,6 +341,7 @@ internal class PeriodicThreadDumpLogger(
     private val rawJdkJavaOptionsEnv: String? = null,
     private val pinnedThreadTracingMode: String? = System.getProperty("jdk.tracePinnedThreads"),
     private val pidProvider: () -> Long = { ProcessHandle.current().pid() },
+    private val threadDumpProvider: () -> String = ::dumpThreadsViaDiagnosticCommand,
     private val commandRunner: (List<String>) -> CommandExecutionResult = ::runCommand,
 ) : AutoCloseable {
     private val executor =
@@ -372,23 +374,25 @@ internal class PeriodicThreadDumpLogger(
         val pid = pidProvider()
         val command = listOf("jcmd", pid.toString(), "Thread.print")
 
-        runCatching { commandRunner(command) }
-            .onSuccess { result ->
+        runCatching {
+            ThreadDumpResult(output = threadDumpProvider(), source = "diagnostic-command-mbean")
+        }
+            .recoverCatching {
+                val result = commandRunner(command)
                 if (result.exitCode != 0) {
-                    diagnosticsLog.error {
-                        "thread dump diagnostics failed reason=$reason pid=$pid exitCode=${result.exitCode} command=${command.joinToString(" ")} output=${result.output.trim()}"
-                    }
-                    return
+                    error("jcmd fallback failed exitCode=${result.exitCode} output=${result.output.trim()}")
                 }
-
+                ThreadDumpResult(output = result.output, source = command.joinToString(" "))
+            }
+            .onSuccess { result ->
                 diagnosticsLog.info {
-                    "thread dump diagnostics start reason=$reason pid=$pid command=${command.joinToString(" ")}"
+                    "thread dump diagnostics start reason=$reason pid=$pid source=${result.source}"
                 }
                 result.output.lineSequence().forEach { line ->
                     diagnosticsLog.info { "thread dump reason=$reason $line" }
                 }
                 diagnosticsLog.info {
-                    "thread dump diagnostics end reason=$reason pid=$pid"
+                    "thread dump diagnostics end reason=$reason pid=$pid source=${result.source}"
                 }
             }
             .onFailure { error ->
@@ -401,6 +405,22 @@ internal class PeriodicThreadDumpLogger(
     override fun close() {
         executor?.shutdownNow()
     }
+}
+
+private data class ThreadDumpResult(
+    val output: String,
+    val source: String,
+)
+
+private fun dumpThreadsViaDiagnosticCommand(): String {
+    val server = ManagementFactory.getPlatformMBeanServer()
+    val name = ObjectName("com.sun.management:type=DiagnosticCommand")
+    return server.invoke(
+        name,
+        "threadPrint",
+        arrayOf(emptyArray<String>()),
+        arrayOf(Array<String>::class.java.name),
+    ).toString()
 }
 
 private fun Long.toMiB(): Long = this / (1024 * 1024)

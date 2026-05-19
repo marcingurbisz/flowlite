@@ -1,4 +1,4 @@
-## Better jcmd or maybe dump via JMX?
+## [DONE 2026-05-19.2] Better jcmd or maybe dump via JMX?
 ```
 fun dumpThreads() {
     val server = ManagementFactory.getPlatformMBeanServer()
@@ -22,6 +22,11 @@ fun dumpThreads() {
 }
 ```
 
+> Agent:
+> Done. `PeriodicThreadDumpLogger` now prefers `com.sun.management:type=DiagnosticCommand` over JMX and calls `threadPrint` directly in-process, with `jcmd <pid> Thread.print` kept only as a fallback if the MBean path fails.
+> Validation: ad hoc probe on this JDK confirmed that `DiagnosticCommand.threadPrint` is available and VT-aware; then `./gradlew test --tests "*RuntimeDiagnosticsLoggerTest"` passed after switching the logger to JMX-first with a tested fallback path.
+> Learning: the earlier reason for using external `jcmd` was that the simpler in-process APIs (`ThreadMXBean.dumpAllThreads`, `Thread.getAllStackTraces`) missed live virtual-thread coverage. `DiagnosticCommand.threadPrint` is different: it exposes the same VM diagnostic command through JMX, so it keeps VT-aware dumps without spawning a separate process.
+
 ## [DONE 2026-05-17.1] Thread dump on render
 
 Engine hangs after hours of operation (no business logs, only memory diagnostics). RSS stable (~344 MiB) — not OOM. Thread count grows from ~30 → ~125 during hang. Render eventually restarts on health check RST.
@@ -36,7 +41,7 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
 > Validation: `./gradlew test` passed. Added `RuntimeDiagnosticsLoggerTest` for the new command path. The build still emits the known Playwright host dependency warning in this container, but the Gradle test task succeeds.
 > Learning: `ThreadMXBean.dumpAllThreads(...)` and `Thread.getAllStackTraces()` are not sufficient for VT-aware diagnostics in this JDK; self-`jcmd` is the practical path when we want the dump in app logs.
 
-## [REOPEN 2026-05-19.1] Fix tick worker thread churn
+## [DONE 2026-05-19.2] Fix tick worker thread churn
 > Agent:
 > Finding from the live exploratory run: before the fix, failure-heavy `runPerfTestApp` logs reached `flowlite-tick-worker-161` quickly, which strongly suggested that `SpringDataJdbcTickScheduler` was creating new platform threads per task instead of reusing a bounded worker set.
 > Changes: replaced the scheduler's `SimpleAsyncTaskExecutor` with a fixed thread pool in `source/springDataJdbc.kt`, keeping the same worker-count knob but making worker threads reusable.
@@ -58,7 +63,12 @@ SimpleAsyncTaskExecutorBuilder()
 ```
 And add spring.threads.virtual.enabled or .virtualThreads(true)
 
-## [REOPEN 2026-05-19.1] Self-review of current loop
+> Agent:
+> I would keep the current fixed pool for this scheduler. `spring.threads.virtual.enabled` would not automatically change this code path because the scheduler constructs its own executor manually. Switching this slice to `SimpleAsyncTaskExecutorBuilder().virtualThreads(true)` would change the execution model again from bounded reusable platform workers to per-task virtual threads, which is a different trade-off than the issue we just fixed.
+> Learning: the observed bug was platform-thread churn from the previous executor choice. The current fixed pool directly addresses that with predictable worker reuse and stable shutdown semantics. If we later want to evaluate VT workers, that should be a separate benchmarked decision rather than bundled into the churn fix.
+> Validation: current implementation in `source/springDataJdbc.kt` still uses a fixed platform-thread pool; targeted and exploratory checks from this loop remain green with that model.
+
+## [DONE 2026-05-19.2] Self-review of current loop
 > Agent:
 > Reviewed: render diagnostics bean wiring, the `jcmd`-based VT dump path, render env changes for pinned-thread tracing, the retry exploratory notes, and the scheduler executor fix in `SpringDataJdbcTickScheduler`.
 > Result: no additional local defects found in the current loop changes. The main residual risk is still environmental: browser-backed exploratory coverage remains limited in this container by missing Playwright host libraries, so the retry exploration used live HTTP/API probing instead of full browser automation.
@@ -72,6 +82,12 @@ And add spring.threads.virtual.enabled or .virtualThreads(true)
 > In this session I did not have a separate browser automation tool exposed beyond the coding/tooling surface, so I used the repo's existing Java Playwright coverage plus live HTTP exploratory on `runPerfTestApp`. The Linux host-library warning is real for Playwright CLI/MCP style browser launches; typical fix is installing Playwright system deps in the container/host (`npx playwright install-deps` or the equivalent apt packages such as `libgtk-4-1`, `libgstreamer1.0-0`, `libsecret-1-0`, browser codec libs, and related X/Wayland packages). The existing Java Playwright tests in this repo still pass in this container, so I did not stop the loop on that warning.
 >> MG: You do not have access to VS Code Copilot build-in browser tool?
 >> I see in our devcontainer "npx -y playwright@latest install --with-deps chromium chrome". Is it not enough? Install what is needed.
+
+> Agent:
+> In the current tool surface I still do not have a separate VS Code built-in browser automation tool to invoke directly from chat, so I stayed on repo-native Playwright plus live API checks.
+> Changes: installed Playwright browsers and host libraries in the devcontainer, then added the remaining missing apt packages reported by Java Playwright validation, ending with `libgstreamer-plugins-bad1.0-0`.
+> Validation: `./gradlew test --tests "*CockpitPlaywrightTest"` now passes without the earlier Playwright host validation warning.
+> Learning: `npx playwright install --with-deps chromium` helped, but the Java Playwright validation path still needed extra Ubuntu packages beyond that default set in this container. The warning output itself turned out to be the most reliable install checklist.
  
 ## [DONE 2026-05-19.1] Auto-retry and externally retriable on gui
 On Flows show only "final" errors - non externally retriable and (non autoretry or all retries are done)

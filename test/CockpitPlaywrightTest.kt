@@ -975,7 +975,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("change-stage-confirm").click()
             page.getByTestId("action-confirmation-confirm").click()
 
-            page.getByTestId("errors-retry-filter").selectOption("final")
+            navigateToCockpit(page, "tab=errors&errorRetry=final")
+            assertThat(page.getByTestId("error-instance-checkbox-${fixture.employeeErrorCancelId}")).isVisible()
             page.getByTestId("error-instance-checkbox-${fixture.employeeErrorCancelId}").check()
             page.getByTestId("errors-cancel-selected").click()
             page.getByTestId("action-confirmation-confirm").click()

@@ -40,7 +40,7 @@ MG: Remove jcmd fallback. Not sure if it is worth to keep RuntimeDiagnosticsLogg
 > Validation: `git --no-pager diff -- test/testApplication.kt test/RuntimeDiagnosticsLoggerTest.kt TODO.md`; `./gradlew test --tests "*RuntimeDiagnosticsLoggerTest"`
 > Learning: this slice stays small if the logger owns only one dump source; otherwise tests start encoding fallback mechanics instead of the behavior we care about.
 
-## [REOPEN] Fix tick worker thread churn
+## [DONE 2026-05-19.2] Fix tick worker thread churn
 > Agent:
 > Finding from the live exploratory run: before the fix, failure-heavy `runPerfTestApp` logs reached `flowlite-tick-worker-161` quickly, which strongly suggested that `SpringDataJdbcTickScheduler` was creating new platform threads per task instead of reusing a bounded worker set.
 > Changes: replaced the scheduler's `SimpleAsyncTaskExecutor` with a fixed thread pool in `source/springDataJdbc.kt`, keeping the same worker-count knob but making worker threads reusable.
@@ -68,6 +68,17 @@ And add spring.threads.virtual.enabled or .virtualThreads(true)
 > Validation: current implementation in `source/springDataJdbc.kt` still uses a fixed platform-thread pool; targeted and exploratory checks from this loop remain green with that model.
 
 MG: I prefer SimpleAsyncTaskExecutorBuilder with virtual threads
+
+> Agent:
+> Changes: switched `SpringDataJdbcTickScheduler` workers from the fixed platform-thread pool to `SimpleAsyncTaskExecutorBuilder` with `virtualThreads(true)`, the existing `workerThreads` concurrency limit, and a 5-minute termination timeout; shutdown now closes the Spring executor instead of managing `ExecutorService` lifecycle manually.
+> Validation: `./gradlew test`
+> Learning: this keeps the user-preferred VT execution model while still bounding in-flight tick handling through `concurrencyLimit`, so the worker-count knob still controls scheduler pressure even though workers are no longer reused platform threads.
+
+## [DONE 2026-05-19.2] Review own changes
+> Agent:
+> Changes: reviewed the scheduler diff to confirm the change stayed limited to the worker executor and shutdown path, with no unintended polling/query changes.
+> Validation: `git --no-pager diff -- source/springDataJdbc.kt TODO.md`; `./gradlew test`
+> Learning: in this slice the main behavioral change is the worker execution model, so keeping batching and poll-loop logic untouched makes the trade-off easier to reason about.
 
 ## [REOPEN] Auto-retry and externally retriable on gui
 On Flows show only "final" errors - non externally retriable and (non autoretry or all retries are done)

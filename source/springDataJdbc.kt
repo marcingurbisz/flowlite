@@ -6,9 +6,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import org.springframework.boot.task.SimpleAsyncTaskExecutorBuilder
 import org.springframework.context.SmartLifecycle
 import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.annotation.Id
@@ -75,12 +73,12 @@ class SpringDataJdbcTickScheduler(
 
     @Volatile private var pollerThread: Thread? = null
 
-    private val workers: ExecutorService = Executors.newFixedThreadPool(
-        workerThreads.coerceAtLeast(1),
-        Thread.ofPlatform()
-            .name("flowlite-tick-worker-", 0)
-            .factory(),
-    )
+    private val workers = SimpleAsyncTaskExecutorBuilder()
+        .threadNamePrefix("flowlite-tick-worker-")
+        .concurrencyLimit(workerThreads.coerceAtLeast(1))
+        .taskTerminationTimeout(Duration.ofMinutes(5))
+        .virtualThreads(true)
+        .build()
 
     private val batchSize = (workerThreads * 2).coerceAtLeast(1)
 
@@ -185,10 +183,7 @@ class SpringDataJdbcTickScheduler(
             .start {
                 try {
                     pollerThread?.interrupt()
-                    workers.shutdown()
-                    if (!workers.awaitTermination(5, TimeUnit.MINUTES)) {
-                        workers.shutdownNow()
-                    }
+                    workers.close()
                     pollerThread?.join()
                 } catch (e: Exception) {
                     log.error(e) { "Exception during stopping threads" }

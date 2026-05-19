@@ -274,11 +274,6 @@ object ShowcaseActionBehavior {
 private val showcaseLog = KotlinLogging.logger {}
 private val diagnosticsLog = KotlinLogging.logger {}
 
-internal data class CommandExecutionResult(
-    val exitCode: Int,
-    val output: String,
-)
-
 internal class PeriodicMemoryLogger(
     enabled: Boolean,
     intervalSeconds: Long,
@@ -342,7 +337,6 @@ internal class PeriodicThreadDumpLogger(
     private val pinnedThreadTracingMode: String? = System.getProperty("jdk.tracePinnedThreads"),
     private val pidProvider: () -> Long = { ProcessHandle.current().pid() },
     private val threadDumpProvider: () -> String = ::dumpThreadsViaDiagnosticCommand,
-    private val commandRunner: (List<String>) -> CommandExecutionResult = ::runCommand,
 ) : AutoCloseable {
     private val executor =
         if (enabled) {
@@ -372,18 +366,10 @@ internal class PeriodicThreadDumpLogger(
 
     private fun dumpThreads(reason: String) {
         val pid = pidProvider()
-        val command = listOf("jcmd", pid.toString(), "Thread.print")
 
         runCatching {
             ThreadDumpResult(output = threadDumpProvider(), source = "diagnostic-command-mbean")
         }
-            .recoverCatching {
-                val result = commandRunner(command)
-                if (result.exitCode != 0) {
-                    error("jcmd fallback failed exitCode=${result.exitCode} output=${result.output.trim()}")
-                }
-                ThreadDumpResult(output = result.output, source = command.joinToString(" "))
-            }
             .onSuccess { result ->
                 diagnosticsLog.info {
                     "thread dump diagnostics start reason=$reason pid=$pid source=${result.source}"
@@ -397,7 +383,7 @@ internal class PeriodicThreadDumpLogger(
             }
             .onFailure { error ->
                 diagnosticsLog.error(error) {
-                    "thread dump diagnostics failed reason=$reason pid=$pid command=${command.joinToString(" ")}"
+                    "thread dump diagnostics failed reason=$reason pid=$pid source=diagnostic-command-mbean"
                 }
             }
     }
@@ -445,15 +431,6 @@ private fun bufferPoolUsageBytes(poolNamePrefix: String): Long? {
         .filter { it.name.startsWith(poolNamePrefix, ignoreCase = true) }
     if (pools.isEmpty()) return null
     return pools.sumOf { it.memoryUsed.coerceAtLeast(0L) }
-}
-
-private fun runCommand(command: List<String>): CommandExecutionResult {
-    val process = ProcessBuilder(command)
-        .redirectErrorStream(true)
-        .start()
-    val output = process.inputStream.bufferedReader().use { it.readText() }
-    val exitCode = process.waitFor()
-    return CommandExecutionResult(exitCode = exitCode, output = output)
 }
 
 internal class ShowcaseFlowSeeder(

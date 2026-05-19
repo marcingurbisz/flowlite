@@ -1,4 +1,4 @@
-## [REOPEN] Better jcmd or maybe dump via JMX?
+## [DONE 2026-05-19.1] Better jcmd or maybe dump via JMX?
 ```
 fun dumpThreads() {
     val server = ManagementFactory.getPlatformMBeanServer()
@@ -28,6 +28,17 @@ fun dumpThreads() {
 > Learning: the earlier reason for using external `jcmd` was that the simpler in-process APIs (`ThreadMXBean.dumpAllThreads`, `Thread.getAllStackTraces`) missed live virtual-thread coverage. `DiagnosticCommand.threadPrint` is different: it exposes the same VM diagnostic command through JMX, so it keeps VT-aware dumps without spawning a separate process.
 
 MG: Remove jcmd fallback. Not sure if it is worth to keep RuntimeDiagnosticsLoggerTest
+
+> Agent:
+> Changes: removed the `jcmd` fallback from `PeriodicThreadDumpLogger`, so runtime diagnostics now rely only on `DiagnosticCommand.threadPrint`; also deleted the leftover command-runner helper and simplified `RuntimeDiagnosticsLoggerTest` to cover the remaining enabled/disabled behavior.
+> Validation: `./gradlew test --tests "*RuntimeDiagnosticsLoggerTest"`
+> Learning: the JMX-backed `DiagnosticCommand` path is the VT-aware mechanism we actually want here, so keeping the external-process fallback only added code and test surface without a clear benefit.
+
+## [DONE 2026-05-19.1] Review own changes
+> Agent:
+> Changes: reviewed the diff for the thread-dump logger simplification and removed the now-unused `runCommand` / `CommandExecutionResult` helper left behind by the fallback deletion.
+> Validation: `git --no-pager diff -- test/testApplication.kt test/RuntimeDiagnosticsLoggerTest.kt TODO.md`; `./gradlew test --tests "*RuntimeDiagnosticsLoggerTest"`
+> Learning: this slice stays small if the logger owns only one dump source; otherwise tests start encoding fallback mechanics instead of the behavior we care about.
 
 ## [REOPEN] Fix tick worker thread churn
 > Agent:

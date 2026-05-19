@@ -80,7 +80,7 @@ MG: I prefer SimpleAsyncTaskExecutorBuilder with virtual threads
 > Validation: `git --no-pager diff -- source/springDataJdbc.kt TODO.md`; `./gradlew test`
 > Learning: in this slice the main behavioral change is the worker execution model, so keeping batching and poll-loop logic untouched makes the trade-off easier to reason about.
 
-## [REOPEN] Auto-retry and externally retriable on gui
+## [DONE 2026-05-19.3] Auto-retry and externally retriable on gui
 On Flows show only "final" errors - non externally retriable and (non autoretry or all retries are done)
 On Errors tab add filters - by default only final but you can choose externally retriable errors or the one with active auto-retry.
 Make sure that we have all types of errors on our test render instance.
@@ -102,6 +102,18 @@ Make sure that we have all types of errors on our test render instance.
 MG: Are we doing filtering on FE side? Isn't it better use only backend side filtering?
 MG: listFlows - now we do more queries and logic then before introducing the change. Can't we change findIncompleteStageBreakdown and still use one query?
 MG: .filter { row -> errorFilter == null || row.matchesErrorFilter(errorFilter) } - isn't it better to move to the db query?
+
+> Agent:
+> Changes: moved retry-aware error filtering into `findFilteredSummaries(...)` SQL, so `/api/instances` now applies `final` / `external-retry` / `auto-retry-active` server-side and the cockpit UI no longer re-filters retry categories in memory.
+> Changes: changed `findFlowSummaryAggregates(...)` and `findIncompleteStageBreakdown()` to count only final errors directly in SQL, and simplified `CockpitService.listFlows()` back to repository aggregates instead of fetching all error rows plus per-stage summary queries.
+> Validation: `./gradlew test --tests "*CockpitServiceTest"`; `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`; `cd cockpit-ui && npm run build`
+> Learning: the retry-category rule belongs in the database predicate because both the Errors API and flow-card counters depend on the same classification; once that predicate lives in SQL, the FE becomes a pure view over already-filtered data and `listFlows()` can stay query-shaped instead of reconstructing counts in Kotlin.
+
+## [DONE 2026-05-19.3] Review own changes
+> Agent:
+> Changes: reviewed the cockpit diff to confirm the behavior shift stayed in backend predicates and aggregate queries, with the frontend reduced only by removing duplicated retry filtering.
+> Validation: `git --no-pager diff -- source/cockpit/service.kt source/springDataJdbc.kt cockpit-ui/src/App.tsx TODO.md`; `./gradlew test --tests "*CockpitServiceTest"`; `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`; `cd cockpit-ui && npm run build`
+> Learning: this topic stays maintainable when the retry classification is expressed once and reused by both detail and summary queries; otherwise the FE and service start drifting on the same semantics.
 
 ## Move seeding to separate file
 

@@ -375,6 +375,17 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
               or cockpit_status = :cockpitStatusFilter
           )
           and (:updatedBefore is null or updated_at < :updatedBefore)
+          and (
+              :errorFilter is null
+              or (
+                  cockpit_status = 'Error'
+                  and (
+                      (:errorFilter = 'final' and coalesce(external_retry_allowed, false) = false and (auto_retry_max_attempts is null or next_auto_retry_at is null))
+                      or (:errorFilter = 'external-retry' and external_retry_allowed = true)
+                      or (:errorFilter = 'auto-retry-active' and auto_retry_max_attempts is not null and next_auto_retry_at is not null)
+                  )
+              )
+          )
         order by flow_id asc, updated_at desc, flow_instance_id asc
         """,
     )
@@ -389,6 +400,7 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         showIncompleteOnly: Boolean,
         cockpitStatusFilter: String?,
         updatedBefore: Instant?,
+        errorFilter: String?,
     ): List<FlowLiteInstanceSummaryRow>
 
     @Query(
@@ -396,7 +408,7 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
         select
             flow_id as flow_id,
             sum(case when cockpit_status in ('Running', 'WaitingForTimer', 'WaitingForEvent', 'PendingEngine') then 1 else 0 end) as active_count,
-            sum(case when cockpit_status = 'Error' then 1 else 0 end) as error_count,
+            sum(case when cockpit_status = 'Error' and coalesce(external_retry_allowed, false) = false and (auto_retry_max_attempts is null or next_auto_retry_at is null) then 1 else 0 end) as error_count,
             sum(case when cockpit_status in ('Completed', 'Cancelled') then 1 else 0 end) as completed_count,
             sum(case when cockpit_status not in ('Completed', 'Cancelled') then 1 else 0 end) as not_completed_count,
             sum(case when cockpit_status in ('Running', 'PendingEngine') and updated_at < :updatedBefore then 1 else 0 end) as long_running_count
@@ -413,7 +425,7 @@ interface FlowLiteInstanceSummaryRepository : CrudRepository<FlowLiteInstanceSum
             flow_id as flow_id,
             stage as stage,
             count(*) as total_count,
-            sum(case when status = 'Error' then 1 else 0 end) as error_count
+                        sum(case when cockpit_status = 'Error' and coalesce(external_retry_allowed, false) = false and (auto_retry_max_attempts is null or next_auto_retry_at is null) then 1 else 0 end) as error_count
         from flowlite_instance_summary
         where stage is not null
                     and cockpit_status not in ('Completed', 'Cancelled')

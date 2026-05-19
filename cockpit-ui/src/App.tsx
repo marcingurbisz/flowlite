@@ -482,19 +482,10 @@ const FlowLiteCockpit = () => {
     [flows],
   );
 
-  const matchesErrorRetryFilter = (instance: UiInstance) => {
-    const retryInfo = instance.retryInfo;
-    if (!retryInfo) return errorRetryFilter === 'final';
-
-    if (errorRetryFilter === 'external-retry') return retryInfo.externalRetryAllowed;
-    if (errorRetryFilter === 'auto-retry-active') return retryInfo.autoRetryActive;
-    return !retryInfo.externalRetryAllowed && !retryInfo.autoRetryActive;
-  };
-
   const filteredInstances = instances;
   const filteredErrorInstances = useMemo(
-    () => instances.filter((instance) => instance.cockpitStatus === 'Error' && matchesErrorRetryFilter(instance)),
-    [instances, errorRetryFilter],
+    () => instances.filter((instance) => instance.cockpitStatus === 'Error'),
+    [instances],
   );
   const filteredErrorGroups = useMemo(
     () => groupErrors(filteredErrorInstances.map((instance) => ({

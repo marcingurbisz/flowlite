@@ -36,7 +36,7 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
 > Validation: `./gradlew test` passed. Added `RuntimeDiagnosticsLoggerTest` for the new command path. The build still emits the known Playwright host dependency warning in this container, but the Gradle test task succeeds.
 > Learning: `ThreadMXBean.dumpAllThreads(...)` and `Thread.getAllStackTraces()` are not sufficient for VT-aware diagnostics in this JDK; self-`jcmd` is the practical path when we want the dump in app logs.
 
-## [DONE 2026-05-19.1] Fix tick worker thread churn
+## [REOPEN 2026-05-19.1] Fix tick worker thread churn
 > Agent:
 > Finding from the live exploratory run: before the fix, failure-heavy `runPerfTestApp` logs reached `flowlite-tick-worker-161` quickly, which strongly suggested that `SpringDataJdbcTickScheduler` was creating new platform threads per task instead of reusing a bounded worker set.
 > Changes: replaced the scheduler's `SimpleAsyncTaskExecutor` with a fixed thread pool in `source/springDataJdbc.kt`, keeping the same worker-count knob but making worker threads reusable.
@@ -48,7 +48,17 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
 > Yes. The current code only uses a virtual thread for the scheduler poller and stop helper. The actual tick workers are a platform-thread fixed pool in `SpringDataJdbcTickScheduler`, and the previous executor was also not using virtual-thread workers. So the churn was real platform-thread churn, not cheap VT creation.
 > Validation: re-read current `source/springDataJdbc.kt` and compared it with the pre-fix revision from `git show 0c8ef80^:source/springDataJdbc.kt`.
 
-## [DONE 2026-05-19.1] Self-review of current loop
+MG: Isn't it better to use:
+```
+SimpleAsyncTaskExecutorBuilder()
+        .threadNamePrefix("flowlite-tick-worker-")
+        .concurrencyLimit(workerThreads)
+        .taskTerminationTimeout(Duration.ofMinutes(5))
+        .build()
+```
+And add spring.threads.virtual.enabled or .virtualThreads(true)
+
+## [REOPEN 2026-05-19.1] Self-review of current loop
 > Agent:
 > Reviewed: render diagnostics bean wiring, the `jcmd`-based VT dump path, render env changes for pinned-thread tracing, the retry exploratory notes, and the scheduler executor fix in `SpringDataJdbcTickScheduler`.
 > Result: no additional local defects found in the current loop changes. The main residual risk is still environmental: browser-backed exploratory coverage remains limited in this container by missing Playwright host libraries, so the retry exploration used live HTTP/API probing instead of full browser automation.
@@ -60,6 +70,8 @@ Engine hangs after hours of operation (no business logs, only memory diagnostics
 >
 > Agent:
 > In this session I did not have a separate browser automation tool exposed beyond the coding/tooling surface, so I used the repo's existing Java Playwright coverage plus live HTTP exploratory on `runPerfTestApp`. The Linux host-library warning is real for Playwright CLI/MCP style browser launches; typical fix is installing Playwright system deps in the container/host (`npx playwright install-deps` or the equivalent apt packages such as `libgtk-4-1`, `libgstreamer1.0-0`, `libsecret-1-0`, browser codec libs, and related X/Wayland packages). The existing Java Playwright tests in this repo still pass in this container, so I did not stop the loop on that warning.
+>> MG: You do not have access to VS Code Copilot build-in browser tool?
+>> I see in our devcontainer "npx -y playwright@latest install --with-deps chromium chrome". Is it not enough? Install what is needed.
  
 ## [DONE 2026-05-19.1] Auto-retry and externally retriable on gui
 On Flows show only "final" errors - non externally retriable and (non autoretry or all retries are done)

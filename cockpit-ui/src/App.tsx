@@ -683,7 +683,7 @@ const FlowLiteCockpit = () => {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <h1 data-testid="cockpit-title" className="text-2xl font-bold tracking-tight text-zinc-50">FlowLite Cockpit</h1>
           <p className="text-sm text-zinc-500 mt-1">Workflow Engine Monitoring & Management</p>
-          <p className="text-xs text-zinc-600 mt-1">
+          <p data-testid="cockpit-stats" className="text-xs text-zinc-600 mt-1">
             flows: {stats.totalFlows} • instances: {stats.totalInstances} • errors: {stats.errorInstances}
           </p>
         </div>

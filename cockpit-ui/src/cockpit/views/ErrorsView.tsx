@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { CheckCircle, ChevronRight, RefreshCw, X } from 'lucide-react';
+import { RetryInfoBadges } from '../badges';
 import type { ErrorGroupDto, ErrorRetryFilter, FlowDto, UiInstance } from '../types';
 import { toTestIdFragment } from '../utils';
 
@@ -202,6 +203,9 @@ export const ErrorsView = ({
                       <div className="flex items-center gap-2">
                         <div className="text-sm font-mono text-zinc-300">{instance.id}</div>
                         {renderCopyButton(instance.id, `error-${instance.id}`, `copy-error-instance-id-${instance.id}`)}
+                      </div>
+                      <div data-testid={`error-instance-retry-info-${instance.id}`}>
+                        <RetryInfoBadges retryInfo={instance.retryInfo} />
                       </div>
                       <div className="text-xs text-red-400 mt-1">{instance.errorMessage}</div>
                     </div>

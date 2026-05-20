@@ -149,6 +149,36 @@ Focus on live `runPerfTestApp` checks across cockpit views with special attentio
 > Validation: `git --no-pager diff -- cockpit-ui/src/App.tsx TODO.md`; `cd cockpit-ui && npm run build`; live deep-link recheck on the restarted app.
 > Learning: exploratory loops are most valuable here when they include direct-entry URLs, not only in-app tab clicks, because location-state bootstrapping can hide fetch gaps.
 
+## [DONE 2026-05-20.1] Add cockpit deep-link regression coverage
+Add a focused Playwright regression for direct entry into `?tab=instances&q=...` so banner stats and results stay aligned when the page boots on the Instances view.
+
+> Agent:
+> Changes: added a stable `data-testid` for cockpit banner stats and extended `CockpitPlaywrightTest` with a deep-link regression that asserts the Instances view loads both the filtered row and non-zero banner stats instead of staying at `flows: 0 • instances: 0 • errors: 0`.
+> Validation: `./gradlew test --tests "*CockpitPlaywrightTest"`
+> Learning: the regression should assert the user-visible failure mode directly (`0 • 0 • 0` banner on deep-link) instead of overfitting to an implementation-specific total instance count.
+
+## [DONE 2026-05-20.1] Exploratory test batch error actions
+Run live exploratory checks for batch `Change Stage` and `Cancel` from the Errors tab against `runPerfTestApp` and document the observed behavior.
+
+> Agent:
+> Changes: ran live browser checks against `SERVER_PORT=18081 ./gradlew runPerfTestApp` for Errors selection-bar actions on the seeded showcase errors.
+> Validation: on `Errors` with `errorRetry=external-retry`, confirmed the selection-bar `Change Stage` flow and then rechecked `8b55dcb0-19e7-3b99-8d2b-46e93dc50b12` on `Instances`, where it moved to `WaitingForConfirmation` / `Waiting for event`; on `Errors` with `errorRetry=final`, confirmed the selection-bar `Cancel` flow and then rechecked `924fe2a1-dd8d-3d69-a4df-041faab8fbba` on `Instances`, where it moved to `Cancelled`.
+> Learning: the live app still emits browser-side `POST ... net::ERR_ABORTED` during cockpit actions even when backend state changes correctly, so exploratory verification must check the resulting instance state rather than trusting the network event alone.
+
+## [DONE 2026-05-20.1] Show retry-type badges on Errors overview
+Expose `ExternallyRetryable` / `AutoRetry` badges directly on the Errors list rows so retry category is visible without opening instance details.
+
+> Agent:
+> Changes: rendered `RetryInfoBadges` in `ErrorsView` rows and extended the cockpit Playwright spec to assert the badges are visible in the Errors overview for both externally retriable and active auto-retry errors.
+> Validation: `cd cockpit-ui && npm run build`; `./gradlew test --tests "*CockpitPlaywrightTest"`; live `Errors` view check on `runPerfTestApp` confirmed `ExternallyRetryable` and `AutoRetry` badges were visible without opening the modal.
+> Learning: retry metadata was already present in the list payload, so the gap was purely presentation-level in `ErrorsView`, not a backend/API limitation.
+
+## [DONE 2026-05-20.1] Review own changes
+> Agent:
+> Changes: reviewed the loop diff to confirm the product change stayed limited to `ErrorsView` badge rendering and one `data-testid`, while the rest of the work lived in targeted Playwright coverage and TODO documentation.
+> Validation: `git --no-pager diff -- cockpit-ui/src/App.tsx cockpit-ui/src/cockpit/views/ErrorsView.tsx test/CockpitPlaywrightTest.kt TODO.md`; `./gradlew test --tests "*CockpitPlaywrightTest"`; `cd cockpit-ui && npm run build`.
+> Learning: for cockpit exploratory loops, pairing one live browser pass with a narrow Playwright regression catches both runtime integration issues and bootstrapping regressions without widening into unrelated engine coverage.
+
 ## [FOR HUMAN]
 * Review agent-responding-to-failures.md
 * Check on GUI:

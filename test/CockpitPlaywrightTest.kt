@@ -860,6 +860,8 @@ class CockpitPlaywrightTest : BehaviorSpec({
             val page = session.page
             var instanceErrorStackTrace = ""
             var historyErrorStackTrace = ""
+            var externalRetryBadgeText = ""
+            var autoRetryBadgeText = ""
 
             navigateToCockpit(page, "tab=errors")
 
@@ -872,9 +874,11 @@ class CockpitPlaywrightTest : BehaviorSpec({
             page.getByTestId("errors-message-filter").fill("hr sync")
             page.getByTestId("errors-clear-filters").click()
             page.getByTestId("errors-retry-filter").selectOption("external-retry")
+            externalRetryBadgeText = page.getByTestId("error-instance-retry-info-${fixture.orderErrorRetryId}").textContent() ?: ""
             page.getByTestId("error-group-select-all-order-confirmation-InformingCustomer").click()
             page.getByTestId("error-group-deselect-all-order-confirmation-InformingCustomer").click()
             page.getByTestId("errors-retry-filter").selectOption("auto-retry-active")
+            autoRetryBadgeText = page.getByTestId("error-instance-retry-info-${fixture.orderErrorRetryId}").textContent() ?: ""
             page.getByTestId("error-group-order-confirmation-InformingCustomer").click()
             page.getByTestId("instance-details-close").click()
             page.getByTestId("errors-retry-filter").selectOption("final")
@@ -895,9 +899,28 @@ class CockpitPlaywrightTest : BehaviorSpec({
                     assertThat(currentPage.getByTestId("errors-message-filter")).hasValue("")
                     assertThat(currentPage.getByTestId("errors-retry-filter")).hasValue("external-retry")
                     assertThat(currentPage.getByTestId("error-group-order-confirmation-InformingCustomer")).isVisible()
+                    externalRetryBadgeText.shouldContain("ExternallyRetryable")
+                    autoRetryBadgeText.shouldContain("AutoRetry")
                     instanceErrorStackTrace.shouldContain("notification retry needed")
                     historyErrorStackTrace.shouldContain("Notify.retry")
                     assertThat(currentPage.getByTestId("instance-details-modal")).hasCount(0)
+                }
+            }
+        }
+
+        `when`("opening the instances view from a deep link") {
+            val fixture = seedRichFixture()
+            val session = openRecordedContext("it-loads-banner-stats-on-instances-deep-link")
+            val page = session.page
+
+            navigateToCockpit(page, "tab=instances&q=${fixture.orderErrorRetryId}")
+
+            then("it loads both the filtered instances and the banner stats") {
+                verifyRecordedContext(session) { currentPage ->
+                    assertThat(currentPage.getByTestId("cockpit-stats")).containsText("flows: 2")
+                    assertThat(currentPage.getByTestId("cockpit-stats")).not().containsText("flows: 0 • instances: 0 • errors: 0")
+                    assertThat(currentPage.getByTestId("instances-result-count")).containsText("returned by backend: 1")
+                    assertThat(instanceRow(currentPage, fixture.orderErrorRetryId)).isVisible()
                 }
             }
         }

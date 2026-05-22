@@ -36,3 +36,4 @@ local.properties
 /cockpit-ui/playwright-report/
 /cockpit-ui/test-results/
 /cockpit-ui/*.tsbuildinfo
+render-api-key.txt

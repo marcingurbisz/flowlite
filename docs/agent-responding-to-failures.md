@@ -118,3 +118,6 @@ References:
 https://render.com/docs/cli
 https://github.com/render-oss/skills
 https://api-docs.render.com/reference/list-logs
+
+## Start implementing automatic reaction to failure
+Prepare what you can do on your own and give the me the instruction what I should do on my own (e.g. webhook configuration in render)

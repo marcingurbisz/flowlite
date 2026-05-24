@@ -104,7 +104,12 @@ The implementation should be driven by explicit repo files rather than only pros
 
 # TODO
 
-## [NEW] Remove render-incident.md
+## [DONE 2026-05-24.4] Remove render-incident.md
+
+> Agent: Removed `.github/ISSUE_TEMPLATE/render-incident.md` because it no longer provides any runtime value.
+> Changes: Deleted the template file and kept the issue body shape inside the standalone receiver implementation instead of a separate GitHub issue template.
+> Validation: Checked repo references and found no remaining runtime or documentation dependency on the deleted template.
+> Learning: The webhook receiver creates incident issues directly through the GitHub API, so keeping a second template copy would only create drift.
 
 ## [REOPEN] Check the latest failure on render
 

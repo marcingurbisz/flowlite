@@ -177,3 +177,12 @@ MG: Configure webhook in Render if possible via API
 > Learning: The Worker must send a GitHub `User-Agent` header or GitHub REST rejects the request with `403`.
 > Learning: Render API enrichment should not be allowed to fail the whole receiver path; missing event lookup must degrade to a minimal issue body.
 > Learning: The Render API refused webhook creation with `Webhook limit reached. You can increase the limit by upgrading your workspace plan.` so the final Render -> Worker wiring is blocked by the current Render workspace plan rather than by receiver code.
+
+## [DONE 2026-05-24.7] Investigate issue #12 (`server_failed` at `2026-05-24T12:59:53.429Z`)
+
+> Agent: Performed an investigation-only pass for the incident and documented hard evidence plus unknowns.
+> Validation: Queried GitHub Actions runs and logs; all `main` CI runs around the failure window were green (`26360634221`, `26360736733`, `26361965713`).
+> Validation: Correlated recent `main` commits with the failure time; nearest commits were `b7196d4e7060c9ab751f3de5ee01135e9cbfcd7c` (`2026-05-24T12:04:03Z`) and `807785b544a4f09580d3f16ffe6082ee0b89f942` (`2026-05-24T13:00:49Z`, after the incident started).
+> Validation: Attempted to fetch Render event/deploy/log data for `evt-manual-smoke-1779627593429`, but this agent environment could not resolve `api.render.com`, so direct Render evidence collection was blocked here.
+> Learning: With no Render API evidence available in this environment and only placeholder enrichment values (`-`) in the issue body, confidence remains low for any code-level root-cause claim.
+> Learning: Smallest honest outcome for this incident is an investigation-only update with explicit unknowns, not a speculative runtime or product code change.

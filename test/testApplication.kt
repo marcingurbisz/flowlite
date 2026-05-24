@@ -38,21 +38,27 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import io.kotest.core.listeners.ProjectListener
+import jakarta.servlet.FilterChain
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
+import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.ApplicationContextInitializer
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.Environment
 import org.springframework.core.env.getProperty
+import org.springframework.core.Ordered
 import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories
 import org.springframework.data.relational.core.mapping.NamingStrategy
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import org.springframework.web.filter.OncePerRequestFilter
 import org.springframework.web.servlet.function.RouterFunction
 import org.springframework.web.servlet.function.ServerResponse
 import javax.management.ObjectName
@@ -193,6 +199,16 @@ object Beans {
         }
 
         registerBean {
+            val environment = bean<Environment>()
+            FilterRegistrationBean(HttpAccessLogFilter(
+                enabled = environment.getProperty<Boolean>("flowlite.diagnostics.http-access-log-enabled", false),
+                includeQueryString = environment.getProperty<Boolean>("flowlite.diagnostics.http-access-log-include-query-string", true),
+            )).apply {
+                order = Ordered.LOWEST_PRECEDENCE
+            }
+        }
+
+        registerBean {
             CockpitService(
                 engine = bean<Engine>(),
                 mermaid = bean<io.flowlite.MermaidGenerator>(),
@@ -272,6 +288,43 @@ object ShowcaseActionBehavior {
 
 private val showcaseLog = KotlinLogging.logger {}
 private val diagnosticsLog = KotlinLogging.logger {}
+private val accessLog = KotlinLogging.logger("flowlite.access")
+
+internal class HttpAccessLogFilter(
+    private val enabled: Boolean,
+    private val includeQueryString: Boolean,
+    private val nanoTimeProvider: () -> Long = System::nanoTime,
+    private val logSink: (String) -> Unit = { message -> accessLog.info { message } },
+) : OncePerRequestFilter() {
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean = !enabled
+
+    override fun doFilterInternal(
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        filterChain: FilterChain,
+    ) {
+        val startedAt = nanoTimeProvider()
+        var failure: Throwable? = null
+
+        try {
+            filterChain.doFilter(request, response)
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            val durationMs = TimeUnit.NANOSECONDS.toMillis((nanoTimeProvider() - startedAt).coerceAtLeast(0L))
+            logSink(
+                "http access method=${request.method} target=${request.requestTarget(includeQueryString)} status=${response.status} durationMs=$durationMs remoteAddr=${request.remoteAddr ?: "-"} failure=${failure?.javaClass?.simpleName ?: "-"}",
+            )
+        }
+    }
+}
+
+private fun HttpServletRequest.requestTarget(includeQueryString: Boolean): String {
+    val uri = requestURI ?: "/"
+    val query = queryString?.takeIf { includeQueryString && it.isNotBlank() } ?: return uri
+    return "$uri?$query"
+}
 
 internal class PeriodicMemoryLogger(
     enabled: Boolean,

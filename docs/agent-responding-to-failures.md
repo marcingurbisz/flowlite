@@ -111,7 +111,7 @@ The implementation should be driven by explicit repo files rather than only pros
 > Validation: Checked repo references and found no remaining runtime or documentation dependency on the deleted template.
 > Learning: The webhook receiver creates incident issues directly through the GitHub API, so keeping a second template copy would only create drift.
 
-## [REOPEN] Check the latest failure on render
+## [DONE 2026-05-24.5] Check the latest failure on render
 
 MG: Health check is using /api/flows on purpose - I want to stress the app a little bit. I want to understand how test app behaves under load. How often render is calling this endpoint. Any idea why after some time /api/flows gives connection refused?
 
@@ -125,6 +125,12 @@ MG: Health check is using /api/flows on purpose - I want to stress the app a lit
 
 MG: Add access logging for test instance endpoints. Maybe using logbook?
 MG: After implementing push and deploy the newest version to render.
+
+> Agent: Added application-level HTTP access logging for the Render test instance instead of Tomcat file access logs.
+> Changes: Added a small servlet filter in `test/testApplication.kt` that logs method, request target, response status, duration, remote address, and failure marker to normal app logs, added `test/HttpAccessLogFilterTest.kt`, and enabled the feature for Render in `render.yaml`.
+> Validation: `./gradlew compileTestKotlin` passed.
+> Validation: `./gradlew test --tests io.flowlite.test.HttpAccessLogFilterTest` passed.
+> Learning: Built-in Tomcat access logs would write to files inside the container, which is weaker for Render diagnosis than logging request lines directly to stdout where Render log retrieval already works.
 
 ## [REOPEN] Implement triggering issue creation and assignment
 If it is not possible that render creates GitHub issue directly please implement receiver that will do it.

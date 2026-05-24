@@ -17,3 +17,7 @@ services:
         value: "true"
       - key: FLOWLITE_DIAGNOSTICS_THREAD_DUMP_INTERVAL_SECONDS
         value: "3600"
+      - key: FLOWLITE_DIAGNOSTICS_HTTP_ACCESS_LOG_ENABLED
+        value: "true"
+      - key: FLOWLITE_DIAGNOSTICS_HTTP_ACCESS_LOG_INCLUDE_QUERY_STRING
+        value: "true"

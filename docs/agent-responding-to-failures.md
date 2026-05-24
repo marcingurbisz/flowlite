@@ -6,9 +6,8 @@ Automate investigation of app problems on render so the human only does the deci
 ## Workflow
 
 1. Render service fails (health check timeout, OOM kill, deploy failure).
-2. Monitoring source (Better Stack / UptimeRobot / Render Service Event)
-   fires a webhook.
-3. Webhook bridge creates a GitHub issue with the alert payload and assigns
+2. Render Service Event fires a webhook.
+3. Webhook creates a GitHub issue with the alert payload and assigns
    it to the coding agent.
 4. Agent investigates: fetches recent logs, deploys, service events;
    correlates with commits on `main`.
@@ -16,16 +15,6 @@ Automate investigation of app problems on render so the human only does the deci
    confident, a proposed fix).
 6. Human reviews the PR, merges to `main`.
 7. Render auto-deploys `main` → loop closes.
-
-## Candidate platforms
-
-### GitHub Copilot coding agent (web) — leading
-
-- ✅ Playwright MCP built-in (browser access to Render dashboard if needed)
-- ✅ Dedicated `Agents` secrets bucket, isolated from Actions/Codespaces
-- ✅ Custom MCP servers via repo config, including auth-injecting proxies
-- ✅ Trigger mechanism (issue assignment) maps naturally to the webhook bridge
-- ✅ `copilot/*`-only push policy is a safety net, not a friction point here
 
 ## Review outcome
 
@@ -115,14 +104,7 @@ The implementation should be driven by explicit repo files rather than only pros
 
 # TODO
 
-## [DONE 2026-05-22.1] See inline comments in chapters above
-I have also removed some content as current concept was overcomplicated for current mvp from my point of view
-
-> Agent: Simplified the MVP to Render-only input and removed the synthetic `failure_kind` idea.
-> Changes: Replaced the broad incident payload with a smaller Render-backed envelope and updated the required artifact list to focus on repo instructions plus a Render runbook/skill.
-> Validation: Grounded the new fields in Render API responses already collected for `flowlite-test-instance`.
-
-## [DONE 2026-05-22.1] Check the latest failure on render
+## [REOPEN] Check the latest failure on render
 Check the latest instance failed even for "flowlite-test-instance" on render. See the thread dump in the logs before the failure.
 Use render api key from file [text](../render-api-key.txt)
 Create a render skill in flowlite based on what you've learned.
@@ -140,12 +122,10 @@ https://api-docs.render.com/reference/list-logs
 > Learning: Do not use executor choice as the current hypothesis. We are intentionally treating `SimpleAsyncTaskExecutor` as acceptable here, and current evidence is not enough to call it the root cause.
 > Learning: The latest live deploy observed during the check was `dep-d86k0huq1p3s73c3maqg` from commit `a205524bea7362d18530ff03cdb22333df13c847`.
 
-## [DONE 2026-05-22.1] Start implementing automatic reaction to failure
-Prepare what you can do on your own and give the me the instruction what I should do on my own (e.g. webhook configuration in render)
+MG: I want some ideas from you about failure cause based on thread dumps and other logs. BTW: There are now more recent failures if you want to analyze them. 
 
-> Agent: Split the next step into agent-owned preparation and human-owned platform setup.
-> Changes: Kept the scope at read-only triage for MVP.
-> Validation: The split below matches the currently verified Render capabilities and the existing repo workflow.
+## [REOPEN] Start implementing automatic reaction to failure
+Prepare what you can do on your own and give me the instruction what I should do on my own (e.g. webhook configuration in render)
 
 ### Agent-owned next step
 
@@ -154,15 +134,15 @@ Prepare what you can do on your own and give the me the instruction what I shoul
 - define the GitHub issue template or issue body shape that the webhook bridge should create
 - keep the first implementation read-only: collect evidence, correlate with `main`, open investigation PR
 
+> MG: Go for it but please do not overcomplicate it. I do not want it to be overspecified. I prefer that we specify little for now test it and only add additional instructions if I see that things do not work as I expect.
+
 ### Human-owned next step
 
 - configure the Render webhook or bridge that creates or updates the GitHub issue
+  > MG: give me instructions
 - decide where the Render API key lives for the actual executing agent environment
+  > MG: In Github secrets 
 - decide whether issue creation happens directly from Render events or through a small adapter service that can deduplicate incidents
-- review and merge the repo-side instructions before enabling the automation
-
-## [DONE 2026-05-22.1] Self-review
-
-> Agent: Stayed within the requested scope and edited only this topic file.
-> Validation: `git diff --check` passed after the edit and the file has no reported editor errors.
-> Learning: The main thing this loop needed was not a new root-cause theory, but a tighter contract for what Render really tells us and what the MVP agent should do with it.
+  > MG: Directly from render
+- review the repo-side instructions before enabling the automation
+  > MG: OK. Prepare instructions first. Maybe prepare separate render skill and separate, reacting to failures skill?

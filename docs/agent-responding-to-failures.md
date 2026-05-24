@@ -104,7 +104,7 @@ The implementation should be driven by explicit repo files rather than only pros
 
 # TODO
 
-## [REOPEN] Check the latest failure on render
+## [DONE 2026-05-24.1] Check the latest failure on render
 Check the latest instance failed even for "flowlite-test-instance" on render. See the thread dump in the logs before the failure.
 Use render api key from file [text](../render-api-key.txt)
 Create a render skill in flowlite based on what you've learned.
@@ -124,7 +124,15 @@ https://api-docs.render.com/reference/list-logs
 
 MG: I want some ideas from you about failure cause based on thread dumps and other logs. BTW: There are now more recent failures if you want to analyze them. 
 
-## [REOPEN] Start implementing automatic reaction to failure
+> Agent: Re-checked newer failures and tightened the current hypothesis.
+> Changes: Added repo-side Render skill material and updated this topic file with the latest evidence-backed failure interpretation.
+> Validation: Pulled current Render events and logs again for `flowlite-test-instance`, including a newer `server_failed` event on `2026-05-24T05:33:54Z` with raw reason `Get "http://10.192.191.72:10000/api/flows": EOF` and an earlier `connection refused` event on `2026-05-23T17:01:46Z`.
+> Learning: Periodic diagnostics shortly before the latest failure showed stable memory and thread counts (`usedMiB=99`, `rssMiB=336`, `threads=29`), so this particular window does not look like OOM or runaway thread growth.
+> Learning: Recent log errors include expected showcase-simulated action failures, which makes the public test-instance log stream noisy and weakens any claim that business-action exceptions are the direct cause of Render health failures.
+> Learning: The strongest current hypothesis is not executor choice, but health-check coupling. Render is probing `/api/flows`, and that path goes through Cockpit summary queries instead of a dedicated lightweight liveness endpoint. Transport-level failures like `EOF` and `connection refused` fit transient app unavailability or restart much better than a narrow in-process stage-action bug.
+> Learning: The next concrete product idea from this evidence is a cheap dedicated health endpoint, so Render availability is no longer tied to Cockpit flow-summary reads.
+
+## [DONE 2026-05-24.1] Start implementing automatic reaction to failure
 Prepare what you can do on your own and give me the instruction what I should do on my own (e.g. webhook configuration in render)
 
 ### Agent-owned next step
@@ -136,6 +144,10 @@ Prepare what you can do on your own and give me the instruction what I should do
 
 > MG: Go for it but please do not overcomplicate it. I do not want it to be overspecified. I prefer that we specify little for now test it and only add additional instructions if I see that things do not work as I expect.
 
+> Agent: Implemented the minimal repo-side setup instead of adding a larger framework.
+> Changes: Added [.github/copilot-instructions.md](../.github/copilot-instructions.md), [render-skill.md](render-skill.md), [reacting-to-failures-skill.md](reacting-to-failures-skill.md), and [.github/ISSUE_TEMPLATE/render-incident.md](../.github/ISSUE_TEMPLATE/render-incident.md).
+> Validation: Kept the artifacts intentionally small and linked them from `AGENTS.md` and `README.md` so the agent has one obvious place to start.
+
 ### Human-owned next step
 
 - configure the Render webhook or bridge that creates or updates the GitHub issue
@@ -146,3 +158,19 @@ Prepare what you can do on your own and give me the instruction what I should do
   > MG: Directly from render
 - review the repo-side instructions before enabling the automation
   > MG: OK. Prepare instructions first. Maybe prepare separate render skill and separate, reacting to failures skill?
+
+> Agent: Separate Render and failure-response skills are now in the repo.
+> Agent: Human setup instructions, minimal version:
+> 1. Keep `RENDER_API_KEY` in GitHub secrets for the agent environment.
+> 2. Create a Render webhook for at least `server_failed`, `server_available`, and `deploy_ended`.
+> 3. Point that webhook at a public HTTPS receiver you control.
+> 4. Make that receiver verify the Render webhook signature, fetch full event details from Render, and create or update a GitHub issue using the `render-incident` template shape.
+> 5. Assign the created issue to the coding agent.
+>
+> Agent: Important constraint: Render can send webhooks directly only to one destination URL. That is enough for event delivery, but not enough by itself to create GitHub issues. A tiny authenticated receiver is still required between Render and the GitHub Issues API.
+
+## [DONE 2026-05-24.1] Self-review
+
+> Agent: Reviewed the loop for unnecessary complexity before closing it.
+> Validation: `git diff --check` passed after the edits, markdown file checks are clean, and the implementation stayed at one lightweight instruction file, two short skill/runbooks, one issue template, and link updates instead of a larger automation system.
+> Learning: The smallest useful step here is better instructions and a stable issue shape, not a fully automated incident platform.

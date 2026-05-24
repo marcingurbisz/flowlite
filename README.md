@@ -545,6 +545,7 @@ Operational notes:
 - The container image still uses the repo's packaged-app Docker build.
 - Better Stack and UptimeRobot send external pings that keep the Render instance awake; otherwise Render spins it down after roughly 15 minutes without requests.
 - The repository no longer carries a GitHub Actions keepalive workflow or related `FLOWLITE_RENDER_URL` configuration.
+- Render incident-response instructions live in [.github/copilot-instructions.md](.github/copilot-instructions.md), [docs/render-skill.md](docs/render-skill.md), and [docs/reacting-to-failures-skill.md](docs/reacting-to-failures-skill.md).
 
 ### Coverage (Local + GitHub)
 

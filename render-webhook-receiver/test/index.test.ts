@@ -112,4 +112,63 @@ describe("worker fetch", () => {
       issueUrl: "https://github.com/marcingurbisz/flowlite/issues/21",
     });
   });
+
+  it("still creates an issue when Render enrichment lookup fails", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+    const body = JSON.stringify({
+      type: "server_failed",
+      timestamp: "2026-05-24T05:33:54Z",
+      data: { id: "evt-missing", serviceId: "srv-1", serviceName: "flowlite-test-instance" },
+    });
+    const timestamp = String(Math.floor(fixedNow / 1000));
+    const signature = await sign("evt-missing", timestamp, body, "secret");
+
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/issues?")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.endsWith("/events/evt-missing")) {
+        return new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+      }
+      if (url.endsWith("/services/srv-1/deploys")) {
+        return new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+      }
+      if (url.endsWith("/services/srv-1")) {
+        return new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+      }
+      if (url.endsWith("/issues") && init?.method === "POST") {
+        return new Response(JSON.stringify({ number: 22, html_url: "https://github.com/marcingurbisz/flowlite/issues/22" }), { status: 201 });
+      }
+      throw new Error(`Unexpected fetch call: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://receiver.example/render/webhook", {
+        method: "POST",
+        headers: {
+          "webhook-id": "evt-missing",
+          "webhook-timestamp": timestamp,
+          "webhook-signature": `v1,${signature}`,
+        },
+        body,
+      }),
+      {
+        RENDER_WEBHOOK_SECRET: "secret",
+        RENDER_API_KEY: "render-token",
+        GITHUB_TOKEN: "github-token",
+        GITHUB_REPO_OWNER: "marcingurbisz",
+        GITHUB_REPO_NAME: "flowlite",
+      },
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      status: "created",
+      issueNumber: 22,
+      issueUrl: "https://github.com/marcingurbisz/flowlite/issues/22",
+    });
+  });
 });

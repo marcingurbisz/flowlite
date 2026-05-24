@@ -4,10 +4,11 @@ export interface Env {
   RENDER_API_BASE_URL?: string;
   GITHUB_TOKEN: string;
   GITHUB_API_BASE_URL?: string;
-  GITHUB_REPO_OWNER: string;
-  GITHUB_REPO_NAME: string;
+  GITHUB_REPO_OWNER?: string;
+  GITHUB_REPO_NAME?: string;
   GITHUB_ISSUE_ASSIGNEE?: string;
   RENDER_WEBHOOK_EVENT_TYPES?: string;
+  ALLOW_INSECURE_TEST_WEBHOOKS?: string;
 }
 
 interface RenderWebhookPayload {
@@ -55,6 +56,8 @@ interface CreatedResponse {
 }
 
 const textEncoder = new TextEncoder();
+const DEFAULT_GITHUB_REPO_OWNER = "marcingurbisz";
+const DEFAULT_GITHUB_REPO_NAME = "flowlite";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -67,9 +70,11 @@ export default {
     }
 
     const rawBody = await request.text();
-    const verification = await verifyRequest(request, rawBody, env.RENDER_WEBHOOK_SECRET);
-    if (!verification.ok) {
-      return json({ status: "rejected", reason: verification.reason }, 401);
+    if (!isTruthy(env.ALLOW_INSECURE_TEST_WEBHOOKS)) {
+      const verification = await verifyRequest(request, rawBody, env.RENDER_WEBHOOK_SECRET);
+      if (!verification.ok) {
+        return json({ status: "rejected", reason: verification.reason }, 401);
+      }
     }
 
     const payload = parsePayload(rawBody);
@@ -195,24 +200,25 @@ function parsePayload(rawBody: string): { ok: true; value: RenderWebhookPayload 
 
 async function fetchRenderEvent(eventId: string, env: Env): Promise<RenderEventResponse | null> {
   if (!env.RENDER_API_KEY) return null;
-  return fetchJson<RenderEventResponse>(`${env.RENDER_API_BASE_URL ?? "https://api.render.com/v1"}/events/${eventId}`, {
+  return fetchOptionalJson<RenderEventResponse>(`${env.RENDER_API_BASE_URL ?? "https://api.render.com/v1"}/events/${eventId}`, {
     headers: renderHeaders(env.RENDER_API_KEY),
   });
 }
 
 async function fetchDashboardUrl(serviceId: string, env: Env): Promise<string | null> {
   if (!env.RENDER_API_KEY) return null;
-  const service = await fetchJson<{ dashboardUrl?: string }>(`${env.RENDER_API_BASE_URL ?? "https://api.render.com/v1"}/services/${serviceId}`, {
+  const service = await fetchOptionalJson<{ dashboardUrl?: string }>(`${env.RENDER_API_BASE_URL ?? "https://api.render.com/v1"}/services/${serviceId}`, {
     headers: renderHeaders(env.RENDER_API_KEY),
   });
-  return service.dashboardUrl ?? null;
+  return service?.dashboardUrl ?? null;
 }
 
 async function fetchLatestLiveDeploy(serviceId: string, env: Env): Promise<RenderDeployResponse | null> {
   if (!env.RENDER_API_KEY) return null;
-  const response = await fetchJson<RenderDeployResponse[] | { deploys?: RenderDeployResponse[] }>(`${env.RENDER_API_BASE_URL ?? "https://api.render.com/v1"}/services/${serviceId}/deploys`, {
+  const response = await fetchOptionalJson<RenderDeployResponse[] | { deploys?: RenderDeployResponse[] }>(`${env.RENDER_API_BASE_URL ?? "https://api.render.com/v1"}/services/${serviceId}/deploys`, {
     headers: renderHeaders(env.RENDER_API_KEY),
   });
+  if (!response) return null;
   const deploys = Array.isArray(response) ? response : response.deploys ?? [];
   return deploys.find((deploy) => deploy.status === "live") ?? null;
 }
@@ -229,14 +235,28 @@ async function createIssue(
   input: { title: string; body: string; labels: string[]; assignees: string[] },
   env: Env,
 ): Promise<GithubIssueSummary> {
-  return fetchJson<GithubIssueSummary>(`${githubRepoBaseUrl(env)}/issues`, {
-    method: "POST",
-    headers: {
-      ...githubHeaders(env.GITHUB_TOKEN),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  });
+  try {
+    return await fetchJson<GithubIssueSummary>(`${githubRepoBaseUrl(env)}/issues`, {
+      method: "POST",
+      headers: {
+        ...githubHeaders(env.GITHUB_TOKEN),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+  } catch (error) {
+    if (input.assignees.length > 0 && isGithubAssigneeValidationError(error)) {
+      return fetchJson<GithubIssueSummary>(`${githubRepoBaseUrl(env)}/issues`, {
+        method: "POST",
+        headers: {
+          ...githubHeaders(env.GITHUB_TOKEN),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...input, assignees: [] }),
+      });
+    }
+    throw error;
+  }
 }
 
 function buildIssueBody(input: {
@@ -291,6 +311,14 @@ async function fetchJson<T>(url: string, init: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function fetchOptionalJson<T>(url: string, init: RequestInit): Promise<T | null> {
+  try {
+    return await fetchJson<T>(url, init);
+  } catch {
+    return null;
+  }
+}
+
 function renderHeaders(apiKey: string): HeadersInit {
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -303,11 +331,12 @@ function githubHeaders(token: string): HeadersInit {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "flowlite-render-webhook-receiver",
   };
 }
 
 function githubRepoBaseUrl(env: Env): string {
-  return `${env.GITHUB_API_BASE_URL ?? "https://api.github.com"}/repos/${env.GITHUB_REPO_OWNER}/${env.GITHUB_REPO_NAME}`;
+  return `${env.GITHUB_API_BASE_URL ?? "https://api.github.com"}/repos/${env.GITHUB_REPO_OWNER ?? DEFAULT_GITHUB_REPO_OWNER}/${env.GITHUB_REPO_NAME ?? DEFAULT_GITHUB_REPO_NAME}`;
 }
 
 function json(body: CreatedResponse | { status: string }, status: number): Response {
@@ -339,4 +368,12 @@ function base64Encode(bytes: Uint8Array): string {
 function base64Decode(value: string): Uint8Array {
   const binary = atob(value);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function isTruthy(value: string | undefined): boolean {
+  return value?.toLowerCase() === "true";
+}
+
+function isGithubAssigneeValidationError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("HTTP 422") && error.message.includes("field\":\"assignees\"");
 }

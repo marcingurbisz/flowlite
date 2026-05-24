@@ -132,7 +132,7 @@ MG: After implementing push and deploy the newest version to render.
 > Validation: `./gradlew test --tests io.flowlite.test.HttpAccessLogFilterTest` passed.
 > Learning: Built-in Tomcat access logs would write to files inside the container, which is weaker for Render diagnosis than logging request lines directly to stdout where Render log retrieval already works.
 
-## [REOPEN] Implement triggering issue creation and assignment
+## [DONE 2026-05-24.6] Implement triggering issue creation and assignment
 If it is not possible that render creates GitHub issue directly please implement receiver that will do it.
 
 > Agent: Implemented a minimal standalone receiver as a separate module instead of trying to post directly from Render.
@@ -162,3 +162,18 @@ MG: I have added GITHUB_TOKEN:
 ✨ Success! Uploaded secret GITHUB_TOKEN
 MG: Deploy render-webhook-receiver and test it. Maybe for testing remove checking RENDER_WEBHOOK_SECRET?
 MG: Configure webhook in Render if possible via API
+
+> Agent: Simplified the Worker configuration to match these follow-up questions.
+> Changes: `render-webhook-receiver/src/index.ts` now defaults `GITHUB_REPO_OWNER` to `marcingurbisz` and `GITHUB_REPO_NAME` to `flowlite`; `RENDER_API_KEY` remains optional and is used only for enrichment; `wrangler.jsonc` now requires only `RENDER_WEBHOOK_SECRET` and `GITHUB_TOKEN`; `README.md` explains that `RENDER_API_KEY` is optional and why.
+> Changes: Added `ALLOW_INSECURE_TEST_WEBHOOKS=false` as an explicit test-only bypass instead of removing signature verification by default.
+> Validation: `cd render-webhook-receiver && npm test` passed after the config simplification.
+> Learning: `RENDER_API_KEY` is not needed to create the GitHub issue itself. It only enriches the issue with full Render event details, dashboard URL, and latest live deploy/commit.
+> Learning: `copilot` is not a valid GitHub assignee for this repo, so assignment must stay optional and the receiver should fall back to creating the issue without assignees if GitHub rejects the requested assignee.
+> Learning: Render webhook creation is possible through the Render API with `POST /v1/webhooks`, requiring `ownerId`, `url`, `name`, `enabled`, and `eventFilter`.
+> Changes: After Cloudflare login became available, deployed the Worker to `https://flowlite-render-webhook-receiver.marcin-gurbisz.workers.dev`, fixed GitHub API calls by adding the required `User-Agent` header, made Render enrichment best-effort instead of fatal, and removed the invalid default GitHub assignee.
+> Validation: `cd render-webhook-receiver && npm test` passed after the live bug fixes.
+> Validation: `GET /health` on the deployed Worker returned `200` with `{"status":"ok"}`.
+> Validation: A signed manual smoke test to `POST /render/webhook` returned `202` with `{"status":"created","issueNumber":12,...}` and created [issue #12](https://github.com/marcingurbisz/flowlite/issues/12).
+> Learning: The Worker must send a GitHub `User-Agent` header or GitHub REST rejects the request with `403`.
+> Learning: Render API enrichment should not be allowed to fail the whole receiver path; missing event lookup must degrade to a minimal issue body.
+> Learning: The Render API refused webhook creation with `Webhook limit reached. You can increase the limit by upgrading your workspace plan.` so the final Render -> Worker wiring is blocked by the current Render workspace plan rather than by receiver code.

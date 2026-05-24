@@ -545,6 +545,7 @@ Operational notes:
 - The container image still uses the repo's packaged-app Docker build.
 - Better Stack and UptimeRobot send external pings that keep the Render instance awake; otherwise Render spins it down after roughly 15 minutes without requests.
 - The repository no longer carries a GitHub Actions keepalive workflow or related `FLOWLITE_RENDER_URL` configuration.
+- The Render incident receiver is a separate module in `render-webhook-receiver/` and is intended for independent deployment, for example on Cloudflare Workers Free.
 
 ### Coverage (Local + GitHub)
 

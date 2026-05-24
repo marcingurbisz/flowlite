@@ -104,14 +104,21 @@ The implementation should be driven by explicit repo files rather than only pros
 
 # TODO
 
-## Feedback
+## [DONE 2026-05-24.2] Feedback
 * Who will be using render-incident.md?
 * copilot-instructions.md - I have removed it and moved content to reacting-to-failures-skill.md
 * See last commit where I introduced some changes/simplifications
 
-# Move skills under .agents/skills and YAML frontmatter to each file
+> Agent: Kept the simplification direction from the last commit and adjusted the implementation to match it.
+> Changes: Did not restore `copilot-instructions.md`; moved the two skills into `.agents/skills` with YAML frontmatter and treated `.github/ISSUE_TEMPLATE/render-incident.md` as a manual fallback plus body-shape reference for the receiver.
+> Learning: `render-incident.md` is for a human-created fallback issue and for documenting the issue shape; the automatic receiver does not consume the template file at runtime.
 
-## [REOPEN] Check the latest failure on render
+## [DONE 2026-05-24.2] Move skills under .agents/skills and YAML frontmatter to each file
+
+> Agent: Moved the skill content to `.agents/skills/render-api/SKILL.md` and `.agents/skills/reacting-to-failures/SKILL.md`.
+> Validation: Added YAML frontmatter with `name` and `description` to both files and removed the old copies from `docs/`.
+
+## [DONE 2026-05-24.2] Check the latest failure on render
 Check the latest instance failed even for "flowlite-test-instance" on render. See the thread dump in the logs before the failure.
 Use render api key from file [text](../render-api-key.txt)
 Create a render skill in flowlite based on what you've learned.
@@ -136,5 +143,44 @@ MG: I want some ideas from you about failure cause based on thread dumps and oth
 
 MG: Health check is using /api/flows on purpose - I want to stress the app a little bit. I want to understand how test app behaves under load. How often render is calling this endpoint. Any idea why after some time /api/flows gives connection refused?
 
-## Implement triggering issue creation and assignment 
+> Agent: Reframed the failure explanation around Render health-check behavior instead of trying to undo the `/api/flows` choice.
+> Validation: Checked current Render health-check documentation and recent service events/logs.
+> Learning: Render says health checks run every few seconds and must succeed within five seconds.
+> Learning: Because access logging is not enabled for the probe path, I do not have an exact observed request interval from the app logs themselves; the strongest grounded statement is the Render doc wording: `every few seconds`.
+> Learning: `connection refused` is narrower than `EOF`: it means the TCP connection to port `10000` was not accepted at all, which points to the process not listening yet, being restarted, or being temporarily unavailable at the socket level.
+> Learning: With `/api/flows` intentionally stressing the service, the most plausible path is: heavy probe/read load or some other instability causes health-check failures, Render treats the instance as unhealthy, and a later probe hits the instance during restart or before the listener is ready, producing `connection refused`.
+> Learning: The current evidence still does not support OOM or a simple thread explosion as the first explanation for the sampled failure windows.
+
+## [DONE 2026-05-24.2] Implement triggering issue creation and assignment
 If it is not possible that render creates GitHub issue directly please implement receiver that will do it.
+
+> Agent: Implemented a minimal standalone receiver as a separate module instead of trying to post directly from Render.
+> Changes: Added `render-webhook-receiver/` as a standalone Cloudflare Workers module with its own `package.json`, Worker handler, tests, and deploy README.
+> Validation: `cd render-webhook-receiver && npm test` passed.
+> Learning: Render can send the webhook directly to one HTTPS endpoint, but it cannot authenticate to the GitHub Issues API on its own. A thin receiver is still needed to verify the Render signature, enrich the event via the Render API, create or deduplicate a GitHub issue, and assign it.
+> Learning: The receiver currently supports the smallest useful flow: verify Standard Webhooks signature, accept `server_failed`, fetch full event details and latest live deploy, create a labeled GitHub issue, and assign it when `GITHUB_ISSUE_ASSIGNEE` is configured.
+> Learning: Keeping the receiver outside the FlowLite app process is important because the failing app should not be responsible for ingesting its own incident webhook.
+> Agent: Minimal run instructions:
+> 1. `cd render-webhook-receiver`
+> 2. `npm install`
+> 3. `npx wrangler login`
+> 4. `npx wrangler secret put RENDER_WEBHOOK_SECRET`
+> 5. `npx wrangler secret put GITHUB_TOKEN`
+> 6. `npx wrangler secret put GITHUB_REPO_OWNER`
+> 7. `npx wrangler secret put GITHUB_REPO_NAME`
+> 8. Optionally set `RENDER_API_KEY` and `GITHUB_ISSUE_ASSIGNEE`.
+> 9. `npm run deploy`
+> 10. Point the Render webhook to `POST /render/webhook` on that receiver.
+
+## [DONE 2026-05-24.3] Move receiver out of the test app
+
+> Agent: Replaced the earlier Kotlin/Spring receiver with the separate Worker module and removed the old Gradle/test-app implementation.
+> Changes: Deleted `test/RenderWebhookReceiver*.kt`, removed the `runRenderWebhookReceiver` task from `build.gradle.kts`, removed the temporary Jackson dependency, added `render-webhook-receiver/README.md`, and added `.gitignore` entries for local Worker secrets and dependencies.
+> Validation: `cd render-webhook-receiver && npm test` passed.
+> Learning: Cloudflare Workers Free is the best current free hosting fit because it provides a public `*.workers.dev` endpoint, secret storage, and enough daily request budget for this thin incident bridge.
+
+## [DONE 2026-05-24.2] Self-review
+
+> Agent: Reviewed the loop for accidental overdesign before closing it.
+> Validation: Kept the implementation to a thin standalone receiver, two actual skill files in `.agents/skills`, one manual fallback issue template, topic-file updates, and one separate deployable Worker module.
+> Learning: The smallest stable automation boundary here is `Render webhook -> thin receiver -> GitHub issue`, not `Render -> GitHub` directly.

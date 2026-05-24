@@ -5,6 +5,8 @@ labels: incident, render
 title: "[render] <service-name> <event-type> <timestamp>"
 ---
 
+Manual fallback for a human-created incident issue. The webhook receiver creates the same body shape directly through the GitHub API.
+
 ## Render payload
 
 - incident_id:

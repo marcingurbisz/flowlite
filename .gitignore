@@ -36,4 +36,9 @@ local.properties
 /cockpit-ui/playwright-report/
 /cockpit-ui/test-results/
 /cockpit-ui/*.tsbuildinfo
+/render-webhook-receiver/node_modules/
+/render-webhook-receiver/.dev.vars
+/render-webhook-receiver/.dev.vars.*
+/render-webhook-receiver/.env
+/render-webhook-receiver/.env.*
 render-api-key.txt

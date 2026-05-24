@@ -39,8 +39,3 @@ Why:
 
 The worker will be published under a `*.workers.dev` URL.
 Point the Render webhook to `POST /render/webhook` on that URL.
-
-## Notes
-
-- Render still needs a separate receiver because it cannot call the GitHub Issues API with your GitHub credentials directly.
-- This module keeps the same issue body shape as the manual fallback template in `.github/ISSUE_TEMPLATE/render-incident.md`.

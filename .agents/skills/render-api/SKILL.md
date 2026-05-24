@@ -14,6 +14,7 @@ Use this skill only for things learned about working with Render itself.
 - Render logs API returns objects under a `logs` array with `message`, `timestamp`, and `labels`.
 - Improve this skill whenever you learn something new about the Render API or discover that one of these notes was wrong.
 
+If you need to "expand" your render-api skill use the references below, but normally you should not need to read them. 
 References:
 - https://render.com/docs/cli
 - https://github.com/render-oss/skills

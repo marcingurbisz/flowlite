@@ -104,42 +104,9 @@ The implementation should be driven by explicit repo files rather than only pros
 
 # TODO
 
-## [DONE 2026-05-24.2] Feedback
-* Who will be using render-incident.md?
-* copilot-instructions.md - I have removed it and moved content to reacting-to-failures-skill.md
-* See last commit where I introduced some changes/simplifications
+## [NEW] Remove render-incident.md
 
-> Agent: Kept the simplification direction from the last commit and adjusted the implementation to match it.
-> Changes: Did not restore `copilot-instructions.md`; moved the two skills into `.agents/skills` with YAML frontmatter and treated `.github/ISSUE_TEMPLATE/render-incident.md` as a manual fallback plus body-shape reference for the receiver.
-> Learning: `render-incident.md` is for a human-created fallback issue and for documenting the issue shape; the automatic receiver does not consume the template file at runtime.
-
-## [DONE 2026-05-24.2] Move skills under .agents/skills and YAML frontmatter to each file
-
-> Agent: Moved the skill content to `.agents/skills/render-api/SKILL.md` and `.agents/skills/reacting-to-failures/SKILL.md`.
-> Validation: Added YAML frontmatter with `name` and `description` to both files and removed the old copies from `docs/`.
-
-## [DONE 2026-05-24.2] Check the latest failure on render
-Check the latest instance failed even for "flowlite-test-instance" on render. See the thread dump in the logs before the failure.
-Use render api key from file [text](../render-api-key.txt)
-Create a render skill in flowlite based on what you've learned.
-
-> Agent: Checked the latest Render failure through the Render REST API instead of the dashboard.
-> Changes: Captured the factual findings in this topic file rather than creating the skill immediately.
-> Validation: Queried services, deploys, events, and logs for `flowlite-test-instance` using the local Render API key.
-> Learning: The latest failure pattern is repeated `server_failed` events followed by recovery, with failure reasons reported by Render as health-check timeout, EOF, and connection reset.
-> Learning: Thread dump diagnostics are visible in Render logs, so the agent can rely on log retrieval as a first-class investigation step.
-> Learning: Do not use executor choice as the current hypothesis. We are intentionally treating `SimpleAsyncTaskExecutor` as acceptable here, and current evidence is not enough to call it the root cause.
-> Learning: The latest live deploy observed during the check was `dep-d86k0huq1p3s73c3maqg` from commit `a205524bea7362d18530ff03cdb22333df13c847`.
-
-MG: I want some ideas from you about failure cause based on thread dumps and other logs. BTW: There are now more recent failures if you want to analyze them. 
-
-> Agent: Re-checked newer failures and tightened the current hypothesis.
-> Changes: Added repo-side Render skill material and updated this topic file with the latest evidence-backed failure interpretation.
-> Validation: Pulled current Render events and logs again for `flowlite-test-instance`, including a newer `server_failed` event on `2026-05-24T05:33:54Z` with raw reason `Get "http://10.192.191.72:10000/api/flows": EOF` and an earlier `connection refused` event on `2026-05-23T17:01:46Z`.
-> Learning: Periodic diagnostics shortly before the latest failure showed stable memory and thread counts (`usedMiB=99`, `rssMiB=336`, `threads=29`), so this particular window does not look like OOM or runaway thread growth.
-> Learning: Recent log errors include expected showcase-simulated action failures, which makes the public test-instance log stream noisy and weakens any claim that business-action exceptions are the direct cause of Render health failures.
-> Learning: The strongest current hypothesis is not executor choice, but health-check coupling. Render is probing `/api/flows`, and that path goes through Cockpit summary queries instead of a dedicated lightweight liveness endpoint. Transport-level failures like `EOF` and `connection refused` fit transient app unavailability or restart much better than a narrow in-process stage-action bug.
-> Learning: The next concrete product idea from this evidence is a cheap dedicated health endpoint, so Render availability is no longer tied to Cockpit flow-summary reads.
+## [REOPEN] Check the latest failure on render
 
 MG: Health check is using /api/flows on purpose - I want to stress the app a little bit. I want to understand how test app behaves under load. How often render is calling this endpoint. Any idea why after some time /api/flows gives connection refused?
 
@@ -151,7 +118,10 @@ MG: Health check is using /api/flows on purpose - I want to stress the app a lit
 > Learning: With `/api/flows` intentionally stressing the service, the most plausible path is: heavy probe/read load or some other instability causes health-check failures, Render treats the instance as unhealthy, and a later probe hits the instance during restart or before the listener is ready, producing `connection refused`.
 > Learning: The current evidence still does not support OOM or a simple thread explosion as the first explanation for the sampled failure windows.
 
-## [DONE 2026-05-24.2] Implement triggering issue creation and assignment
+MG: Add access logging for test instance endpoints. Maybe using logbook?
+MG: After implementing push and deploy the newest version to render.
+
+## [REOPEN] Implement triggering issue creation and assignment
 If it is not possible that render creates GitHub issue directly please implement receiver that will do it.
 
 > Agent: Implemented a minimal standalone receiver as a separate module instead of trying to post directly from Render.
@@ -172,15 +142,12 @@ If it is not possible that render creates GitHub issue directly please implement
 > 9. `npm run deploy`
 > 10. Point the Render webhook to `POST /render/webhook` on that receiver.
 
-## [DONE 2026-05-24.3] Move receiver out of the test app
-
-> Agent: Replaced the earlier Kotlin/Spring receiver with the separate Worker module and removed the old Gradle/test-app implementation.
-> Changes: Deleted `test/RenderWebhookReceiver*.kt`, removed the `runRenderWebhookReceiver` task from `build.gradle.kts`, removed the temporary Jackson dependency, added `render-webhook-receiver/README.md`, and added `.gitignore` entries for local Worker secrets and dependencies.
-> Validation: `cd render-webhook-receiver && npm test` passed.
-> Learning: Cloudflare Workers Free is the best current free hosting fit because it provides a public `*.workers.dev` endpoint, secret storage, and enough daily request budget for this thin incident bridge.
-
-## [DONE 2026-05-24.2] Self-review
-
-> Agent: Reviewed the loop for accidental overdesign before closing it.
-> Validation: Kept the implementation to a thin standalone receiver, two actual skill files in `.agents/skills`, one manual fallback issue template, topic-file updates, and one separate deployable Worker module.
-> Learning: The smallest stable automation boundary here is `Render webhook -> thin receiver -> GitHub issue`, not `Render -> GitHub` directly.
+MG: Why RENDER_API_KEY is needed?
+MG: Maybe hardcode GITHUB_ISSUE_ASSIGNEE to copilot? Same for GITHUB_REPO_OWNER and GITHUB_REPO_NAME?
+MG: I have added GITHUB_TOKEN:
+🌀 Creating the secret for the Worker "flowlite-render-webhook-receiver"
+✔ There doesn't seem to be a Worker called "flowlite-render-webhook-receiver". Do you want to create a new Worker with that name and add secrets to it? … yes
+🌀 Creating new Worker "flowlite-render-webhook-receiver"...
+✨ Success! Uploaded secret GITHUB_TOKEN
+MG: Deploy render-webhook-receiver and test it. Maybe for testing remove checking RENDER_WEBHOOK_SECRET?
+MG: Configure webhook in Render if possible via API

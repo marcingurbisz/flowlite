@@ -1,6 +1,6 @@
 ---
 name: reacting-to-failures
-description: "Use when a Render incident issue is assigned to the agent and the task is to investigate safely before proposing code changes."
+description: "Use when a Render incident issue is assigned to the agent."
 ---
 
 # Reacting to Failures Skill
@@ -25,16 +25,14 @@ Use this when a Render incident issue is assigned to the agent.
 
 ## Defaults
 
-- Do not redeploy, restart, or mutate secrets in the MVP.
+- Do not redeploy, restart, or mutate secrets.
 - If evidence is weak, say so explicitly and stop at the investigation PR.
 - Improve this skill if the current instructions are too weak or if the workflow fails in practice.
 
 ## Human prerequisites
 
-- A public HTTPS receiver must accept Render webhooks and create or update GitHub issues.
 - The agent environment needs a Render API key in GitHub secrets.
 
 ## Heuristics
 
 - Showcase simulated action failures are expected in the public test instance and create noisy stack traces. Do not confuse them with infrastructure root cause.
-- If Render reports `connection refused`, think first about process unavailability or restart, not about a domain-level workflow exception.

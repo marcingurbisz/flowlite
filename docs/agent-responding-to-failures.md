@@ -104,7 +104,7 @@ The implementation should be driven by explicit repo files rather than only pros
 
 # TODO
 
-## [REOPEN] Check the latest failure on render
+## [DONE 2026-05-25.1] Check the latest failure on render
 
 MG: Health check is using /api/flows on purpose - I want to stress the app a little bit. I want to understand how test app behaves under load. How often render is calling this endpoint. Any idea why after some time /api/flows gives connection refused?
 
@@ -127,6 +127,15 @@ MG: After implementing push and deploy the newest version to render.
 
 MG: Own HttpAccessLogFilterTest is better than logbook?
 MG: There was a new incident around 4:30AM. Check it. You now have http logs.
+
+> Agent: Checked the new incident using Render events plus the new access logs.
+> Validation: Queried recent Render events, deploys, and logs for `srv-d6m3tqkhg0os73b3c8o0` around `2026-05-25T02:32Z`.
+> Learning: The new incident window was `server_failed` at `2026-05-25T02:32:04.683223Z` with reason `HTTP health check failed (timed out after 5 seconds)`, followed by `server_available` at `2026-05-25T02:33:48.355902Z`.
+> Learning: The new access logs are visible in Render logs and show `/api/flows` probes roughly every 5 seconds, with occasional near-simultaneous pairs from the same internal source address `10.233.27.88`.
+> Learning: Immediately before failure the last successful `/api/flows` responses were still `200`, mostly around `300-400ms`, but one probe at `02:31:48.479Z` already took `3002ms`. The next expected probe around `02:32:03Z` is missing from app logs, which fits the Render-side timeout event at `02:32:04Z`.
+> Learning: After recovery the first visible `/api/flows` response at `02:33:44.152Z` still took `4100ms`, very close to the 5-second health-check ceiling, and only then dropped back to sub-`200ms` and double-digit millisecond timings.
+> Learning: Periodic memory diagnostics around the same window stayed bounded (`usedMiB=97`, then `115`, then after recovery `60`; `rssMiB=339` before the failure), so this sample still does not look like OOM.
+> Learning: Render request logs did not add anything useful here, while the custom app-level access logs did, so for this repo the small `HttpAccessLogFilter` plus its focused test is a better fit than adding Logbook just to answer this failure-analysis question.
 
 ## [NEW] Feedback
 * Since webhooks on render are not available in free plan my idea now is following:

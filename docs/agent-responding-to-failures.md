@@ -104,14 +104,7 @@ The implementation should be driven by explicit repo files rather than only pros
 
 # TODO
 
-## [DONE 2026-05-24.4] Remove render-incident.md
-
-> Agent: Removed `.github/ISSUE_TEMPLATE/render-incident.md` because it no longer provides any runtime value.
-> Changes: Deleted the template file and kept the issue body shape inside the standalone receiver implementation instead of a separate GitHub issue template.
-> Validation: Checked repo references and found no remaining runtime or documentation dependency on the deleted template.
-> Learning: The webhook receiver creates incident issues directly through the GitHub API, so keeping a second template copy would only create drift.
-
-## [DONE 2026-05-24.5] Check the latest failure on render
+## [REOPEN] Check the latest failure on render
 
 MG: Health check is using /api/flows on purpose - I want to stress the app a little bit. I want to understand how test app behaves under load. How often render is calling this endpoint. Any idea why after some time /api/flows gives connection refused?
 
@@ -132,36 +125,20 @@ MG: After implementing push and deploy the newest version to render.
 > Validation: `./gradlew test --tests io.flowlite.test.HttpAccessLogFilterTest` passed.
 > Learning: Built-in Tomcat access logs would write to files inside the container, which is weaker for Render diagnosis than logging request lines directly to stdout where Render log retrieval already works.
 
+MG: Own HttpAccessLogFilterTest is better than logbook?
+MG: There was a new incident around 4:30AM. Check it. You now have http logs.
+
+## [NEW] Feedback
+* Since webhooks on render are not available in free plan my idea now is following:
+  * We will use pipedream
+  * I will configure forward from my private gmail to pipedream address
+  * Pipedream will create github issue base on email
+* Please strat implementing this idea
+* Please tell if you need something from me
+* Assignment to copilot - we need to use copilot-swe-agent[bot] if you use rest
+
 ## [DONE 2026-05-24.6] Implement triggering issue creation and assignment
 If it is not possible that render creates GitHub issue directly please implement receiver that will do it.
-
-> Agent: Implemented a minimal standalone receiver as a separate module instead of trying to post directly from Render.
-> Changes: Added `render-webhook-receiver/` as a standalone Cloudflare Workers module with its own `package.json`, Worker handler, tests, and deploy README.
-> Validation: `cd render-webhook-receiver && npm test` passed.
-> Learning: Render can send the webhook directly to one HTTPS endpoint, but it cannot authenticate to the GitHub Issues API on its own. A thin receiver is still needed to verify the Render signature, enrich the event via the Render API, create or deduplicate a GitHub issue, and assign it.
-> Learning: The receiver currently supports the smallest useful flow: verify Standard Webhooks signature, accept `server_failed`, fetch full event details and latest live deploy, create a labeled GitHub issue, and assign it when `GITHUB_ISSUE_ASSIGNEE` is configured.
-> Learning: Keeping the receiver outside the FlowLite app process is important because the failing app should not be responsible for ingesting its own incident webhook.
-> Agent: Minimal run instructions:
-> 1. `cd render-webhook-receiver`
-> 2. `npm install`
-> 3. `npx wrangler login`
-> 4. `npx wrangler secret put RENDER_WEBHOOK_SECRET`
-> 5. `npx wrangler secret put GITHUB_TOKEN`
-> 6. `npx wrangler secret put GITHUB_REPO_OWNER`
-> 7. `npx wrangler secret put GITHUB_REPO_NAME`
-> 8. Optionally set `RENDER_API_KEY` and `GITHUB_ISSUE_ASSIGNEE`.
-> 9. `npm run deploy`
-> 10. Point the Render webhook to `POST /render/webhook` on that receiver.
-
-MG: Why RENDER_API_KEY is needed?
-MG: Maybe hardcode GITHUB_ISSUE_ASSIGNEE to copilot? Same for GITHUB_REPO_OWNER and GITHUB_REPO_NAME?
-MG: I have added GITHUB_TOKEN:
-🌀 Creating the secret for the Worker "flowlite-render-webhook-receiver"
-✔ There doesn't seem to be a Worker called "flowlite-render-webhook-receiver". Do you want to create a new Worker with that name and add secrets to it? … yes
-🌀 Creating new Worker "flowlite-render-webhook-receiver"...
-✨ Success! Uploaded secret GITHUB_TOKEN
-MG: Deploy render-webhook-receiver and test it. Maybe for testing remove checking RENDER_WEBHOOK_SECRET?
-MG: Configure webhook in Render if possible via API
 
 > Agent: Simplified the Worker configuration to match these follow-up questions.
 > Changes: `render-webhook-receiver/src/index.ts` now defaults `GITHUB_REPO_OWNER` to `marcingurbisz` and `GITHUB_REPO_NAME` to `flowlite`; `RENDER_API_KEY` remains optional and is used only for enrichment; `wrangler.jsonc` now requires only `RENDER_WEBHOOK_SECRET` and `GITHUB_TOKEN`; `README.md` explains that `RENDER_API_KEY` is optional and why.

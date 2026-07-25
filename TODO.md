@@ -56,6 +56,16 @@ Reproduce the roughly five-hour performance cliff locally with accelerated seedi
 >> Changes: Documented the methodology, full results, limitations, and recommendation in `docs/FlowSummaryPerformanceBenchmark.md`; added the benchmark command to `README.md`.
 >> Validation: Full benchmark command completed successfully; focused index/footprint reruns completed successfully; `./gradlew test --tests '*CockpitServiceTest'` passed; `git diff --check` passed.
 
+## [DONE 2026-07-25.3] Reassess the Render cliff at the real instance count
+
+> Human: zastanawia mnie jeszcze fakt ze na render w ciagu 5h nie wygeneruj sie 200 tys instancji. Wydaje mi sie ze restart nastepuje gdzies w okolicach 20 tys. BTW: widze ze generacja nowych instancji sie zblokowala teraz na testowej produkcji bo jest 7434 od jakiejs godziny.
+>> Agent: Confirmed from the public API that the current dataset is much smaller than the synthetic benchmark and that showcase generation is stalled. At `2026-07-25T20:55Z`, `/api/flows` reported exactly `7,439` summaries and took `3.61s`; a second sample after 30 seconds still reported exactly `7,439`.
+>> Validation: The count is consistent with the configured rate: one seed cycle creates two instances every five seconds, so five hours creates about `7,200`, not `200,000`. The three deterministic showcase error records also explain why the observed total is odd: `7,439 = 2 * 3,718 + 3`.
+>> Learning: The isolated summary benchmark does not reproduce the Render cliff. At the roughly linear memory-H2 rate measured locally, `7,439` summary rows should be far below the observed multi-second latency. The live app also has concurrent writers, flow/history work, event polling, and a much smaller JVM.
+>> Learning: The strongest new code-level hypothesis is leaked showcase event polling. Every employee instance starts two or sometimes three virtual tasks. Each task calls `engine.getStatus()` (a Spring Data/H2 read) every `250ms`; it exits for `Completed` or `Cancelled`, but not for `Error`. Failed instances that never reach the awaited event stage therefore retain polling tasks indefinitely.
+>> Learning: The live response contains `1,470` final employee errors. Stage-level counts imply at least roughly `1,900` event tasks can remain before their awaited stage, which alone can generate more than `7,500` H2 reads per second. Another `1,436` employees are waiting at the long IT timer before the first awaited event and can temporarily retain roughly two pollers each. This is sufficient to explain severe H2 monitor contention, a blocked single-thread seeder, and `/api/flows` waiting seconds even though its source table has only about `7.4k` rows.
+>> Learning: Private Render logs were unavailable in this environment, so the precise current seeder stack and thread count could not be confirmed. The public count and source inspection strongly support the polling leak, but a fresh thread dump or a focused local reproduction is still needed for direct runtime confirmation.
+
 ## [DONE 2026-07-25.2] Review own changes
 Review the benchmark implementation, measurement methodology, recorded results, and recommendations from this loop.
 

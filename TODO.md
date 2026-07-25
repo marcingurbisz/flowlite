@@ -71,6 +71,7 @@ Review the updated Render diagnosis and distinguish observations from source-bas
 
 > Agent: Rechecked the public response, seed-rate arithmetic, stage ordering, event-task lifecycle, and the persistence path behind `engine.getStatus()`.
 > Validation: `7,439` remained unchanged across two public samples; `2 * 3,718 + 3` matches the two instances per cycle plus three deterministic records. At least `908` employee errors occurred before the first awaited event and retain two standard pollers, while `116` occurred between the two awaited events and retain one, yielding a conservative lower bound of `1,932` leaked polling tasks.
+> Validation: The UI's `7,434` and the API's `7,439` are consistent: the top-level UI total adds `activeCount + errorCount + completedCount`, while `errorCount` intentionally includes only final errors. Five non-final/retriable order errors are omitted from that display total; `notCompletedCount + completedCount` gives the actual summary-row total.
 > Learning: The stalled count and multi-second endpoint are direct observations. The event-poller leak is proven by control flow for instances in `Error`, but its contribution to the live stall remains a strong inference until correlated with a current Render thread dump or reproduced locally.
 
 ## [FOR HUMAN REVIEW] Fix leaked showcase event pollers and expose seeder failures

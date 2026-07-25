@@ -503,6 +503,7 @@ External updates exist (GUI / notifications / other services):
 - `./gradlew -PfrontendCoverage=true test jacocoTestReport sonar` - Run tests with frontend Istanbul instrumentation enabled so Sonar ingests Cockpit TSX coverage
 - `./gradlew runTestApp` - Run the test Spring Boot app with Cockpit UI served by Tomcat (http://localhost:8080)
 - `./gradlew runPerfTestApp` - Run the test app with an immediate large showcase dataset for local cockpit/performance testing
+- `./gradlew benchmarkFlowSummary -PbenchmarkArgs='--rows=50000,200000 --warmups=3 --samples=10 --concurrency=8 --samples-per-worker=3'` - Compare `/api/flows` aggregate strategies on H2 memory and file databases (see `docs/FlowSummaryPerformanceBenchmark.md`)
 - `./gradlew testAppBundle` - Build the public test app jar plus runtime libs for container deployment (`build/libs/*-test-app.jar` + `build/test-app-libs/`)
 - `cd cockpit-ui && npm install && npm run dev` - Run the full React+TypeScript Cockpit prototype UI (from `flowlite-cockpit.jsx`)
 - `./gradlew clean` - Clean build artifacts

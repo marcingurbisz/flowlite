@@ -40,8 +40,21 @@ MG: Check once gain last failure. Mabye this time came to some idea why we have 
 > Learning: Heap pressure likely contributes but there is still no direct OOM evidence. Before failure the JVM had a `123MiB` maximum heap and periodic samples were commonly around `93-104MiB`, with a sampled peak of `117MiB`; RSS stayed around `338MiB`. After restart heap usage dropped to `54MiB` at startup and endpoint latency returned to milliseconds.
 > Learning: A focused follow-up should reproduce the cliff with an accelerated fixed-size dataset and separately compare bounded showcase retention, pooled H2 connections, and aggregate-query cost. This investigation does not change `/api/flows` as the health-check path because stressing that endpoint is intentional.
 
-## [FOR HUMAN REVIEW] Choose the next Render performance experiment
+## [DONE 2026-07-25.2] Compare `/api/flows` performance variants
 Reproduce the roughly five-hour performance cliff locally with accelerated seeding and isolate the contribution of dataset growth, `DriverManagerDataSource` connection contention, and the two `/api/flows` aggregate queries before choosing a production-test-instance mitigation.
+
+> Human: Ok zrób porównanie 4 wariantów. Zapisz to jako todo w pliku i dopisuj swoje znaleziska. Moze jakies indexy by pomogły? Jesze myslalem o sprawdzeniu użycia h2 file zamiast in memory.
+>> Agent: Added the repeatable `benchmarkFlowSummary` Gradle task and `tools/FlowSummaryBenchmark.kt`. It seeds identical deterministic datasets, verifies that every variant returns the same flow/stage projection, measures sequential and concurrent latency, prints H2 plans, and reports approximate heap/file footprint.
+>> Changes: Compared four variants on 50,000 and 200,000 `flowlite_instance_summary` rows: current two queries with `DriverManagerDataSource`, current two queries with HikariCP, one combined query with HikariCP, and preaggregated flow/stage counters with the existing indexed dynamic long-running query.
+>> Validation: The corrected 200,000-row memory-H2 sequential `p50` results were `281.975ms`, `262.090ms`, `244.800ms`, and `13.002ms` respectively. File-H2 results were `467.020ms`, `483.367ms`, `429.204ms`, and `10.857ms`.
+>> Validation: With eight concurrent callers on 200,000 rows, memory-H2 `p50` was `545.678ms`, `592.818ms`, `485.980ms`, and `17.697ms`; file-H2 `p50` was `4088.460ms`, `4003.535ms`, `522.633ms`, and `15.060ms`.
+>> Learning: Hikari alone is not the performance fix; once H2 query-result caching was disabled, pooling did not materially reduce scan-dominated latency. The first cached run was explicitly rejected because persistent Hikari connections received an artificial result-cache advantage over new DriverManager connections.
+>> Learning: One combined query is a useful lower-complexity improvement, especially because it removes the severe two-query concurrency cliff in file mode. It remains an `O(N)` full aggregation.
+>> Learning: Preaggregation is the only tested option that changes the scaling shape. It was about 20 times faster than Hikari plus two queries on memory H2 and about 45 times faster on file H2 sequentially; its transactional write/rebuild/repair cost still needs a separate design and benchmark before implementation.
+>> Learning: The tested covering index did not robustly help. The current negative status predicate kept a table scan; rewriting it to a positive `IN` made H2 use the index and modestly helped memory H2, but made file H2 slower. The flow-wide aggregate must still inspect all rows, so the new wide index is not recommended.
+>> Learning: H2 file roughly halved measured heap growth (`112MiB` to `48-55MiB` at 200,000 rows) but produced an `814-818MiB` file and made the current concurrent two-query path much slower. File mode is a possible heap-pressure experiment only when paired with the one-query or preaggregated design, not a standalone latency fix.
+>> Changes: Documented the methodology, full results, limitations, and recommendation in `docs/FlowSummaryPerformanceBenchmark.md`; added the benchmark command to `README.md`.
+>> Validation: Full benchmark command completed successfully; focused index/footprint reruns completed successfully; `./gradlew test --tests '*CockpitServiceTest'` passed; `git diff --check` passed.
 
 ## [DONE 2026-07-25.1] Review own changes
 Review the Render incident analysis and the Render API skill update from this loop.

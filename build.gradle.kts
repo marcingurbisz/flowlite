@@ -253,6 +253,22 @@ tasks.register<JavaExec>("runPerfTestApp") {
     )
 }
 
+tasks.register<JavaExec>("benchmarkFlowSummary") {
+    group = "verification"
+    description = "Compare /api/flows summary-query strategies on H2 memory and file databases."
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.flowlite.tools.FlowSummaryBenchmarkKt")
+    doFirst {
+        setArgs(
+            providers.gradleProperty("benchmarkArgs")
+                .map { it.split(" ").filter(String::isNotBlank) }
+                .orElse(emptyList())
+                .get(),
+        )
+    }
+}
+
 tasks.register<Jar>("testAppJar") {
     group = "application"
     description = "Build the application jar for the FlowLite test app."

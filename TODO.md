@@ -66,6 +66,16 @@ Reproduce the roughly five-hour performance cliff locally with accelerated seedi
 >> Learning: The live response contains `1,470` final employee errors. Stage-level counts imply at least roughly `1,900` event tasks can remain before their awaited stage, which alone can generate more than `7,500` H2 reads per second. Another `1,436` employees are waiting at the long IT timer before the first awaited event and can temporarily retain roughly two pollers each. This is sufficient to explain severe H2 monitor contention, a blocked single-thread seeder, and `/api/flows` waiting seconds even though its source table has only about `7.4k` rows.
 >> Learning: Private Render logs were unavailable in this environment, so the precise current seeder stack and thread count could not be confirmed. The public count and source inspection strongly support the polling leak, but a fresh thread dump or a focused local reproduction is still needed for direct runtime confirmation.
 
+## [DONE 2026-07-25.3] Review own changes
+Review the updated Render diagnosis and distinguish observations from source-based inference.
+
+> Agent: Rechecked the public response, seed-rate arithmetic, stage ordering, event-task lifecycle, and the persistence path behind `engine.getStatus()`.
+> Validation: `7,439` remained unchanged across two public samples; `2 * 3,718 + 3` matches the two instances per cycle plus three deterministic records. At least `908` employee errors occurred before the first awaited event and retain two standard pollers, while `116` occurred between the two awaited events and retain one, yielding a conservative lower bound of `1,932` leaked polling tasks.
+> Learning: The stalled count and multi-second endpoint are direct observations. The event-poller leak is proven by control flow for instances in `Error`, but its contribution to the live stall remains a strong inference until correlated with a current Render thread dump or reproduced locally.
+
+## [FOR HUMAN REVIEW] Fix leaked showcase event pollers and expose seeder failures
+Add `Error` as a terminal condition for pending showcase-event tasks, stop polling once an instance has passed an awaited stage, log failures currently swallowed by `seedOnceSafely()`, and add a focused regression/load test before reconsidering summary preaggregation or a database migration as the primary incident fix.
+
 ## [DONE 2026-07-25.2] Review own changes
 Review the benchmark implementation, measurement methodology, recorded results, and recommendations from this loop.
 

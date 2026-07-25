@@ -74,8 +74,13 @@ Review the updated Render diagnosis and distinguish observations from source-bas
 > Validation: The UI's `7,434` and the API's `7,439` are consistent: the top-level UI total adds `activeCount + errorCount + completedCount`, while `errorCount` intentionally includes only final errors. Five non-final/retriable order errors are omitted from that display total; `notCompletedCount + completedCount` gives the actual summary-row total.
 > Learning: The stalled count and multi-second endpoint are direct observations. The event-poller leak is proven by control flow for instances in `Error`, but its contribution to the live stall remains a strong inference until correlated with a current Render thread dump or reproduced locally.
 
-## [FOR HUMAN REVIEW] Fix leaked showcase event pollers and expose seeder failures
+## [DONE 2026-07-25.4] Fix leaked showcase event pollers and expose seeder failures
 Add `Error` as a terminal condition for pending showcase-event tasks, stop polling once an instance has passed an awaited stage, log failures currently swallowed by `seedOnceSafely()`, and add a focused regression/load test before reconsidering summary preaggregation or a database migration as the primary incident fix.
+
+> Human: mysle ze poprawka Error wystarczy. Wprowadz ją
+>> Agent: Scope narrowed to treating `Error` as terminal for showcase event pollers plus a focused regression test. The other proposed lifecycle and logging changes are intentionally excluded.
+>> Changes: Added `StageStatus.Error` to the terminal condition in `ShowcaseFlowSeeder.awaitWaitingStageAndSend(...)` and exposed the internal pending-task count for focused test observation.
+>> Validation: Added a regression scenario that forces showcase actions to fail before the awaited event stage, observes the employee reaching `Error`, and verifies that all pending event pollers stop. `./gradlew test --tests '*ShowcaseFlowSeederTest'` passed.
 
 ## [DONE 2026-07-25.2] Review own changes
 Review the benchmark implementation, measurement methodology, recorded results, and recommendations from this loop.

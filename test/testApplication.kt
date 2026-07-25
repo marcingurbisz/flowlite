@@ -650,7 +650,11 @@ internal class ShowcaseFlowSeeder(
             val currentStage = stageKey(status.first)
             val currentStatus = status.second
 
-            if (currentStatus == StageStatus.Completed || currentStatus == StageStatus.Cancelled) {
+            if (
+                currentStatus == StageStatus.Completed ||
+                currentStatus == StageStatus.Cancelled ||
+                currentStatus == StageStatus.Error
+            ) {
                 return
             }
 
@@ -713,6 +717,8 @@ internal class ShowcaseFlowSeeder(
         waitingStage: String,
         event: Event,
     ): String = "$flowId/$flowInstanceId/$waitingStage/${event::class.java.name}:${event}"
+
+    internal fun pendingEventTaskCount(): Int = pendingEventTasks.size
 
     override fun close() {
         pendingEventTasks.values.forEach { it.cancel(true) }

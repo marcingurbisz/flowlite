@@ -80,6 +80,33 @@ class ShowcaseFlowSeederTest : BehaviorSpec({
                 reachedCompletedState shouldBe true
             }
         }
+
+        `when`("a showcase instance fails before reaching an awaited event stage") {
+            val seeder = ShowcaseFlowSeeder(
+                engine = engine,
+                enabled = true,
+                initialSeedCount = 1,
+                repeatSeedingEnabled = false,
+                maxActionDelayMs = 0L,
+                actionFailureRate = 1.0,
+                maxEventDelayMs = 0L,
+            )
+            val reachedErrorState = waitUntil(timeoutMs = 4_000L) {
+                employeeRepo.findAll().any { employee ->
+                    employee.isShowcaseInstance && employee.stageStatus == StageStatus.Error
+                }
+            }
+            val eventPollersStopped = waitUntil(timeoutMs = 2_000L) {
+                seeder.pendingEventTaskCount() == 0
+            }
+
+            seeder.close()
+
+            then("pending event pollers stop for errored instances") {
+                reachedErrorState shouldBe true
+                eventPollersStopped shouldBe true
+            }
+        }
     }
 })
 

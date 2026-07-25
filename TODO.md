@@ -1,4 +1,4 @@
-## [REOPEN] Check the latest failure on render
+## [DONE 2026-07-25.1] Check the latest failure on render
 
 MG: Health check is using /api/flows on purpose - I want to stress the app a little bit. I want to understand how test app behaves under load. How often render is calling this endpoint. Any idea why after some time /api/flows gives connection refused?
 
@@ -29,6 +29,19 @@ MG: There was a new incident around 4:30AM. Check it. You now have http logs.
 > Learning: Render request logs did not add anything useful here, while the custom app-level access logs did, so for this repo the small `HttpAccessLogFilter` plus its focused test is a better fit than adding Logbook just to answer this failure-analysis question.
 
 MG: Check once gain last failure. Mabye this time came to some idea why we have render failures from time to time.
+
+> Agent: Checked the latest failure and compared it with the preceding failures, the active deploy, access logs, memory diagnostics, and the periodic thread dump.
+> Validation: Render reported `server_failed` at `2026-07-25T08:11:01.831306Z` for instance `srv-d6m3tqkhg0os73b3c8o0-r749n`, with `evicted=false` and `HTTP health check failed (timed out after 5 seconds)`. The process started again at about `08:11:48Z`, and Render reported `server_available` at `08:12:16.12866Z`.
+> Validation: The active deploy is still `dep-d89hs46k1jcs73f2m7e0`, built from commit `807785b544a4f09580d3f16ffe6082ee0b89f942`; there was no deploy immediately before this failure.
+> Learning: The failure is reproducible and age-related. In the 20 most recent samples, most failures happened after roughly five hours of uptime, and recovery normally took one to two minutes. The latest three runtimes before failure were about `5.07h`, `5.38h`, and `5.68h`.
+> Learning: Immediately after the latest restart, `/api/flows` normally completed in `2-100ms`. Near the end of the preceding uptime, typical successful responses had degraded to roughly `2-5s`, including `4794ms`, `5056ms`, and `5300ms`; access logs also contain requests that eventually returned `200` only after `130496ms`, `391397ms`, `471399ms`, and `484201ms`.
+> Learning: Render continues probing on an approximately five-second cadence while slow server-side requests remain in progress. Once `/api/flows` crosses the five-second health-check limit, timed-out probes overlap with later probes and increase pressure until Render restarts the process. `connection refused` is a consequence of that restart window, not the initiating failure.
+> Learning: The best-supported cause is the unbounded showcase workload reaching a resource/contention cliff on the small Render instance. Every five seconds the app adds two flow instances plus their history and work; `/api/flows` repeatedly aggregates the growing `flowlite_instance_summary`, while `DriverManagerDataSource` opens a new H2 connection for each transaction. The pre-failure thread dump showed a showcase virtual thread opening an H2 connection, the seeder blocked on the H2 database monitor, and HTTP executor threads waiting on monitors.
+> Learning: Heap pressure likely contributes but there is still no direct OOM evidence. Before failure the JVM had a `123MiB` maximum heap and periodic samples were commonly around `93-104MiB`, with a sampled peak of `117MiB`; RSS stayed around `338MiB`. After restart heap usage dropped to `54MiB` at startup and endpoint latency returned to milliseconds.
+> Learning: A focused follow-up should reproduce the cliff with an accelerated fixed-size dataset and separately compare bounded showcase retention, pooled H2 connections, and aggregate-query cost. This investigation does not change `/api/flows` as the health-check path because stressing that endpoint is intentional.
+
+## [FOR HUMAN REVIEW] Choose the next Render performance experiment
+Reproduce the roughly five-hour performance cliff locally with accelerated seeding and isolate the contribution of dataset growth, `DriverManagerDataSource` connection contention, and the two `/api/flows` aggregate queries before choosing a production-test-instance mitigation.
 
 ## [DONE 2026-05-19.3] Auto-retry and externally retriable on gui
 On Flows show only "final" errors - non externally retriable and (non autoretry or all retries are done)

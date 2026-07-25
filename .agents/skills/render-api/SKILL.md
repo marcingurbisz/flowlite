@@ -12,6 +12,7 @@ Use this skill only for things learned about working with Render itself.
 - Render health checks run every few seconds and fail if the service does not respond successfully within five seconds.
 - `connection refused` means the port was not accepting the TCP connection; `EOF` or `connection reset by peer` means the connection was accepted and then closed before a complete response.
 - Render logs API returns objects under a `logs` array with `message`, `timestamp`, and `labels`.
+- List service events with `GET /v1/services/{serviceId}/events`; each list item wraps the event under `event` and carries its pagination cursor separately under `cursor`.
 - Improve this skill whenever you learn something new about the Render API or discover that one of these notes was wrong.
 
 If you need to "expand" your render-api skill use the references below, but normally you should not need to read them. 

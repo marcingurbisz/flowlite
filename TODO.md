@@ -82,6 +82,16 @@ Add `Error` as a terminal condition for pending showcase-event tasks, stop polli
 >> Changes: Added `StageStatus.Error` to the terminal condition in `ShowcaseFlowSeeder.awaitWaitingStageAndSend(...)` and exposed the internal pending-task count for focused test observation.
 >> Validation: Added a regression scenario that forces showcase actions to fail before the awaited event stage, observes the employee reaching `Error`, and verifies that all pending event pollers stop. `./gradlew test --tests '*ShowcaseFlowSeederTest'` passed.
 
+## [DONE 2026-07-25.4] Review own changes
+Review the minimal `Error` terminal-condition fix and its regression coverage.
+
+> Agent: Reviewed commit `eced78f`, the pending-task cleanup path, deterministic failure setup, shared showcase state, and behavior for final versus retriable errors.
+> Validation: `git show --check eced78f` passed and the full `./gradlew test` suite passed. Playwright reported missing optional host libraries while installing browser binaries, but the browser and backend tests completed successfully.
+> Learning: The test observes an employee reaching `Error` before requiring the pending task map to become empty, so it directly covers the leak rather than passing before the failure occurs.
+
+## [FOR HUMAN REVIEW] Decide whether showcase pollers should survive auto-retriable errors
+The intentionally minimal fix treats every `StageStatus.Error` as terminal. This removes the leak, but an order instance that later recovers through auto-retry will no longer have its showcase poller available to send `Confirmed` when it reaches `WaitingForConfirmation`. Keep this behavior if the test workload values bounded resource use over eventual showcase completion; otherwise a future refinement should distinguish final errors or recreate event waiters after retry.
+
 ## [DONE 2026-07-25.2] Review own changes
 Review the benchmark implementation, measurement methodology, recorded results, and recommendations from this loop.
 

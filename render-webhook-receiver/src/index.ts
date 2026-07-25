@@ -9,6 +9,7 @@ export interface Env {
   GITHUB_ISSUE_ASSIGNEE?: string;
   RENDER_WEBHOOK_EVENT_TYPES?: string;
   ALLOW_INSECURE_TEST_WEBHOOKS?: string;
+  PIPEDREAM_SHARED_SECRET?: string;
 }
 
 interface RenderWebhookPayload {
@@ -42,6 +43,24 @@ interface RenderDeployResponse {
   commit?: { id?: string };
 }
 
+interface PipedreamEmailPayload {
+  id?: string;
+  messageId?: string;
+  subject?: string;
+  from?: string | { email?: string; name?: string };
+  to?: string | string[];
+  date?: string;
+  text?: string;
+  html?: string;
+  snippet?: string;
+  headers?: Record<string, unknown>;
+  body?: {
+    text?: string;
+    plain?: string;
+    html?: string;
+  };
+}
+
 interface GithubIssueSummary {
   number: number;
   html_url?: string;
@@ -65,76 +84,203 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ status: "ok" }, 200);
     }
-    if (request.method !== "POST" || url.pathname !== "/render/webhook") {
-      return json({ status: "rejected", reason: "not found" }, 404);
+    if (request.method === "POST" && url.pathname === "/render/webhook") {
+      return handleRenderWebhook(request, env);
     }
-
-    const rawBody = await request.text();
-    if (!isTruthy(env.ALLOW_INSECURE_TEST_WEBHOOKS)) {
-      const verification = await verifyRequest(request, rawBody, env.RENDER_WEBHOOK_SECRET);
-      if (!verification.ok) {
-        return json({ status: "rejected", reason: verification.reason }, 401);
-      }
+    if (request.method === "POST" && url.pathname === "/pipedream/email") {
+      return handlePipedreamEmail(request, env);
     }
-
-    const payload = parsePayload(rawBody);
-    if (!payload.ok) {
-      return json({ status: "rejected", reason: payload.reason }, 400);
-    }
-
-    const allowedEventTypes = new Set(
-      (env.RENDER_WEBHOOK_EVENT_TYPES ?? "server_failed")
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
-    );
-    if (!allowedEventTypes.has(payload.value.type)) {
-      return json({ status: "ignored", reason: `event type '${payload.value.type}' not enabled` }, 202);
-    }
-
-    const eventId = payload.value.data?.id ?? "";
-    const serviceId = payload.value.data?.serviceId ?? "";
-    const serviceName = payload.value.data?.serviceName ?? "";
-    const startedAt = payload.value.timestamp ?? "";
-    if (!eventId || !serviceId || !serviceName || !startedAt) {
-      return json({ status: "rejected", reason: "missing required Render webhook fields" }, 400);
-    }
-
-    const existingIssue = await findExistingIssue(eventId, env);
-    if (existingIssue) {
-      return json({ status: "duplicate", issueNumber: existingIssue.number }, 200);
-    }
-
-    const eventDetails = await fetchRenderEvent(eventId, env);
-    const latestDeploy = await fetchLatestLiveDeploy(serviceId, env);
-    const dashboardUrl = await fetchDashboardUrl(serviceId, env) ?? `https://dashboard.render.com/web/${serviceId}`;
-    const body = buildIssueBody({
-      incidentId: eventId,
-      serviceId,
-      serviceName,
-      eventType: payload.value.type,
-      failureReason: eventDetails?.details?.reason?.unhealthy ?? "-",
-      startedAt,
-      dashboardUrl,
-      recentDeployId: latestDeploy?.deploy?.id ?? latestDeploy?.id ?? "-",
-      eventId,
-      instanceId: eventDetails?.details?.instanceId ?? eventDetails?.details?.instanceID ?? "-",
-      latestLiveCommit: latestDeploy?.commit?.id ?? "-",
-    });
-
-    const createdIssue = await createIssue(
-      {
-        title: `[render] ${serviceName} ${payload.value.type} ${startedAt}`,
-        body,
-        labels: ["incident", "render"],
-        assignees: env.GITHUB_ISSUE_ASSIGNEE ? [env.GITHUB_ISSUE_ASSIGNEE] : [],
-      },
-      env,
-    );
-
-    return json({ status: "created", issueNumber: createdIssue.number, issueUrl: createdIssue.html_url }, 202);
+    return json({ status: "rejected", reason: "not found" }, 404);
   },
 };
+
+async function handleRenderWebhook(request: Request, env: Env): Promise<Response> {
+  const rawBody = await request.text();
+  if (!isTruthy(env.ALLOW_INSECURE_TEST_WEBHOOKS)) {
+    const verification = await verifyRequest(request, rawBody, env.RENDER_WEBHOOK_SECRET);
+    if (!verification.ok) {
+      return json({ status: "rejected", reason: verification.reason }, 401);
+    }
+  }
+
+  const payload = parsePayload(rawBody);
+  if (!payload.ok) {
+    return json({ status: "rejected", reason: payload.reason }, 400);
+  }
+
+      const allowedEventTypes = new Set(
+        (env.RENDER_WEBHOOK_EVENT_TYPES ?? "server_failed")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
+      );
+      if (!allowedEventTypes.has(payload.value.type)) {
+        return json({ status: "ignored", reason: `event type '${payload.value.type}' not enabled` }, 202);
+      }
+
+      const eventId = payload.value.data?.id ?? "";
+      const serviceId = payload.value.data?.serviceId ?? "";
+      const serviceName = payload.value.data?.serviceName ?? "";
+      const startedAt = payload.value.timestamp ?? "";
+      if (!eventId || !serviceId || !serviceName || !startedAt) {
+        return json({ status: "rejected", reason: "missing required Render webhook fields" }, 400);
+      }
+
+      const existingIssue = await findExistingIssue(`- event_id: ${eventId}`, ["incident", "render"], env);
+      if (existingIssue) {
+        return json({ status: "duplicate", issueNumber: existingIssue.number }, 200);
+      }
+
+      const eventDetails = await fetchRenderEvent(eventId, env);
+      const latestDeploy = await fetchLatestLiveDeploy(serviceId, env);
+      const dashboardUrl = await fetchDashboardUrl(serviceId, env) ?? `https://dashboard.render.com/web/${serviceId}`;
+      const body = buildIssueBody({
+        incidentId: eventId,
+        serviceId,
+        serviceName,
+        eventType: payload.value.type,
+        failureReason: eventDetails?.details?.reason?.unhealthy ?? "-",
+        startedAt,
+        dashboardUrl,
+        recentDeployId: latestDeploy?.deploy?.id ?? latestDeploy?.id ?? "-",
+        eventId,
+        instanceId: eventDetails?.details?.instanceId ?? eventDetails?.details?.instanceID ?? "-",
+        latestLiveCommit: latestDeploy?.commit?.id ?? "-",
+      });
+
+      const createdIssue = await createIssue(
+        {
+          title: `[render] ${serviceName} ${payload.value.type} ${startedAt}`,
+          body,
+          labels: ["incident", "render"],
+          assignees: resolvedAssignees(env),
+        },
+        env,
+      );
+
+      return json({ status: "created", issueNumber: createdIssue.number, issueUrl: createdIssue.html_url }, 202);
+    }
+
+async function handlePipedreamEmail(request: Request, env: Env): Promise<Response> {
+  const rawBody = await request.text();
+  if (!isPipedreamAuthorized(request, env)) {
+    return json({ status: "rejected", reason: "invalid pipedream secret" }, 401);
+  }
+
+  const payload = parsePipedreamPayload(rawBody);
+  if (!payload.ok) {
+    return json({ status: "rejected", reason: payload.reason }, 400);
+  }
+
+  const messageId = payload.value.messageId ?? payload.value.id ?? headerValue(payload.value.headers, "message-id") ?? "";
+  const subject = payload.value.subject ?? headerValue(payload.value.headers, "subject") ?? "Render incident email";
+  const from = stringifyEmailFrom(payload.value.from ?? headerValue(payload.value.headers, "from") ?? "-");
+  const receivedAt = payload.value.date ?? headerValue(payload.value.headers, "date") ?? new Date().toISOString();
+  const textBody = payload.value.text ?? payload.value.body?.text ?? payload.value.body?.plain ?? payload.value.snippet ?? "";
+  const htmlBody = payload.value.html ?? payload.value.body?.html ?? "";
+  const dedupeKey = messageId || `${subject}|${receivedAt}`;
+
+  const existingIssue = await findExistingIssue(`- email_message_id: ${dedupeKey}`, ["incident", "email"], env);
+  if (existingIssue) {
+    return json({ status: "duplicate", issueNumber: existingIssue.number }, 200);
+  }
+
+  const body = buildEmailIssueBody({
+    emailMessageId: dedupeKey,
+    subject,
+    from,
+    receivedAt,
+    textBody,
+    htmlBody,
+  });
+
+  const createdIssue = await createIssue(
+    {
+      title: `[render-email] ${subject}`,
+      body,
+      labels: ["incident", "email", "render"],
+      assignees: resolvedAssignees(env),
+    },
+    env,
+  );
+
+  return json({ status: "created", issueNumber: createdIssue.number, issueUrl: createdIssue.html_url }, 202);
+}
+
+function isPipedreamAuthorized(request: Request, env: Env): boolean {
+  const sharedSecret = env.PIPEDREAM_SHARED_SECRET;
+  if (!sharedSecret) return false;
+  const providedSecret = request.headers.get("x-pipedream-secret") ?? "";
+  return constantTimeEqual(textEncoder.encode(sharedSecret), textEncoder.encode(providedSecret));
+}
+
+function parsePipedreamPayload(rawBody: string): { ok: true; value: PipedreamEmailPayload } | { ok: false; reason: string } {
+  try {
+    return { ok: true, value: JSON.parse(rawBody) as PipedreamEmailPayload };
+  } catch {
+    return { ok: false, reason: "invalid JSON body" };
+  }
+}
+
+function headerValue(headers: Record<string, unknown> | undefined, name: string): string | undefined {
+  if (!headers) return undefined;
+  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
+  if (!match) return undefined;
+  const value = match[1];
+  return typeof value === "string" ? value : undefined;
+}
+
+function stringifyEmailFrom(value: string | { email?: string; name?: string }): string {
+  if (typeof value === "string") return value;
+  if (value.name && value.email) return `${value.name} <${value.email}>`;
+  return value.email ?? value.name ?? "-";
+}
+
+function resolvedAssignees(env: Env): string[] {
+  return env.GITHUB_ISSUE_ASSIGNEE ? [env.GITHUB_ISSUE_ASSIGNEE] : [];
+}
+
+function buildEmailIssueBody(input: {
+  emailMessageId: string;
+  subject: string;
+  from: string;
+  receivedAt: string;
+  textBody: string;
+  htmlBody: string;
+}): string {
+  const excerpt = truncateText(input.textBody || stripHtml(input.htmlBody), 4000);
+  return [
+    "## Email payload",
+    "",
+    `- email_message_id: ${input.emailMessageId}`,
+    "- source: pipedream-email",
+    `- email_subject: ${input.subject}`,
+    `- email_from: ${input.from}`,
+    `- received_at: ${input.receivedAt}`,
+    "",
+    "## Email excerpt",
+    "",
+    "```text",
+    excerpt || "(empty email body)",
+    "```",
+    "",
+    "## Agent checklist",
+    "",
+    "- [ ] verify the email is a real Render incident notification",
+    "- [ ] fetch recent Render events",
+    "- [ ] fetch latest live deploy",
+    "- [ ] fetch logs around the failure window",
+    "- [ ] correlate with recent commits on `main`",
+  ].join("\n");
+}
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
+}
 
 export async function verifyRequest(request: Request, rawBody: string, secret: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const webhookId = request.headers.get("webhook-id");
@@ -171,7 +317,7 @@ export async function sign(id: string, timestamp: string, rawBody: string, secre
   const keyBytes = decodeSecret(secret);
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    keyBytes,
+    keyBytes as BufferSource,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -223,12 +369,12 @@ async function fetchLatestLiveDeploy(serviceId: string, env: Env): Promise<Rende
   return deploys.find((deploy) => deploy.status === "live") ?? null;
 }
 
-async function findExistingIssue(eventId: string, env: Env): Promise<GithubIssueSummary | null> {
-  const labels = encodeURIComponent("incident,render");
+async function findExistingIssue(marker: string, labelsToMatch: string[], env: Env): Promise<GithubIssueSummary | null> {
+  const labels = encodeURIComponent(labelsToMatch.join(","));
   const issues = await fetchJson<GithubIssueSummary[]>(`${githubRepoBaseUrl(env)}/issues?state=open&labels=${labels}&per_page=100`, {
     headers: githubHeaders(env.GITHUB_TOKEN),
   });
-  return issues.find((issue) => (issue.body ?? "").includes(`- event_id: ${eventId}`)) ?? null;
+  return issues.find((issue) => (issue.body ?? "").includes(marker)) ?? null;
 }
 
 async function createIssue(

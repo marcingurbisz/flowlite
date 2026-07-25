@@ -10,7 +10,8 @@
   "secrets": {
     "required": [
       "RENDER_WEBHOOK_SECRET",
-      "GITHUB_TOKEN"
+      "GITHUB_TOKEN",
+      "PIPEDREAM_SHARED_SECRET"
     ]
   },
   "vars": {
@@ -19,6 +20,7 @@
     "RENDER_WEBHOOK_EVENT_TYPES": "server_failed",
     "GITHUB_REPO_OWNER": "marcingurbisz",
     "GITHUB_REPO_NAME": "flowlite",
+    "GITHUB_ISSUE_ASSIGNEE": "copilot-swe-agent[bot]",
     "ALLOW_INSECURE_TEST_WEBHOOKS": "false"
   }
 }

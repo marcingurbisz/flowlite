@@ -171,4 +171,69 @@ describe("worker fetch", () => {
       issueUrl: "https://github.com/marcingurbisz/flowlite/issues/22",
     });
   });
+
+  it("creates an issue from a Pipedream email payload", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/issues?")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.endsWith("/issues") && init?.method === "POST") {
+        return new Response(JSON.stringify({ number: 23, html_url: "https://github.com/marcingurbisz/flowlite/issues/23" }), { status: 201 });
+      }
+      throw new Error(`Unexpected fetch call: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://receiver.example/pipedream/email", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-pipedream-secret": "pipe-secret",
+        },
+        body: JSON.stringify({
+          messageId: "msg-123",
+          subject: "[Render] flowlite-test-instance failed health check",
+          from: "notifications@render.com",
+          date: "2026-05-25T04:30:00+02:00",
+          text: "Render says the service failed the HTTP health check.",
+        }),
+      }),
+      {
+        RENDER_WEBHOOK_SECRET: "secret",
+        GITHUB_TOKEN: "github-token",
+        PIPEDREAM_SHARED_SECRET: "pipe-secret",
+      },
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      status: "created",
+      issueNumber: 23,
+      issueUrl: "https://github.com/marcingurbisz/flowlite/issues/23",
+    });
+  });
+
+  it("rejects a Pipedream payload with the wrong secret", async () => {
+    const response = await worker.fetch(
+      new Request("https://receiver.example/pipedream/email", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-pipedream-secret": "wrong",
+        },
+        body: JSON.stringify({ subject: "ignored" }),
+      }),
+      {
+        RENDER_WEBHOOK_SECRET: "secret",
+        GITHUB_TOKEN: "github-token",
+        PIPEDREAM_SHARED_SECRET: "pipe-secret",
+      },
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ status: "rejected", reason: "invalid pipedream secret" });
+  });
 });

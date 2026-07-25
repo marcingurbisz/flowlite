@@ -1,84 +1,34 @@
-## [DONE 2026-05-19.1] Better jcmd or maybe dump via JMX?
-```
-fun dumpThreads() {
-    val server = ManagementFactory.getPlatformMBeanServer()
-    val name = ObjectName("com.sun.management:type=DiagnosticCommand")
-    val path = "/tmp/td-${System.currentTimeMillis()}.txt"
-    
-    server.invoke(
-        name,
-        "threadDumpToFile",
-        arrayOf(arrayOf("-format=plain", path)),
-        arrayOf(Array<String>::class.java.name)
-    )
-    
-    val file = File(path)
-    logger.info("=== THREAD DUMP START (${file.length()} bytes) ===")
-    file.readLines().chunked(100).forEachIndexed { i, chunk ->
-        logger.info("td chunk=$i\n${chunk.joinToString("\n")}")
-    }
-    logger.info("=== THREAD DUMP END ===")
-    file.delete()
-}
-```
+## [REOPEN] Check the latest failure on render
 
-> Agent:
-> Done. `PeriodicThreadDumpLogger` now prefers `com.sun.management:type=DiagnosticCommand` over JMX and calls `threadPrint` directly in-process, with `jcmd <pid> Thread.print` kept only as a fallback if the MBean path fails.
-> Validation: ad hoc probe on this JDK confirmed that `DiagnosticCommand.threadPrint` is available and VT-aware; then `./gradlew test --tests "*RuntimeDiagnosticsLoggerTest"` passed after switching the logger to JMX-first with a tested fallback path.
-> Learning: the earlier reason for using external `jcmd` was that the simpler in-process APIs (`ThreadMXBean.dumpAllThreads`, `Thread.getAllStackTraces`) missed live virtual-thread coverage. `DiagnosticCommand.threadPrint` is different: it exposes the same VM diagnostic command through JMX, so it keeps VT-aware dumps without spawning a separate process.
+MG: Health check is using /api/flows on purpose - I want to stress the app a little bit. I want to understand how test app behaves under load. How often render is calling this endpoint. Any idea why after some time /api/flows gives connection refused?
 
-MG: Remove jcmd fallback. Not sure if it is worth to keep RuntimeDiagnosticsLoggerTest
+> Agent: Reframed the failure explanation around Render health-check behavior instead of trying to undo the `/api/flows` choice.
+> Validation: Checked current Render health-check documentation and recent service events/logs.
+> Learning: Render says health checks run every few seconds and must succeed within five seconds.
+> Learning: Because access logging is not enabled for the probe path, I do not have an exact observed request interval from the app logs themselves; the strongest grounded statement is the Render doc wording: `every few seconds`.
+> Learning: `connection refused` is narrower than `EOF`: it means the TCP connection to port `10000` was not accepted at all, which points to the process not listening yet, being restarted, or being temporarily unavailable at the socket level.
+> Learning: With `/api/flows` intentionally stressing the service, the most plausible path is: heavy probe/read load or some other instability causes health-check failures, Render treats the instance as unhealthy, and a later probe hits the instance during restart or before the listener is ready, producing `connection refused`.
+> Learning: The current evidence still does not support OOM or a simple thread explosion as the first explanation for the sampled failure windows.
 
-> Agent:
-> Changes: removed the `jcmd` fallback from `PeriodicThreadDumpLogger`, so runtime diagnostics now rely only on `DiagnosticCommand.threadPrint`; also deleted the leftover command-runner helper and simplified `RuntimeDiagnosticsLoggerTest` to cover the remaining enabled/disabled behavior.
-> Validation: `./gradlew test --tests "*RuntimeDiagnosticsLoggerTest"`
-> Learning: the JMX-backed `DiagnosticCommand` path is the VT-aware mechanism we actually want here, so keeping the external-process fallback only added code and test surface without a clear benefit.
+MG: Add access logging for test instance endpoints. Maybe using logbook?
+MG: After implementing push and deploy the newest version to render.
 
-## [DONE 2026-05-19.1] Review own changes
-> Agent:
-> Changes: reviewed the diff for the thread-dump logger simplification and removed the now-unused `runCommand` / `CommandExecutionResult` helper left behind by the fallback deletion.
-> Validation: `git --no-pager diff -- test/testApplication.kt test/RuntimeDiagnosticsLoggerTest.kt TODO.md`; `./gradlew test --tests "*RuntimeDiagnosticsLoggerTest"`
-> Learning: this slice stays small if the logger owns only one dump source; otherwise tests start encoding fallback mechanics instead of the behavior we care about.
+> Agent: Added application-level HTTP access logging for the Render test instance instead of Tomcat file access logs.
+> Changes: Added a small servlet filter in `test/testApplication.kt` that logs method, request target, response status, duration, remote address, and failure marker to normal app logs, added `test/HttpAccessLogFilterTest.kt`, and enabled the feature for Render in `render.yaml`.
 
-## [DONE 2026-05-19.2] Fix tick worker thread churn
-> Agent:
-> Finding from the live exploratory run: before the fix, failure-heavy `runPerfTestApp` logs reached `flowlite-tick-worker-161` quickly, which strongly suggested that `SpringDataJdbcTickScheduler` was creating new platform threads per task instead of reusing a bounded worker set.
-> Changes: replaced the scheduler's `SimpleAsyncTaskExecutor` with a fixed thread pool in `source/springDataJdbc.kt`, keeping the same worker-count knob but making worker threads reusable.
-> Validation: `./gradlew test` passed after the scheduler change. A follow-up smoke run of `runPerfTestApp` on port `18081` showed `ThreadPoolExecutor` worker traces and tick-worker names in a much smaller range (`...-11`, `...-15`, `...-28`) under the same forced-failure setup instead of immediately racing upward into the hundreds.
-> Learning: the render thread-growth symptom was not only a diagnostics gap. The scheduler executor choice itself was contributing to thread churn.
->> MG: I think we are using virtual threads so there is no problem with creating many new threads. Is this change worth doing?
->
-> Agent:
-> Yes. The current code only uses a virtual thread for the scheduler poller and stop helper. The actual tick workers are a platform-thread fixed pool in `SpringDataJdbcTickScheduler`, and the previous executor was also not using virtual-thread workers. So the churn was real platform-thread churn, not cheap VT creation.
-> Validation: re-read current `source/springDataJdbc.kt` and compared it with the pre-fix revision from `git show 0c8ef80^:source/springDataJdbc.kt`.
+MG: Own HttpAccessLogFilterTest is better than logbook?
+MG: There was a new incident around 4:30AM. Check it. You now have http logs.
 
-MG: Isn't it better to use:
-```
-SimpleAsyncTaskExecutorBuilder()
-        .threadNamePrefix("flowlite-tick-worker-")
-        .concurrencyLimit(workerThreads)
-        .taskTerminationTimeout(Duration.ofMinutes(5))
-        .build()
-```
-And add spring.threads.virtual.enabled or .virtualThreads(true)
+> Agent: Checked the new incident using Render events plus the new access logs.
+> Validation: Queried recent Render events, deploys, and logs for `srv-d6m3tqkhg0os73b3c8o0` around `2026-05-25T02:32Z`.
+> Learning: The new incident window was `server_failed` at `2026-05-25T02:32:04.683223Z` with reason `HTTP health check failed (timed out after 5 seconds)`, followed by `server_available` at `2026-05-25T02:33:48.355902Z`.
+> Learning: The new access logs are visible in Render logs and show `/api/flows` probes roughly every 5 seconds, with occasional near-simultaneous pairs from the same internal source address `10.233.27.88`.
+> Learning: Immediately before failure the last successful `/api/flows` responses were still `200`, mostly around `300-400ms`, but one probe at `02:31:48.479Z` already took `3002ms`. The next expected probe around `02:32:03Z` is missing from app logs, which fits the Render-side timeout event at `02:32:04Z`.
+> Learning: After recovery the first visible `/api/flows` response at `02:33:44.152Z` still took `4100ms`, very close to the 5-second health-check ceiling, and only then dropped back to sub-`200ms` and double-digit millisecond timings.
+> Learning: Periodic memory diagnostics around the same window stayed bounded (`usedMiB=97`, then `115`, then after recovery `60`; `rssMiB=339` before the failure), so this sample still does not look like OOM.
+> Learning: Render request logs did not add anything useful here, while the custom app-level access logs did, so for this repo the small `HttpAccessLogFilter` plus its focused test is a better fit than adding Logbook just to answer this failure-analysis question.
 
-> Agent:
-> I would keep the current fixed pool for this scheduler. `spring.threads.virtual.enabled` would not automatically change this code path because the scheduler constructs its own executor manually. Switching this slice to `SimpleAsyncTaskExecutorBuilder().virtualThreads(true)` would change the execution model again from bounded reusable platform workers to per-task virtual threads, which is a different trade-off than the issue we just fixed.
-> Learning: the observed bug was platform-thread churn from the previous executor choice. The current fixed pool directly addresses that with predictable worker reuse and stable shutdown semantics. If we later want to evaluate VT workers, that should be a separate benchmarked decision rather than bundled into the churn fix.
-> Validation: current implementation in `source/springDataJdbc.kt` still uses a fixed platform-thread pool; targeted and exploratory checks from this loop remain green with that model.
-
-MG: I prefer SimpleAsyncTaskExecutorBuilder with virtual threads
-
-> Agent:
-> Changes: switched `SpringDataJdbcTickScheduler` workers from the fixed platform-thread pool to `SimpleAsyncTaskExecutorBuilder` with `virtualThreads(true)`, the existing `workerThreads` concurrency limit, and a 5-minute termination timeout; shutdown now closes the Spring executor instead of managing `ExecutorService` lifecycle manually.
-> Validation: `./gradlew test`
-> Learning: this keeps the user-preferred VT execution model while still bounding in-flight tick handling through `concurrencyLimit`, so the worker-count knob still controls scheduler pressure even though workers are no longer reused platform threads.
-
-## [DONE 2026-05-19.2] Review own changes
-> Agent:
-> Changes: reviewed the scheduler diff to confirm the change stayed limited to the worker executor and shutdown path, with no unintended polling/query changes.
-> Validation: `git --no-pager diff -- source/springDataJdbc.kt TODO.md`; `./gradlew test`
-> Learning: in this slice the main behavioral change is the worker execution model, so keeping batching and poll-loop logic untouched makes the trade-off easier to reason about.
+MG: Check once gain last failure. Mabye this time came to some idea why we have render failures from time to time.
 
 ## [DONE 2026-05-19.3] Auto-retry and externally retriable on gui
 On Flows show only "final" errors - non externally retriable and (non autoretry or all retries are done)
@@ -108,76 +58,6 @@ MG: .filter { row -> errorFilter == null || row.matchesErrorFilter(errorFilter) 
 > Changes: changed `findFlowSummaryAggregates(...)` and `findIncompleteStageBreakdown()` to count only final errors directly in SQL, and simplified `CockpitService.listFlows()` back to repository aggregates instead of fetching all error rows plus per-stage summary queries.
 > Validation: `./gradlew test --tests "*CockpitServiceTest"`; `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`; `cd cockpit-ui && npm run build`
 > Learning: the retry-category rule belongs in the database predicate because both the Errors API and flow-card counters depend on the same classification; once that predicate lives in SQL, the FE becomes a pure view over already-filtered data and `listFlows()` can stay query-shaped instead of reconstructing counts in Kotlin.
-
-## [DONE 2026-05-19.3] Review own changes
-> Agent:
-> Changes: reviewed the cockpit diff to confirm the behavior shift stayed in backend predicates and aggregate queries, with the frontend reduced only by removing duplicated retry filtering.
-> Validation: `git --no-pager diff -- source/cockpit/service.kt source/springDataJdbc.kt cockpit-ui/src/App.tsx TODO.md`; `./gradlew test --tests "*CockpitServiceTest"`; `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`; `cd cockpit-ui && npm run build`
-> Learning: this topic stays maintainable when the retry classification is expressed once and reused by both detail and summary queries; otherwise the FE and service start drifting on the same semantics.
-
-## [DONE 2026-05-19.4] Move seeding to separate file
-
-> Agent:
-> Changes: extracted `ShowcaseErrorCatalogSeeder` from `test/testApplication.kt` into its own file `test/ShowcaseErrorCatalogSeeder.kt`, keeping the same constructor/wiring and giving the helper its own logger.
-> Validation: `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`
-> Learning: this helper was already cohesive enough to stand alone; once moved, the only hidden coupling was the private file-level logger, which is better owned by the seeder itself.
-
-## [DONE 2026-05-19.4] Review own changes
-> Agent:
-> Changes: reviewed the extraction diff to confirm it was a pure move plus logger decoupling, with no change to seeding semantics or bean wiring.
-> Validation: `git --no-pager diff -- test/testApplication.kt test/ShowcaseErrorCatalogSeeder.kt TODO.md`; `./gradlew test --tests "*ShowcaseErrorCatalogSeederTest"`
-> Learning: keeping test support helpers in dedicated files reduces churn in `testApplication.kt`, which is already carrying a lot of unrelated runtime/test bootstrap code.
-
-## [DONE 2026-05-19.5] Exploratory tests for cockpit functionality
-Focus on live `runPerfTestApp` checks across cockpit views with special attention to `auto-retry` and `external-retry` behavior in GUI and API.
-
-> Agent:
-> Changes: ran live exploratory checks against `SERVER_PORT=18081 ./gradlew runPerfTestApp` across Flows, Errors, Long Inactive, and Instances.
-> Validation: verified `/api/instances?bucket=Error&errorFilter=final|external-retry|auto-retry-active` returned the expected seeded categories; verified Errors tab defaulted to final, switched correctly to external-retry and auto-retry-active, and exposed the expected retry metadata in instance details.
-> Validation: exercised GUI retry on the seeded externally retriable `order-confirmation` instance and confirmed the item left the external-retry list and moved forward in backend state.
-> Learning: the retry/error slices are consistent end-to-end after the recent backend-first filtering changes. The main exploratory regression found in this loop was separate: direct navigation to the Instances tab left the banner stats at zero.
-
-## [DONE 2026-05-19.6] Fix instances banner stats on direct navigation
-> Agent:
-> Changes: updated cockpit data refresh so flow summary stats are fetched even when the app lands directly on the `instances` view, which fixes the `flows: 0 • instances: 0 • errors: 0` banner on deep links like `?tab=instances&q=...`.
-> Validation: `cd cockpit-ui && npm run build`; restarted `SERVER_PORT=18081 ./gradlew runPerfTestApp`; rechecked `http://127.0.0.1:18081/cockpit?tab=instances&q=d2480e3c-ce1b-3f45-bf8b-f2c440bbb4eb` and confirmed the banner now showed non-zero flow stats after load.
-> Learning: the instances table and banner had drifted because they did not share the same fetch prerequisites; deep-linking exposed that the table can be populated independently while the banner still depends on `/api/flows`.
-
-## [DONE 2026-05-19.6] Review own changes
-> Agent:
-> Changes: reviewed the exploratory/fix diff to confirm the code change stayed limited to the instances-view flow-summary fetch condition and that no retry/filter semantics were altered by the fix.
-> Validation: `git --no-pager diff -- cockpit-ui/src/App.tsx TODO.md`; `cd cockpit-ui && npm run build`; live deep-link recheck on the restarted app.
-> Learning: exploratory loops are most valuable here when they include direct-entry URLs, not only in-app tab clicks, because location-state bootstrapping can hide fetch gaps.
-
-## [DONE 2026-05-20.1] Add cockpit deep-link regression coverage
-Add a focused Playwright regression for direct entry into `?tab=instances&q=...` so banner stats and results stay aligned when the page boots on the Instances view.
-
-> Agent:
-> Changes: added a stable `data-testid` for cockpit banner stats and extended `CockpitPlaywrightTest` with a deep-link regression that asserts the Instances view loads both the filtered row and non-zero banner stats instead of staying at `flows: 0 • instances: 0 • errors: 0`.
-> Validation: `./gradlew test --tests "*CockpitPlaywrightTest"`
-> Learning: the regression should assert the user-visible failure mode directly (`0 • 0 • 0` banner on deep-link) instead of overfitting to an implementation-specific total instance count.
-
-## [DONE 2026-05-20.1] Exploratory test batch error actions
-Run live exploratory checks for batch `Change Stage` and `Cancel` from the Errors tab against `runPerfTestApp` and document the observed behavior.
-
-> Agent:
-> Changes: ran live browser checks against `SERVER_PORT=18081 ./gradlew runPerfTestApp` for Errors selection-bar actions on the seeded showcase errors.
-> Validation: on `Errors` with `errorRetry=external-retry`, confirmed the selection-bar `Change Stage` flow and then rechecked `8b55dcb0-19e7-3b99-8d2b-46e93dc50b12` on `Instances`, where it moved to `WaitingForConfirmation` / `Waiting for event`; on `Errors` with `errorRetry=final`, confirmed the selection-bar `Cancel` flow and then rechecked `924fe2a1-dd8d-3d69-a4df-041faab8fbba` on `Instances`, where it moved to `Cancelled`.
-> Learning: the live app still emits browser-side `POST ... net::ERR_ABORTED` during cockpit actions even when backend state changes correctly, so exploratory verification must check the resulting instance state rather than trusting the network event alone.
-
-## [DONE 2026-05-20.1] Show retry-type badges on Errors overview
-Expose `ExternallyRetryable` / `AutoRetry` badges directly on the Errors list rows so retry category is visible without opening instance details.
-
-> Agent:
-> Changes: rendered `RetryInfoBadges` in `ErrorsView` rows and extended the cockpit Playwright spec to assert the badges are visible in the Errors overview for both externally retriable and active auto-retry errors.
-> Validation: `cd cockpit-ui && npm run build`; `./gradlew test --tests "*CockpitPlaywrightTest"`; live `Errors` view check on `runPerfTestApp` confirmed `ExternallyRetryable` and `AutoRetry` badges were visible without opening the modal.
-> Learning: retry metadata was already present in the list payload, so the gap was purely presentation-level in `ErrorsView`, not a backend/API limitation.
-
-## [DONE 2026-05-20.1] Review own changes
-> Agent:
-> Changes: reviewed the loop diff to confirm the product change stayed limited to `ErrorsView` badge rendering and one `data-testid`, while the rest of the work lived in targeted Playwright coverage and TODO documentation.
-> Validation: `git --no-pager diff -- cockpit-ui/src/App.tsx cockpit-ui/src/cockpit/views/ErrorsView.tsx test/CockpitPlaywrightTest.kt TODO.md`; `./gradlew test --tests "*CockpitPlaywrightTest"`; `cd cockpit-ui && npm run build`.
-> Learning: for cockpit exploratory loops, pairing one live browser pass with a narrow Playwright regression catches both runtime integration issues and bootstrapping regressions without widening into unrelated engine coverage.
 
 ## [FOR HUMAN]
 * Review agent-responding-to-failures.md

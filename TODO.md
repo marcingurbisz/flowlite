@@ -43,6 +43,18 @@ MG: Check once gain last failure. Mabye this time came to some idea why we have 
 ## [FOR HUMAN REVIEW] Choose the next Render performance experiment
 Reproduce the roughly five-hour performance cliff locally with accelerated seeding and isolate the contribution of dataset growth, `DriverManagerDataSource` connection contention, and the two `/api/flows` aggregate queries before choosing a production-test-instance mitigation.
 
+## [DONE 2026-07-25.1] Review own changes
+Review the Render incident analysis and the Render API skill update from this loop.
+
+> Agent: Reviewed commit `b76b0d1` against the raw Render event/deploy data, access-log timings, current deployed source, and the official API shape.
+> Validation: `git show --check b76b0d1` passed; recalculating the 20 latest runtimes showed that 13 were between `4.5h` and `6h`, supporting the “most failures after roughly five hours” wording.
+> Validation: Re-read the deployed `807785b` versions of `test/testApplication.kt` and `source/springDataJdbc.kt` to confirm that the documented unbounded seeding, `DriverManagerDataSource`, and aggregate-query behavior applies to the active Render build.
+> Learning: Kept the conclusion explicitly probabilistic: the evidence supports a data-growth/resource/contention cliff and rules out a deploy-triggered incident, but it does not isolate one query, prove GC as the trigger, or prove an OOM.
+> Learning: The Render service reports `autoDeploy=true`, but its newest live deploy is still from `2026-05-24` while `origin/main` has newer commits. This is operationally separate from the recurring timeout mechanism and needs a human decision before changing external deployment configuration.
+
+## [FOR HUMAN REVIEW] Check why Render auto-deploy is stale
+The service API reports `autoDeploy=true`, but the newest live deploy is `dep-d89hs46k1jcs73f2m7e0` from `2026-05-24` at commit `807785b`, while the repository's `origin/main` is newer. Confirm whether deployment is intentionally paused or whether the Render/GitHub connection needs repair.
+
 ## [DONE 2026-05-19.3] Auto-retry and externally retriable on gui
 On Flows show only "final" errors - non externally retriable and (non autoretry or all retries are done)
 On Errors tab add filters - by default only final but you can choose externally retriable errors or the one with active auto-retry.

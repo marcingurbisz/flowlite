@@ -132,10 +132,12 @@ Approximate isolated-process footprint after seeding and forcing GC:
 | Rows | memory heap delta | file heap delta | H2 file size |
 |---:|---:|---:|---:|
 | 50,000 | 35 MiB | 17 MiB | 43 MiB |
-| 200,000 | 112 MiB | 48–55 MiB | 814–818 MiB |
+| 200,000 | 112 MiB | 36–55 MiB | 814–818 MiB |
 
-These are coarse diagnostics rather than retained-size measurements, but the
-direction is clear:
+These are coarse diagnostics rather than retained-size measurements, and the
+file-mode heap result varied between isolated runs. An explicit H2 checkpoint
+did not materially reduce the live file size. The direction is nevertheless
+clear:
 
 - file mode roughly halved the measured Java heap contribution;
 - it moved a large amount of state to disk;

@@ -8,6 +8,7 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
@@ -151,6 +152,15 @@ private data class BenchmarkConfig(
     val concurrentWorkers: Int = 8,
     val samplesPerWorker: Int = 5,
 ) {
+    init {
+        require(storage.isNotEmpty() && storage.all { it == "memory" || it == "file" })
+        require(rows.isNotEmpty() && rows.all { it > 0 })
+        require(warmups >= 0)
+        require(sequentialSamples > 0)
+        require(concurrentWorkers > 0)
+        require(samplesPerWorker > 0)
+    }
+
     companion object {
         fun parse(args: Array<String>): BenchmarkConfig {
             val values = args.mapNotNull { argument ->
@@ -263,8 +273,10 @@ fun main(args: Array<String>) {
     results.forEach { result ->
         println(
             "| ${result.storage} | ${result.rows} | ${result.variant} | ${result.concurrency} | " +
-                "${result.samples} | ${"%.3f".format(result.p50Ms)} | ${"%.3f".format(result.p95Ms)} | " +
-                "${"%.3f".format(result.maxMs)} | ${"%.2f".format(result.throughputPerSecond)} |",
+                "${result.samples} | ${"%.3f".format(Locale.ROOT, result.p50Ms)} | " +
+                "${"%.3f".format(Locale.ROOT, result.p95Ms)} | " +
+                "${"%.3f".format(Locale.ROOT, result.maxMs)} | " +
+                "${"%.2f".format(Locale.ROOT, result.throughputPerSecond)} |",
         )
     }
 }
@@ -287,6 +299,7 @@ private fun withDatabase(storage: String, rows: Int, block: (String) -> Unit) {
             createSchema(connection)
             seedRows(connection, rows)
             createPreaggregatedTables(connection)
+            connection.createStatement().use { statement -> statement.execute("checkpoint") }
         }
         forceGc()
         val heapAfter = usedHeapBytes()

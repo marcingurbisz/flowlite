@@ -52,9 +52,18 @@ Reproduce the roughly five-hour performance cliff locally with accelerated seedi
 >> Learning: One combined query is a useful lower-complexity improvement, especially because it removes the severe two-query concurrency cliff in file mode. It remains an `O(N)` full aggregation.
 >> Learning: Preaggregation is the only tested option that changes the scaling shape. It was about 20 times faster than Hikari plus two queries on memory H2 and about 45 times faster on file H2 sequentially; its transactional write/rebuild/repair cost still needs a separate design and benchmark before implementation.
 >> Learning: The tested covering index did not robustly help. The current negative status predicate kept a table scan; rewriting it to a positive `IN` made H2 use the index and modestly helped memory H2, but made file H2 slower. The flow-wide aggregate must still inspect all rows, so the new wide index is not recommended.
->> Learning: H2 file roughly halved measured heap growth (`112MiB` to `48-55MiB` at 200,000 rows) but produced an `814-818MiB` file and made the current concurrent two-query path much slower. File mode is a possible heap-pressure experiment only when paired with the one-query or preaggregated design, not a standalone latency fix.
+>> Learning: H2 file reduced measured heap growth (`112MiB` to a variable `36-55MiB` at 200,000 rows) but produced an `814-818MiB` file and made the current concurrent two-query path much slower. File mode is a possible heap-pressure experiment only when paired with the one-query or preaggregated design, not a standalone latency fix.
 >> Changes: Documented the methodology, full results, limitations, and recommendation in `docs/FlowSummaryPerformanceBenchmark.md`; added the benchmark command to `README.md`.
 >> Validation: Full benchmark command completed successfully; focused index/footprint reruns completed successfully; `./gradlew test --tests '*CockpitServiceTest'` passed; `git diff --check` passed.
+
+## [DONE 2026-07-25.2] Review own changes
+Review the benchmark implementation, measurement methodology, recorded results, and recommendations from this loop.
+
+> Agent: Reviewed commit `fc92df5`, the benchmark SQL/result equivalence checks, concurrency harness, H2 lifecycle, Gradle arguments, and the recorded conclusions.
+> Changes: Made numeric output locale-independent, validated all benchmark arguments up front, and added an explicit H2 checkpoint before footprint measurement.
+> Validation: Re-ran the 200,000-row H2 file probe after the checkpoint; the live file remained about `814MiB`, confirming that the reported size was not just an unflushed checkpoint artifact.
+> Learning: Post-GC file-mode heap readings varied more than the latency results (`36-55MiB`), so the documentation now reports the observed range and keeps the footprint conclusion qualitative. No latency recommendation changed.
+> Validation: The review smoke benchmark completed successfully, all four projections remained identical, and `git diff --check` passed.
 
 ## [DONE 2026-07-25.1] Review own changes
 Review the Render incident analysis and the Render API skill update from this loop.

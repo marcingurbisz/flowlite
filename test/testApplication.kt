@@ -493,6 +493,7 @@ internal class ShowcaseFlowSeeder(
     maxActionDelayMs: Long,
     actionFailureRate: Double,
     private val maxEventDelayMs: Long,
+    private val stagePollIntervalMs: Long = 10_000L,
     private val eventDelayProvider: (Long) -> Long = { maxDelayMs ->
         ThreadLocalRandom.current().nextLong(maxDelayMs) + 1
     },
@@ -503,8 +504,6 @@ internal class ShowcaseFlowSeeder(
         val waitingStage: String,
         val event: Event,
     )
-
-    private val stagePollIntervalMs = 250L
 
     private val sequence = AtomicLong(0)
     private val pendingEventTasks = ConcurrentHashMap<String, Future<*>>()
@@ -528,6 +527,8 @@ internal class ShowcaseFlowSeeder(
         }
 
     init {
+        require(stagePollIntervalMs > 0L) { "stagePollIntervalMs must be greater than zero" }
+
         ShowcaseActionBehavior.configure(
             enabled = enabled,
             maxDelayMs = maxActionDelayMs,

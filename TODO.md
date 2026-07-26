@@ -20,11 +20,20 @@ Review the post-fix Render comparison, notification conclusion, calculations, an
 > Learning: The latency improvement and three health-check failures are directly observed. The remaining timer-poller load is a source-and-live-state-supported explanation, but it is not isolated experimentally from summary-table growth and other H2 work; keep it as the leading hypothesis rather than a proven sole cause.
 > Learning: Render's documented notification behavior plus the live configuration establish that emails should be enabled, but neither establishes delivery. Do not claim Render sent or suppressed a particular message without mail headers or provider delivery evidence.
 
-## [FOR HUMAN REVIEW] Reduce showcase event polling for long timer waits
+## [DONE 2026-07-26.2] Reduce showcase event polling for long timer waits
 The `Error` fix removed leaked failed-instance pollers, but event tasks are still created several stages early and poll every `250ms` while employees wait over the weekend at `WaitForITBusinessHours`. Compare a larger polling interval (for example five seconds) with sequentially creating only the next relevant event waiter; validate the change with a realistic weekend timer/load reproduction.
+
+> Human: zwieksz intewal na 10s. Mysle ze spokojnie starczy. BTW. ostatni mail o restarcie dostałem o 5:29 AM warsaw time
+>> Agent: Implementing the explicitly selected `10s` production polling interval. Tests will inject a shorter interval so their runtime remains bounded.
+>> Changes: `ShowcaseFlowSeeder` now defaults `stagePollIntervalMs` to `10_000ms` and validates that an injected interval is positive. Timing-sensitive tests inject `25ms`, preserving fast deterministic coverage without changing the deployed default.
+>> Validation: `./gradlew test --tests '*ShowcaseFlowSeederTest'` passed.
+>> Learning: At the observed `1,814` pollers this changes the estimated status-read rate from roughly `7,256/s` to `181/s`, a 40-fold reduction. A showcase event can now be noticed up to about ten seconds after its waiting stage is reached, which is acceptable for this test workload.
 
 ## [FOR HUMAN REVIEW] Follow up on missing Render failure emails
 Check whether the three July 26 failure notifications are grouped into one mail thread or filtered by the mailbox. If two are genuinely absent, provide Render support with event IDs `evt-d9inu368bjmc73ejm3sg`, `evt-d9it89m8bjmc73enpufg`, and `evt-d9j2b868bjmc73es006g`; workspace email failure notifications are enabled and no service override exists.
+
+> Human: ostatni mail o restarcie dostałem o 5:29 AM warsaw time
+>> Agent: This matches the first `server_failed` at `05:29:16` Warsaw time. The missing Render emails are therefore specifically for the failures at `11:32:22` and `17:20:00` Warsaw time.
 
 ## [DONE 2026-07-25.1] Check the latest failure on render
 

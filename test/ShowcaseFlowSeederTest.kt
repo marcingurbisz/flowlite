@@ -52,6 +52,7 @@ class ShowcaseFlowSeederTest : BehaviorSpec({
                 maxActionDelayMs = 0L,
                 actionFailureRate = 0.0,
                 maxEventDelayMs = 2_000L,
+                stagePollIntervalMs = 25L,
                 eventDelayProvider = { maxDelayMs -> maxDelayMs },
             )
             val reachedWaitingState = waitUntil(timeoutMs = 4_000L) {
@@ -90,6 +91,7 @@ class ShowcaseFlowSeederTest : BehaviorSpec({
                 maxActionDelayMs = 0L,
                 actionFailureRate = 1.0,
                 maxEventDelayMs = 0L,
+                stagePollIntervalMs = 25L,
             )
             val reachedErrorState = waitUntil(timeoutMs = 4_000L) {
                 employeeRepo.findAll().any { employee ->

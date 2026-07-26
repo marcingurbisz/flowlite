@@ -12,6 +12,20 @@
 >> Validation: Workspace notifications are configured with `emailEnabled=true` and `notificationsToSend=failure`, with no service override. Render therefore should notify for all three unhealthy-service events according to its documentation. The Render API has no email-delivery history, so it cannot establish whether the two messages were suppressed, lost downstream, grouped by the mail client, or delivered elsewhere.
 >> Changes: Extended `.agents/skills/render-api/SKILL.md` with the notification-settings and override endpoints plus the limitation that configuration is not delivery evidence.
 
+## [DONE 2026-07-26.1] Review own changes
+Review the post-fix Render comparison, notification conclusion, calculations, and evidence boundaries.
+
+> Agent: Rechecked the raw event pairs, deploy commit, CEST/UTC conversion, request-duration samples, current stage breakdown, memory logs, notification settings, and the conclusions persisted above.
+> Validation: The three runtime durations recompute to `6h14m01s`, `6h01m27s`, and `5h46m35s`. Each 7k and pre-failure latency statistic uses a five-minute Render log window with 63-74 measured `/api/flows` completions.
+> Learning: The latency improvement and three health-check failures are directly observed. The remaining timer-poller load is a source-and-live-state-supported explanation, but it is not isolated experimentally from summary-table growth and other H2 work; keep it as the leading hypothesis rather than a proven sole cause.
+> Learning: Render's documented notification behavior plus the live configuration establish that emails should be enabled, but neither establishes delivery. Do not claim Render sent or suppressed a particular message without mail headers or provider delivery evidence.
+
+## [FOR HUMAN REVIEW] Reduce showcase event polling for long timer waits
+The `Error` fix removed leaked failed-instance pollers, but event tasks are still created several stages early and poll every `250ms` while employees wait over the weekend at `WaitForITBusinessHours`. Compare a larger polling interval (for example five seconds) with sequentially creating only the next relevant event waiter; validate the change with a realistic weekend timer/load reproduction.
+
+## [FOR HUMAN REVIEW] Follow up on missing Render failure emails
+Check whether the three July 26 failure notifications are grouped into one mail thread or filtered by the mailbox. If two are genuinely absent, provide Render support with event IDs `evt-d9inu368bjmc73ejm3sg`, `evt-d9it89m8bjmc73enpufg`, and `evt-d9j2b868bjmc73es006g`; workspace email failure notifications are enabled and no service override exists.
+
 ## [DONE 2026-07-25.1] Check the latest failure on render
 
 MG: Health check is using /api/flows on purpose - I want to stress the app a little bit. I want to understand how test app behaves under load. How often render is calling this endpoint. Any idea why after some time /api/flows gives connection refused?

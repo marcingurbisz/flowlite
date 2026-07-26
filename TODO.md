@@ -29,6 +29,13 @@ The `Error` fix removed leaked failed-instance pollers, but event tasks are stil
 >> Validation: `./gradlew test --tests '*ShowcaseFlowSeederTest'` passed.
 >> Learning: At the observed `1,814` pollers this changes the estimated status-read rate from roughly `7,256/s` to `181/s`, a 40-fold reduction. A showcase event can now be noticed up to about ten seconds after its waiting stage is reached, which is acceptable for this test workload.
 
+## [DONE 2026-07-26.2] Review own changes
+Review the ten-second showcase polling interval, constructor validation, test-only timing override, and regression risk.
+
+> Agent: Reviewed commit `6fe7a9a`, all `ShowcaseFlowSeeder` construction sites, the delayed-event and error-cleanup scenarios, and the deployed-versus-test default behavior.
+> Validation: `git show --check 6fe7a9a` passed and the full `./gradlew test` suite passed. Playwright emitted the existing optional host-library warning, but browser and backend tests completed successfully.
+> Learning: Production and ordinary application construction use the `10s` default; only the two timing-sensitive focused scenarios inject `25ms`. No additional code finding changed the selected implementation.
+
 ## [FOR HUMAN REVIEW] Follow up on missing Render failure emails
 Check whether the three July 26 failure notifications are grouped into one mail thread or filtered by the mailbox. If two are genuinely absent, provide Render support with event IDs `evt-d9inu368bjmc73ejm3sg`, `evt-d9it89m8bjmc73enpufg`, and `evt-d9j2b868bjmc73es006g`; workspace email failure notifications are enabled and no service override exists.
 
